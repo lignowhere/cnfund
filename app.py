@@ -17,9 +17,31 @@ from report_page import ReportPage
 # Set page config
 st.set_page_config(**PAGE_CONFIG)
 
-# Custom CSS
+# CSS để ẩn file explorer và custom styling
 st.markdown("""
 <style>
+    /* Ẩn Streamlit Cloud file explorer/navigation */
+    .css-1d391kg, 
+    .css-17eq0hr,
+    .css-1y4p8pa,
+    .css-12oz5g7,
+    section[data-testid="stSidebarNav"],
+    div[data-testid="stSidebarNav"],
+    .css-163ttbj,
+    ul[data-testid="stSidebarNavItems"],
+    .stSelectbox > div[data-baseweb="select"] > div {
+        display: none !important;
+        height: 0 !important;
+        min-height: 0 !important;
+        overflow: hidden !important;
+    }
+    
+    /* Điều chỉnh padding sidebar */
+    .css-1lcbmhc {
+        padding-top: 1rem;
+    }
+    
+    /* Custom styling cho app */
     .metric-container {
         background-color: #f0f2f6;
         padding: 1rem;
@@ -35,6 +57,11 @@ st.markdown("""
     .negative-value {
         color: #ff4444 !important;
         font-weight: bold;
+    }
+    
+    /* Đảm bảo sidebar content hiển thị đúng */
+    .css-1d391kg ~ div {
+        display: block !important;
     }
 </style>
 """, unsafe_allow_html=True)
