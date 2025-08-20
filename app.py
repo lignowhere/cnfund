@@ -1,7 +1,7 @@
 import streamlit as st
 import os
 from config import PAGE_CONFIG
-from services import FundManager
+from services_enhanced import EnhancedFundManager  # ← THAY ĐỔI NÀY
 from utils import format_currency
 import sys
 from pathlib import Path
@@ -13,8 +13,7 @@ except (KeyError, FileNotFoundError, AttributeError):
     # Fallback cho local hoặc nếu secrets chưa set
     ADMIN_PASSWORD = os.getenv("ADMIN_PASSWORD")
     if not ADMIN_PASSWORD:
-        ADMIN_PASSWORD = "buffett123"  # Placeholder cho test; set env var hoặc secrets thực tế
-        st.warning("Warning: Using default password. Set ADMIN_PASSWORD in Secrets or env var for security.")
+        ADMIN_PASSWORD = "1997"  # Placeholder cho test; set env var hoặc secrets thực tế
 
 # Add pages directory to path
 sys.path.append(str(Path(__file__).parent / "pages"))
@@ -22,8 +21,8 @@ sys.path.append(str(Path(__file__).parent / "pages"))
 # Import pages
 from investor_page import InvestorPage
 from transaction_page import TransactionPage
-from fee_page import FeePage
-from report_page import ReportPage
+from fee_page_enhanced import EnhancedFeePage  # ← SẼ TẠO FILE MỚI
+from report_page_enhanced import EnhancedReportPage  # ← SẼ TẠO FILE MỚI
 
 # Set page config
 st.set_page_config(**PAGE_CONFIG)
@@ -69,6 +68,16 @@ st.markdown("""
         font-weight: bold;
     }
     
+    /* Fund manager styling */
+    .fund-manager-badge {
+        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+        color: white;
+        padding: 0.2rem 0.5rem;
+        border-radius: 0.3rem;
+        font-size: 0.8rem;
+        margin-left: 0.5rem;
+    }
+    
     /* Đảm bảo sidebar content hiển thị đúng */
     .css-1d391kg ~ div {
         display: block !important;
@@ -76,19 +85,30 @@ st.markdown("""
 </style>
 """, unsafe_allow_html=True)
 
-class FundManagementApp:
-    """Main app class"""
+class EnhancedFundManagementApp:
+    """Enhanced Fund Management App với fund manager tracking"""
     
     def __init__(self):
         if 'fund_manager' not in st.session_state:
-            st.session_state.fund_manager = FundManager()
+            st.session_state.fund_manager = EnhancedFundManager()  # ← THAY ĐỔI NÀY
         if 'logged_in' not in st.session_state:
             st.session_state.logged_in = False  # Default: chưa đăng nhập
         self.fund_manager = st.session_state.fund_manager
     
     def render_sidebar(self):
-        """Render sidebar"""
-        st.sidebar.title("🏦 Fund Management")
+        """Render sidebar với fund manager info"""
+        st.sidebar.title("🦐 Enhanced Fund Management")
+        
+        # Fund Manager info
+        fund_manager = self.fund_manager.get_fund_manager()
+        if fund_manager:
+            fm_tranches = self.fund_manager.get_investor_tranches(fund_manager.id)
+            if fm_tranches:
+                fm_units = sum(t.units for t in fm_tranches)
+                latest_nav = self.fund_manager.get_latest_total_nav()
+                if latest_nav:
+                    fm_value = fm_units * self.fund_manager.calculate_price_per_unit(latest_nav)
+                    st.sidebar.success(f"🏛️ Fund Manager: {fm_units:.3f} units ({format_currency(fm_value)})")
         
         # Latest NAV (luôn hiển thị)
         latest_nav = self.fund_manager.get_latest_total_nav()
@@ -104,18 +124,28 @@ class FundManagementApp:
             "✏️ Sửa Thông Tin NĐT",
             "💸 Thêm Giao Dịch", 
             "📈 Thêm Total NAV",
+            "🏛️ Fund Manager Withdrawal",  # NEW
+            "🔧 Quản Lý Giao Dịch",        # NEW
             "🧮 Tính Toán Phí",
             "🔍 Tính Phí Riêng",
-            "📊 Báo Cáo & Thống Kê"
+            "📊 Báo Cáo & Thống Kê",
+            "📈 Lifetime Performance",
+            "💰 Lịch Sử Phí"
         ])
         
         # Quick stats (luôn hiển thị)
-        if self.fund_manager.investors:
+        regular_investors = self.fund_manager.get_regular_investors()
+        if regular_investors:
             st.sidebar.markdown("---")
             st.sidebar.markdown("📊 **Thống Kê**")
             col1, col2 = st.sidebar.columns(2)
-            col1.metric("Investors", len(self.fund_manager.investors))
+            col1.metric("Investors", len(regular_investors))
             col2.metric("Tranches", len(self.fund_manager.tranches))
+            
+            # Fee records count
+            fee_count = len(self.fund_manager.fee_records)
+            if fee_count > 0:
+                st.sidebar.metric("Fee Records", fee_count)
         
         # Logout button nếu đã đăng nhập
         if st.session_state.logged_in:
@@ -147,6 +177,8 @@ class FundManagementApp:
             "✏️ Sửa Thông Tin NĐT",
             "💸 Thêm Giao Dịch", 
             "📈 Thêm Total NAV",
+            "🏛️ Fund Manager Withdrawal",  # NEW
+            "🔧 Quản Lý Giao Dịch",        # NEW
             "🧮 Tính Toán Phí"
         ]
         
@@ -171,17 +203,33 @@ class FundManagementApp:
             transaction_page = TransactionPage(self.fund_manager)
             transaction_page.render_nav_update()
             
+        elif page == "🏛️ Fund Manager Withdrawal":
+            transaction_page = TransactionPage(self.fund_manager)
+            transaction_page.render_fund_manager_withdrawal()
+            
+        elif page == "🔧 Quản Lý Giao Dịch":
+            transaction_page = TransactionPage(self.fund_manager)
+            transaction_page.render_transaction_management()
+            
         elif page == "🧮 Tính Toán Phí":
-            fee_page = FeePage(self.fund_manager)
-            fee_page.render_fee_calculation()
+            fee_page = EnhancedFeePage(self.fund_manager)
+            fee_page.render_enhanced_fee_calculation()
             
         elif page == "🔍 Tính Phí Riêng":
-            fee_page = FeePage(self.fund_manager)
+            fee_page = EnhancedFeePage(self.fund_manager)
             fee_page.render_individual_fee()
             
         elif page == "📊 Báo Cáo & Thống Kê":
-            report_page = ReportPage(self.fund_manager)
+            report_page = EnhancedReportPage(self.fund_manager)
             report_page.render_reports()
+            
+        elif page == "📈 Lifetime Performance":
+            report_page = EnhancedReportPage(self.fund_manager)
+            report_page.render_lifetime_performance()
+            
+        elif page == "💰 Lịch Sử Phí":
+            report_page = EnhancedReportPage(self.fund_manager)
+            report_page.render_fee_history()
     
     def handle_save(self):
         """Handle saving data (chỉ nếu logged_in cho edit)"""
@@ -198,8 +246,9 @@ class FundManagementApp:
             self.handle_save()
         except Exception as e:
             st.error(f"Lỗi ứng dụng: {str(e)}")
+            st.exception(e)  # Debug info
 
 # Main entry point
 if __name__ == "__main__":
-    app = FundManagementApp()
+    app = EnhancedFundManagementApp()  # ← THAY ĐỔI TÊN CLASS
     app.run()
