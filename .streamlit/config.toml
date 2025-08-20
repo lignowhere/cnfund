@@ -1,2 +1,11 @@
+# .streamlit/config.toml
+[browser]
+gatherUsageStats = false
+
+[server]
+enableStaticServing = false
+enableXsrfProtection = false
+
 [ui]
+hideTopBar = true
 hideSidebarNav = true
