@@ -29,12 +29,7 @@ st.markdown("""
     div[data-testid="stSidebarNav"],
     .css-163ttbj,
     ul[data-testid="stSidebarNavItems"],
-    .stSelectbox > div[data-baseweb="select"] > div {
-        display: none !important;
-        height: 0 !important;
-        min-height: 0 !important;
-        overflow: hidden !important;
-    }
+    
     
     /* Điều chỉnh padding sidebar */
     .css-1lcbmhc {
