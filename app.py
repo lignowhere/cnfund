@@ -1,5 +1,5 @@
 import streamlit as st
-from config import PAGE_CONFIG
+from config import PAGE_CONFIG, ADMIN_PASSWORD
 from services import FundManager
 from utils import format_currency
 import sys
