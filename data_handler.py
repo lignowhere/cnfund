@@ -1,4 +1,5 @@
 import pandas as pd
+import streamlit as st
 from datetime import datetime
 import uuid
 import streamlit as st
@@ -8,6 +9,9 @@ import os
 import shutil  # Added for backup
 from datetime import datetime as dt  # For timestamp
 
+# Kết nối Google Sheets
+# credentials.json: file service account JSON bạn tải từ Google Cloud
+conn = st.connection("gsheets", type="gspread", credentials="credentials.json")
 # Constants
 INVESTORS_FILE = 'investors.csv'
 TRANCHES_FILE = 'tranches.csv'
