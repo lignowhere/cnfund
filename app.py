@@ -28,8 +28,12 @@ st.markdown("""
     section[data-testid="stSidebarNav"],
     div[data-testid="stSidebarNav"],
     .css-163ttbj,
-    ul[data-testid="stSidebarNavItems"],
-    
+    ul[data-testid="stSidebarNavItems"] {
+        display: none !important;
+        height: 0 !important;
+        min-height: 0 !important;
+        overflow: hidden !important;
+    }
     
     /* Điều chỉnh padding sidebar */
     .css-1lcbmhc {
