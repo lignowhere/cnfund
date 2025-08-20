@@ -6,7 +6,7 @@ from helpers import calc_price_per_unit
 
 # Kết nối Google Sheets
 # credentials.json: file service account JSON bạn tải từ Google Cloud
-conn = st.connection("gsheets", type="gspread", credentials="credentials.json")
+conn = st.connection("gsheets", type="gsheets", credentials=st.secrets["gsheets"])
 
 # Constants
 HURDLE_RATE_ANNUAL = 0.06
