@@ -3,34 +3,35 @@ from datetime import datetime
 import uuid
 import streamlit as st
 from helpers import calc_price_per_unit
+from st_gsheets_connection import GSheetsConnection
 
-# Kết nối Google Sheets
-# credentials.json: file service account JSON bạn tải từ Google Cloud
-conn = st.connection("gsheets", type="gsheets", credentials=st.secrets["gsheets"])
+# Kết nối Google Sheets qua secrets.toml
+conn = st.connection("gsheets", type=GSheetsConnection, credentials=st.secrets["gsheets"])
 
 # Constants
 HURDLE_RATE_ANNUAL = 0.06
 PERFORMANCE_FEE_RATE = 0.20
 DEFAULT_UNIT_PRICE = 1000.0  # Giá unit mặc định cho quỹ mới
 
-SPREADSHEET = "YOUR_SHEET_ID_OR_NAME"  # Thay bằng ID hoặc tên Google Sheet của bạn
+# Tên Google Sheet của bạn
+SPREADSHEET = "cnfund"
 
 
 def load_data():
     try:
-        df_investors = conn.read(spreadsheet=SPREADSHEET, worksheet="Investors")
+        df_investors = conn.read(spreadsheet=SPREADSHEET, worksheet="investors")
     except Exception:
         df_investors = pd.DataFrame(columns=['ID', 'Name', 'Phone', 'Address', 'Email', 'JoinDate'])
 
     try:
-        df_tranches = conn.read(spreadsheet=SPREADSHEET, worksheet="Tranches")
+        df_tranches = conn.read(spreadsheet=SPREADSHEET, worksheet="tranches")
         if not df_tranches.empty:
             df_tranches['EntryDate'] = pd.to_datetime(df_tranches['EntryDate'])
     except Exception:
         df_tranches = pd.DataFrame(columns=['InvestorID', 'TrancheID', 'EntryDate', 'EntryNAV', 'Units'])
 
     try:
-        df_transactions = conn.read(spreadsheet=SPREADSHEET, worksheet="Transactions")
+        df_transactions = conn.read(spreadsheet=SPREADSHEET, worksheet="transactions")
         if not df_transactions.empty:
             df_transactions['Date'] = pd.to_datetime(df_transactions['Date'])
     except Exception:
@@ -40,9 +41,9 @@ def load_data():
 
 
 def save_data(df_investors, df_tranches, df_transactions):
-    conn.write(df_investors, spreadsheet=SPREADSHEET, worksheet="Investors")
-    conn.write(df_tranches, spreadsheet=SPREADSHEET, worksheet="Tranches")
-    conn.write(df_transactions, spreadsheet=SPREADSHEET, worksheet="Transactions")
+    conn.write(df_investors, spreadsheet=SPREADSHEET, worksheet="investors")
+    conn.write(df_tranches, spreadsheet=SPREADSHEET, worksheet="tranches")
+    conn.write(df_transactions, spreadsheet=SPREADSHEET, worksheet="transactions")
 
 
 def add_investor(df, name, phone="", address="", email=""):
