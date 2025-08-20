@@ -1,5 +1,6 @@
 from pathlib import Path
 from datetime import datetime
+import streamlit as st
 
 # === FUND CONSTANTS ===
 HURDLE_RATE_ANNUAL = 0.06
@@ -30,3 +31,6 @@ PAGE_CONFIG = {
 }
 
 CURRENCY_SYMBOL = "đ"
+# === SECURITY ===
+
+ADMIN_PASSWORD = st.secrets["ADMIN_PASSWORD"]

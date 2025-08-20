@@ -71,13 +71,15 @@ class FundManagementApp:
     def __init__(self):
         if 'fund_manager' not in st.session_state:
             st.session_state.fund_manager = FundManager()
+        if 'logged_in' not in st.session_state:
+            st.session_state.logged_in = False  # Default: chưa đăng nhập
         self.fund_manager = st.session_state.fund_manager
     
     def render_sidebar(self):
         """Render sidebar"""
         st.sidebar.title("🏦 Fund Management")
         
-        # Latest NAV
+        # Latest NAV (luôn hiển thị)
         latest_nav = self.fund_manager.get_latest_total_nav()
         if latest_nav:
             st.sidebar.metric("💰 Total NAV", format_currency(latest_nav))
@@ -96,7 +98,7 @@ class FundManagementApp:
             "📊 Báo Cáo & Thống Kê"
         ])
         
-        # Quick stats
+        # Quick stats (luôn hiển thị)
         if self.fund_manager.investors:
             st.sidebar.markdown("---")
             st.sidebar.markdown("📊 **Thống Kê**")
@@ -104,11 +106,44 @@ class FundManagementApp:
             col1.metric("Investors", len(self.fund_manager.investors))
             col2.metric("Tranches", len(self.fund_manager.tranches))
         
+        # Logout button nếu đã đăng nhập
+        if st.session_state.logged_in:
+            if st.sidebar.button("🚪 Logout"):
+                st.session_state.logged_in = False
+                st.rerun()  # Refresh app
+        
         return page
     
+    def render_login_form(self):
+        """Render form login"""
+        with st.container():
+            st.markdown('<div class="login-container">', unsafe_allow_html=True)
+            st.subheader("🔒 Yêu cầu đăng nhập để chỉnh sửa")
+            password = st.text_input("Mật khẩu", type="password")
+            if st.button("Đăng nhập"):
+                if password == ADMIN_PASSWORD:
+                    st.session_state.logged_in = True
+                    st.success("✅ Đăng nhập thành công!")
+                    st.rerun()  # Refresh để hiển thị nội dung
+                else:
+                    st.error("❌ Mật khẩu sai")
+            st.markdown('</div>', unsafe_allow_html=True)
+    
     def render_main_content(self, page: str):
-        """Render main content"""
+        """Render main content với kiểm tra bảo mật"""
+        edit_pages = [
+            "👥 Thêm Nhà Đầu Tư",
+            "✏️ Sửa Thông Tin NĐT",
+            "💸 Thêm Giao Dịch", 
+            "📈 Thêm Total NAV",
+            "🧮 Tính Toán Phí"
+        ]
         
+        if page in edit_pages and not st.session_state.logged_in:
+            self.render_login_form()
+            return  # Dừng render nội dung nếu chưa login
+        
+        # Render nội dung bình thường
         if page == "👥 Thêm Nhà Đầu Tư":
             investor_page = InvestorPage(self.fund_manager)
             investor_page.render_add_form()
@@ -138,7 +173,7 @@ class FundManagementApp:
             report_page.render_reports()
     
     def handle_save(self):
-        """Handle saving data"""
+        """Handle saving data (chỉ nếu logged_in cho edit)"""
         if st.session_state.get('data_changed', False):
             if self.fund_manager.save_data():
                 st.session_state.data_changed = False
