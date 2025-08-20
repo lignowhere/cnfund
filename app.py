@@ -1,9 +1,20 @@
 import streamlit as st
-from config import PAGE_CONFIG, ADMIN_PASSWORD
+import os
+from config import PAGE_CONFIG
 from services import FundManager
 from utils import format_currency
 import sys
 from pathlib import Path
+
+# === SECURITY LOGIC (Di chuyển từ config.py để tránh import issues) ===
+try:
+    ADMIN_PASSWORD = st.secrets["ADMIN_PASSWORD"]
+except (KeyError, FileNotFoundError, AttributeError):
+    # Fallback cho local hoặc nếu secrets chưa set
+    ADMIN_PASSWORD = os.getenv("ADMIN_PASSWORD")
+    if not ADMIN_PASSWORD:
+        ADMIN_PASSWORD = "buffett123"  # Placeholder cho test; set env var hoặc secrets thực tế
+        st.warning("Warning: Using default password. Set ADMIN_PASSWORD in Secrets or env var for security.")
 
 # Add pages directory to path
 sys.path.append(str(Path(__file__).parent / "pages"))

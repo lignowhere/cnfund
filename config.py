@@ -1,7 +1,5 @@
 from pathlib import Path
 from datetime import datetime
-import streamlit as st
-import os
 
 # === FUND CONSTANTS ===
 HURDLE_RATE_ANNUAL = 0.06
@@ -33,13 +31,4 @@ PAGE_CONFIG = {
 
 CURRENCY_SYMBOL = "đ"
 # === SECURITY ===
-
-try:
-    ADMIN_PASSWORD = st.secrets["ADMIN_PASSWORD"]
-except (KeyError, FileNotFoundError, AttributeError):  # Thêm AttributeError để catch nếu st.secrets không tồn tại local
-    # Fallback cho local: Lấy từ environment variable
-    ADMIN_PASSWORD = os.getenv("ADMIN_PASSWORD")
-    if not ADMIN_PASSWORD:
-        # Placeholder nếu chưa set env var (thay bằng mật khẩu tạm thời, nhưng nên set env var)
-        ADMIN_PASSWORD = "1997"  # Chỉ dùng cho test local; xóa hoặc thay khi deploy
-        print("Warning: Using default password for local run. Set ADMIN_PASSWORD env var for security.")
+ADMIN_PASSWORD = "1997"  # Placeholder tạm; sẽ override ở app.py bằng secrets/env var. Thay tạm nếu cần test.
