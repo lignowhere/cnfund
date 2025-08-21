@@ -1,10 +1,13 @@
 import streamlit as st
 import os
 from config import PAGE_CONFIG
-from services_enhanced import EnhancedFundManager  # ← THAY ĐỔI NÀY
+from services_enhanced import EnhancedFundManager
 from utils import format_currency
 import sys
 from pathlib import Path
+
+# Import Google Drive Manager
+from google_drive_manager import GoogleDriveManager, ExportManager
 
 # === SECURITY LOGIC (Di chuyển từ config.py để tránh import issues) ===
 try:
@@ -21,8 +24,8 @@ sys.path.append(str(Path(__file__).parent / "pages"))
 # Import pages
 from investor_page import InvestorPage
 from transaction_page import TransactionPage
-from fee_page_enhanced import EnhancedFeePage  # ← SẼ TẠO FILE MỚI
-from report_page_enhanced import EnhancedReportPage  # ← SẼ TẠO FILE MỚI
+from fee_page_enhanced import EnhancedFeePage
+from report_page_enhanced import EnhancedReportPage
 
 # Set page config
 st.set_page_config(**PAGE_CONFIG)
@@ -86,18 +89,18 @@ st.markdown("""
 """, unsafe_allow_html=True)
 
 class EnhancedFundManagementApp:
-    """Enhanced Fund Management App với fund manager tracking"""
+    """Enhanced Fund Management App với fund manager tracking và auto export"""
     
     def __init__(self):
         if 'fund_manager' not in st.session_state:
-            st.session_state.fund_manager = EnhancedFundManager()  # ← THAY ĐỔI NÀY
+            st.session_state.fund_manager = EnhancedFundManager()
         if 'logged_in' not in st.session_state:
             st.session_state.logged_in = False  # Default: chưa đăng nhập
         self.fund_manager = st.session_state.fund_manager
     
     def render_sidebar(self):
-        """Render sidebar với fund manager info"""
-        st.sidebar.title("🦐 Enhanced Fund Management")
+        """Render sidebar với fund manager info và EXPORT BUTTON"""
+        st.sidebar.title("🦈 Enhanced Fund Management")
         
         # Fund Manager info
         fund_manager = self.fund_manager.get_fund_manager()
@@ -117,6 +120,9 @@ class EnhancedFundManagementApp:
         else:
             st.sidebar.info("ℹ️ Quỹ chưa có NAV")
         
+        # === NEW: EXPORT BUTTON ===
+        ExportManager.render_export_button(self.fund_manager)
+        
         # Navigation
         st.sidebar.markdown("---")
         page = st.sidebar.radio("📋 Menu", [
@@ -124,8 +130,8 @@ class EnhancedFundManagementApp:
             "✏️ Sửa Thông Tin NĐT",
             "💸 Thêm Giao Dịch", 
             "📈 Thêm Total NAV",
-            "🏛️ Fund Manager Withdrawal",  # NEW
-            "🔧 Quản Lý Giao Dịch",        # NEW
+            "🏛️ Fund Manager Withdrawal",
+            "🔧 Quản Lý Giao Dịch",
             "🧮 Tính Toán Phí",
             "🔍 Tính Phí Riêng",
             "📊 Báo Cáo & Thống Kê",
@@ -151,7 +157,7 @@ class EnhancedFundManagementApp:
         if st.session_state.logged_in:
             if st.sidebar.button("🚪 Logout"):
                 st.session_state.logged_in = False
-                st.rerun()  # Refresh app
+                st.rerun()
         
         return page
     
@@ -165,7 +171,7 @@ class EnhancedFundManagementApp:
                 if password == ADMIN_PASSWORD:
                     st.session_state.logged_in = True
                     st.success("✅ Đăng nhập thành công!")
-                    st.rerun()  # Refresh để hiển thị nội dung
+                    st.rerun()
                 else:
                     st.error("❌ Mật khẩu sai")
             st.markdown('</div>', unsafe_allow_html=True)
@@ -177,8 +183,8 @@ class EnhancedFundManagementApp:
             "✏️ Sửa Thông Tin NĐT",
             "💸 Thêm Giao Dịch", 
             "📈 Thêm Total NAV",
-            "🏛️ Fund Manager Withdrawal",  # NEW
-            "🔧 Quản Lý Giao Dịch",        # NEW
+            "🏛️ Fund Manager Withdrawal",
+            "🔧 Quản Lý Giao Dịch",
             "🧮 Tính Toán Phí"
         ]
         
@@ -232,15 +238,30 @@ class EnhancedFundManagementApp:
             report_page.render_fee_history()
     
     def handle_save(self):
-        """Handle saving data (chỉ nếu logged_in cho edit)"""
+        """Handle saving data với AUTO EXPORT"""
         if st.session_state.get('data_changed', False):
             if self.fund_manager.save_data():
+                # === NEW: Auto Export to Google Drive ===
+                try:
+                    gdrive = GoogleDriveManager(self.fund_manager)
+                    if gdrive.connected:
+                        with st.spinner("📤 Auto-exporting to Google Drive..."):
+                            success = gdrive.auto_export_and_upload(trigger="auto_save")
+                            if success:
+                                st.sidebar.success("☁️ Backed up to Google Drive")
+                except Exception as e:
+                    st.sidebar.warning(f"⚠️ Auto-export failed: {str(e)}")
+                
                 st.session_state.data_changed = False
                 st.success("✅ Đã lưu dữ liệu")
     
     def run(self):
-        """Run app"""
+        """Run app với scheduled exports"""
         try:
+            # === NEW: Check for scheduled monthly export ===
+            gdrive = GoogleDriveManager(self.fund_manager)
+            gdrive.schedule_monthly_export()
+            
             selected_page = self.render_sidebar()
             self.render_main_content(selected_page)
             self.handle_save()
@@ -250,5 +271,5 @@ class EnhancedFundManagementApp:
 
 # Main entry point
 if __name__ == "__main__":
-    app = EnhancedFundManagementApp()  # ← THAY ĐỔI TÊN CLASS
+    app = EnhancedFundManagementApp()
     app.run()
