@@ -13,6 +13,7 @@ import json
 from datetime import datetime
 import pandas as pd
 from services_enhanced import EnhancedFundManager
+import streamlit as st
 
 # Set environment to avoid Streamlit warnings
 os.environ['STREAMLIT_SERVER_HEADLESS'] = 'true'
@@ -384,6 +385,16 @@ def main():
     print(f"🐍 Python: {sys.version}")
     print(f"📁 Working directory: {os.getcwd()}")
     
+    # Load secrets from .streamlit/secrets.toml
+    try:
+        import toml
+        secrets = toml.load('.streamlit/secrets.toml')
+        if 'default' in secrets and 'drive_folder_id' in secrets['default']:
+            os.environ['GOOGLE_DRIVE_FOLDER_ID'] = secrets['default']['drive_folder_id']
+            print(f"Set folder ID from secrets: {os.environ['GOOGLE_DRIVE_FOLDER_ID']}")
+    except Exception as e:
+        print(f"Could not load secrets: {e}")
+
     tests = [
         ("Credential Sources", test_credentials),
         ("Data Validation", test_data_validation),
