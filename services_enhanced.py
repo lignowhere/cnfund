@@ -5,32 +5,72 @@ import streamlit as st
 
 from config import *
 from models import Investor, Tranche, Transaction, FeeRecord
-from data_handler import EnhancedDataHandler
+
+# PROPER SUPABASE INTEGRATION
+try:
+    from supabase_data_handler import SupabaseDataHandler
+    DATA_HANDLER = SupabaseDataHandler()
+    if DATA_HANDLER.connected:
+        st.sidebar.success("🟢 Supabase PostgreSQL Connected")
+    else:
+        raise Exception("Supabase connection failed")
+except Exception as e:
+    # Fallback to local CSV if Supabase not available
+    st.sidebar.warning("📄 Fallback to CSV storage")
+    from data_handler import EnhancedDataHandler
+    DATA_HANDLER = EnhancedDataHandler()
+
 from utils import *
 
 class EnhancedFundManager:
-    """Enhanced Fund Manager với fund manager tracking và fee history"""
+    """Enhanced Fund Manager với Supabase PostgreSQL storage"""
     
     def __init__(self):
         self.investors: List[Investor] = []
         self.tranches: List[Tranche] = []
         self.transactions: List[Transaction] = []
         self.fee_records: List[FeeRecord] = []
+        self.data_handler = DATA_HANDLER
         self.load_data()
         self._ensure_fund_manager_exists()
     
     def load_data(self):
-        """Load tất cả dữ liệu"""
-        self.investors = EnhancedDataHandler.load_investors()
-        self.tranches = EnhancedDataHandler.load_tranches()
-        self.transactions = EnhancedDataHandler.load_transactions()
-        self.fee_records = EnhancedDataHandler.load_fee_records()
+        """Load tất cả dữ liệu từ database"""
+        try:
+            self.investors = self.data_handler.load_investors()
+            self.tranches = self.data_handler.load_tranches()
+            self.transactions = self.data_handler.load_transactions()
+            self.fee_records = self.data_handler.load_fee_records()
+            
+            # Show load statistics
+            if hasattr(self.data_handler, 'connected') and self.data_handler.connected:
+                st.sidebar.info(f"📊 Loaded: {len(self.investors)} investors, {len(self.tranches)} tranches, {len(self.fee_records)} fee records")
+                
+        except Exception as e:
+            st.error(f"❌ Error loading data: {str(e)}")
+            # Initialize empty lists as fallback
+            self.investors = []
+            self.tranches = []
+            self.transactions = []
+            self.fee_records = []
     
     def save_data(self) -> bool:
-        """Save tất cả dữ liệu including fee records"""
-        return EnhancedDataHandler.save_all_data_enhanced(
-            self.investors, self.tranches, self.transactions, self.fee_records
-        )
+        """Save tất cả dữ liệu to database"""
+        try:
+            success = self.data_handler.save_all_data_enhanced(
+                self.investors, self.tranches, self.transactions, self.fee_records
+            )
+            
+            if success and hasattr(self.data_handler, 'connected') and self.data_handler.connected:
+                st.sidebar.success("💾 Data saved to database")
+            elif success:
+                st.sidebar.success("💾 Data saved to CSV")
+            
+            return success
+            
+        except Exception as e:
+            st.error(f"❌ Error saving data: {str(e)}")
+            return False
     
     def _ensure_fund_manager_exists(self):
         """Đảm bảo có fund manager investor"""
@@ -44,6 +84,7 @@ class EnhancedFundManager:
                 join_date=date.today()
             )
             self.investors.insert(0, fund_manager)  # Đặt đầu list
+            self.save_data()
             print("✅ Created Fund Manager investor")
     
     def get_fund_manager(self) -> Optional[Investor]:
@@ -57,7 +98,7 @@ class EnhancedFundManager:
         """Lấy danh sách investors thường (không phải fund manager)"""
         return [inv for inv in self.investors if not inv.is_fund_manager]
     
-    # === INVESTOR MANAGEMENT (từ FundManager cũ) ===
+    # === INVESTOR MANAGEMENT ===
     
     def add_investor(self, name: str, phone: str = "", address: str = "", email: str = "") -> Tuple[bool, str]:
         """Thêm investor mới"""
@@ -107,7 +148,7 @@ class EnhancedFundManager:
                 return inv
         return None
     
-    # === FUND CALCULATIONS (từ FundManager cũ) ===
+    # === FUND CALCULATIONS ===
     
     def calculate_price_per_unit(self, total_nav: float) -> float:
         """Tính giá per unit"""
@@ -149,7 +190,7 @@ class EnhancedFundManager:
         
         return balance, profit, profit_perc
     
-    # === TRANSACTION PROCESSING (từ FundManager cũ với nhỏ sửa đổi) ===
+    # === TRANSACTION PROCESSING ===
     
     def process_deposit(self, investor_id: int, amount: float, total_nav_after: float, 
                        trans_date: Optional[datetime] = None) -> Tuple[bool, str]:
@@ -268,7 +309,7 @@ class EnhancedFundManager:
     # === ENHANCED FEE CALCULATION ===
     
     def calculate_investor_fee(self, investor_id: int, ending_date: datetime, ending_total_nav: float) -> Dict[str, float]:
-        """Tính phí chi tiết cho investor (giống như cũ)"""
+        """Tính phí chi tiết cho investor"""
         tranches = self.get_investor_tranches(investor_id)
         if not tranches or ending_total_nav <= 0:
             return self._empty_fee_details()
@@ -491,7 +532,7 @@ class EnhancedFundManager:
             return self.fee_records
         return [record for record in self.fee_records if record.investor_id == investor_id]
     
-    # === HELPER METHODS (từ FundManager cũ) ===
+    # === HELPER METHODS ===
     
     def update_hwm_if_higher(self, total_nav: float):
         """Cập nhật HWM nếu giá cao hơn - CHỈ CHO FUND MANAGER"""
