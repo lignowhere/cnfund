@@ -11,7 +11,7 @@ class EnhancedReportPage:
     
     def render_reports(self):
         """Render trang báo cáo enhanced"""
-        st.title("📊 Enhanced Báo Cáo & Thống Kê")
+        st.title("📊 Báo Cáo & Thống Kê")
         
         regular_investors = self.fund_manager.get_regular_investors()
         if not regular_investors:

@@ -11,7 +11,7 @@ class EnhancedFeePage:
     
     def render_enhanced_fee_calculation(self):
         """Enhanced fee calculation với fund manager tracking"""
-        st.title("🧮 Tính Toán Phí Cuối Năm (Enhanced)")
+        st.title("🧮 Tính Toán Phí Cuối Năm")
         
         regular_investors = self.fund_manager.get_regular_investors()
         if not regular_investors:
@@ -33,14 +33,14 @@ class EnhancedFeePage:
         # Show fund manager current status
         fund_manager = self.fund_manager.get_fund_manager()
         if fund_manager:
-            with st.expander("🏛️ Fund Manager Status"):
+            with st.expander("🏛️ Fund Manager Status", expanded=False):
                 fm_tranches = self.fund_manager.get_investor_tranches(fund_manager.id)
                 if fm_tranches:
                     fm_units = sum(t.units for t in fm_tranches)
                     if ending_nav > 0:
                         fm_value = fm_units * self.fund_manager.calculate_price_per_unit(ending_nav)
                         col_fm1, col_fm2 = st.columns(2)
-                        col_fm1.metric("Units hiện tại", f"{fm_units:.6f}")
+                        col_fm1.metric("Units hiện tại", f"{fm_units:,.6f}")
                         col_fm2.metric("Giá trị hiện tại", format_currency(fm_value))
                 else:
                     st.info("Fund Manager chưa có units")
@@ -48,29 +48,23 @@ class EnhancedFeePage:
         tab1, tab2, tab3 = st.tabs(["🧮 Tính Phí Enhanced", "📋 Phí Chi Tiết", "📊 Chi Tiết Tranches"])
         
         with tab1:
-            st.subheader("🚀 Enhanced Fee Calculation")
+            st.subheader("🚀 Bảng tính phí Preview (Enhanced)")
+            if ending_nav <= 0:
+                st.warning("ℹ️ Vui lòng nhập Total NAV kết thúc lớn hơn 0 để xem tính toán.")
+            else:
+                self._show_enhanced_fee_preview(year, ending_date, ending_nav)
             
-            if st.button("🧮 Tính Toán Phí Enhanced", use_container_width=True, type="primary"):
-                if ending_nav <= 0:
-                    st.error("❌ Total NAV kết thúc phải lớn hơn 0")
-                else:
-                    self._show_enhanced_fee_preview(year, ending_date, ending_nav)
-            
-            # Enhanced fee application
             st.markdown("---")
-            st.subheader("⚡ Áp Dụng Phí Enhanced")
-            
+            st.subheader("⚡ Áp Dụng Phí")
             st.info("""
-            🎯 **Enhanced Features:**
+            🎯 **Tính năng nổi bật:**
             - ✅ Units được chuyển cho Fund Manager (không biến mất)
             - ✅ Giữ nguyên original entry data cho lifetime tracking
             - ✅ Lưu chi tiết fee history
             - ✅ Track cumulative fees paid
             """)
-            
-            confirm_enhanced = st.checkbox("✅ Tôi chắc chắn muốn áp dụng phí Enhanced")
-            
-            if confirm_enhanced and st.button("🚀 Áp Dụng Phí Enhanced", type="primary"):
+            confirm_enhanced = st.checkbox("✅ Tôi chắc chắn muốn áp dụng phí")
+            if confirm_enhanced and st.button("🚀 Áp Dụng Phí", type="primary"):
                 if ending_nav <= 0:
                     st.error("❌ Total NAV kết thúc phải lớn hơn 0")
                 else:
@@ -83,18 +77,18 @@ class EnhancedFeePage:
                         st.error(f"❌ {message}")
         
         with tab2:
-            if st.button("📋 Tính Phí Chi Tiết", use_container_width=True):
-                if ending_nav <= 0:
-                    st.error("❌ Total NAV kết thúc phải lớn hơn 0")
-                else:
-                    self._show_detailed_fee_calculation(ending_date, ending_nav)
+            st.subheader("📋 Bảng phí chi tiết cho từng nhà đầu tư")
+            if ending_nav <= 0:
+                st.warning("ℹ️ Nhập Total NAV để xem chi tiết.")
+            else:
+                self._show_detailed_fee_calculation(ending_date, ending_nav)
         
         with tab3:
-            self._show_tranches_detail(ending_nav)
+            st.subheader("📊 Bảng chi tiết các Tranches hiện tại")
+            if ending_nav <= 0:
+                st.warning("ℹ️ Nhập Total NAV để xem giá trị hiện tại của các tranches.")
+            self._show_tranches_detail(ending_nav) # Hàm này đã không có nút, giữ nguyên
         
-        # Comparison with old system
-        with st.expander("⚖️ So Sánh: Enhanced vs Old System"):
-            self._show_system_comparison()
     
     def render_individual_fee(self):
         """Tính phí riêng cho nhà đầu tư"""
@@ -171,92 +165,59 @@ class EnhancedFeePage:
     def _show_enhanced_fee_preview(self, year: int, ending_date: date, ending_nav: float):
         """Show preview của enhanced fee calculation"""
         ending_date_dt = datetime.combine(ending_date, datetime.min.time())
-        
         results = []
         total_fees = 0.0
         total_units_transfer = 0.0
-        
         ending_price = self.fund_manager.calculate_price_per_unit(ending_nav)
-        
         for investor in self.fund_manager.get_regular_investors():
             details = self.fund_manager.calculate_investor_fee(investor.id, ending_date_dt, ending_nav)
             lifetime_perf = self.fund_manager.get_investor_lifetime_performance(investor.id, ending_nav)
-            
             tranches = self.fund_manager.get_investor_tranches(investor.id)
             total_units = sum(t.units for t in tranches) if tranches else 0
-            units_fee = details['total_fee'] / ending_price if details['total_fee'] > 0 else 0
-            
+            units_fee = details['total_fee'] / ending_price if details['total_fee'] > 0 and ending_price > 0 else 0
             results.append({
-                'Nhà Đầu Tư': investor.display_name,
-                'Units Hiện Tại': f"{total_units:.6f}",
-                'Vốn Gốc': lifetime_perf['original_invested'],
-                'Phí Đã Trả': lifetime_perf['total_fees_paid'],
-                'Số Dư': details['balance'],
-                'Lãi/Lỗ': details['profit'],
-                'Phí Mới': details['total_fee'],
-                'Units Chuyển': f"{units_fee:.6f}",
-                'Units Còn Lại': f"{total_units - units_fee:.6f}"
+                'Nhà Đầu Tư': investor.display_name, 'Units Hiện Tại': f"{total_units:.6f}",
+                'Vốn Gốc': lifetime_perf['original_invested'], 'Phí Đã Trả': lifetime_perf['total_fees_paid'],
+                'Số Dư': details['balance'], 'Lãi/Lỗ': details['profit'], 'Phí Mới': details['total_fee'],
+                'Units Chuyển': f"{units_fee:.6f}", 'Units Còn Lại': f"{total_units - units_fee:.6f}"
             })
-            
             total_fees += details['total_fee']
             total_units_transfer += units_fee
-        
         if results:
             df_results = pd.DataFrame(results)
-            
-            # Format DataFrame
             currency_cols = ['Vốn Gốc', 'Phí Đã Trả', 'Số Dư', 'Lãi/Lỗ', 'Phí Mới']
             for col in currency_cols:
                 df_results[col] = df_results[col].apply(format_currency)
-            
-            st.dataframe(df_results, use_container_width=True)
-            
-            # Summary
+            st.dataframe(df_results, use_container_width=True, hide_index=True)
             col1, col2, col3 = st.columns(3)
             col1.success(f"💰 **Tổng phí:** {format_currency(total_fees)}")
-            col2.info(f"📊 **Units chuyển:** {total_units_transfer:.6f}")
+            col2.info(f"📊 **Units chuyển:** {total_units_transfer:,.6f}")
             col3.warning(f"🏛️ **Về Fund Manager:** {format_currency(total_fees)}")
     
     def _show_detailed_fee_calculation(self, ending_date, ending_nav):
         """Hiển thị kết quả tính phí chi tiết"""
         ending_date_dt = datetime.combine(ending_date, datetime.min.time())
         results = []
-        
         for investor in self.fund_manager.get_regular_investors():
             details = self.fund_manager.calculate_investor_fee(investor.id, ending_date_dt, ending_nav)
-            
             tranches = self.fund_manager.get_investor_tranches(investor.id)
             total_units = sum(t.units for t in tranches) if tranches else 0
-            
             results.append({
-                'Nhà Đầu Tư': investor.display_name,
-                'Tổng Units': f"{total_units:.6f}",
-                'Vốn Đầu Tư': details['invested_value'],
-                'Số Dư': details['balance'],
-                'Lãi/Lỗ': details['profit'],
-                'Tỷ Lệ L/L': details['profit_perc'],
-                'Hurdle Value': details['hurdle_value'],
-                'HWM Value': details['hwm_value'],
-                'Lợi Nhuận Vượt': details['excess_profit'],
-                'Phí': details['total_fee']
+                'Nhà Đầu Tư': investor.display_name, 'Tổng Units': f"{total_units:.6f}",
+                'Vốn Đầu Tư': details['invested_value'], 'Số Dư': details['balance'],
+                'Lãi/Lỗ': details['profit'], 'Tỷ Lệ L/L': details['profit_perc'],
+                'Hurdle Value': details['hurdle_value'], 'HWM Value': details['hwm_value'],
+                'Lợi Nhuận Vượt': details['excess_profit'], 'Phí': details['total_fee']
             })
-        
         if results:
             df_results = pd.DataFrame(results)
-            
-            # Format DataFrame
             currency_cols = ['Vốn Đầu Tư', 'Số Dư', 'Lãi/Lỗ', 'Hurdle Value', 'HWM Value', 'Lợi Nhuận Vượt', 'Phí']
             for col in currency_cols:
                 df_results[col] = df_results[col].apply(format_currency)
-            
             df_results['Tỷ Lệ L/L'] = df_results['Tỷ Lệ L/L'].apply(format_percentage)
-            
-            st.dataframe(df_results, use_container_width=True)
-            
-            # Tổng kết
+            st.dataframe(df_results, use_container_width=True, hide_index=True)
             total_fee = sum(self.fund_manager.calculate_investor_fee(inv.id, ending_date_dt, ending_nav)['total_fee'] 
                            for inv in self.fund_manager.get_regular_investors())
-            
             if total_fee > 0:
                 st.success(f"💰 **Tổng phí performance:** {format_currency(total_fee)}")
             else:
@@ -295,34 +256,4 @@ class EnhancedFeePage:
             df_tranches = pd.DataFrame(data)
             st.dataframe(df_tranches, use_container_width=True)
     
-    def _show_system_comparison(self):
-        """So sánh Enhanced vs Old system"""
-        comparison_data = {
-            'Khía Cạnh': [
-                'Units Flow',
-                'Transparency', 
-                'History Preservation',
-                'Fee Tracking',
-                'Performance Reporting',
-                'Data Reset'
-            ],
-            'Old System': [
-                '❌ Units biến mất',
-                '❌ Không rõ phí đi đâu',
-                '❌ Mất lịch sử sau reset',
-                '❌ Chỉ có transaction log',
-                '❌ Chỉ current performance',
-                '❌ Reset hoàn toàn'
-            ],
-            'Enhanced System': [
-                '✅ Units chuyển Fund Manager',
-                '✅ Minh bạch 100%',
-                '✅ Giữ nguyên original data',
-                '✅ Chi tiết fee records',
-                '✅ Gross vs Net return',
-                '✅ Giữ history, chỉ reset base'
-            ]
-        }
-        
-        df_comparison = pd.DataFrame(comparison_data)
-        st.dataframe(df_comparison, use_container_width=True)
+    

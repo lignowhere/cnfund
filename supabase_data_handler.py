@@ -20,60 +20,39 @@ class SupabaseDataHandler:
         self.engine = None
         self.connected = False
         self.connection_info = {}
+        self.version_info = {}
         self._connect()
     
     def _connect(self):
-        """Connect to Supabase PostgreSQL with multiple fallback methods"""
+        """Kết nối tới DB và lưu thông tin, không hiển thị UI trực tiếp."""
         try:
-            # Priority order for getting database URL
             db_url = self._get_database_url()
-            
             if not db_url:
-                st.error("❌ Database URL not found. Please configure secrets.")
+                print("ERROR: Database URL not found in secrets or env variables.")
+                self.connected = False
                 return
             
-            # Store connection info for display
             self.connection_info = self._parse_db_url(db_url)
-            
-            # Ensure correct psycopg2 format for SQLAlchemy
             if db_url.startswith("postgresql://"):
                 db_url = db_url.replace("postgresql://", "postgresql+psycopg2://", 1)
             
-            # Create optimized engine for Supabase
-            self.engine = create_engine(
-                db_url,
-                pool_size=5,              # Slightly larger pool for better performance
-                max_overflow=10,          # Allow more connections during peaks
-                pool_pre_ping=True,       # Verify connections before use
-                pool_recycle=1800,        # Recycle connections every 30 minutes
-                connect_args={
-                    "sslmode": "require",
-                    "connect_timeout": 10,
-                    "application_name": "Enhanced_Fund_Management"
-                }
-            )
+            self.engine = create_engine(db_url, pool_pre_ping=True, connect_args={"sslmode": "require"})
             
-            # Test connection and get database info
             with self.engine.connect() as conn:
-                # Basic connection test
                 result = conn.execute(text("SELECT version(), current_database(), current_user"))
-                version_info = result.fetchone()
-                
-                if version_info:
+                db_info = result.fetchone()
+                if db_info:
                     self.connected = True
+                    self.version_info = {
+                        'version_string': db_info[0],
+                        'database_name': db_info[1],
+                        'current_user': db_info[2]
+                    }
                     self._create_tables()
-                    
-                    # Display connection success in sidebar
-                    st.sidebar.success("🟢 Supabase Connected")
-                    with st.sidebar.expander("📊 Database Info"):
-                        st.write(f"**Host:** {self.connection_info.get('host', 'Unknown')}")
-                        st.write(f"**Database:** {version_info[1]}")
-                        st.write(f"**User:** {version_info[2]}")
-                        st.write(f"**Version:** PostgreSQL {version_info[0].split()[1]}")
-                    
         except Exception as e:
-            error_msg = str(e)
-            st.error(f"❌ Supabase connection failed: {error_msg}")
+            print(f"CRITICAL: Supabase connection failed: {e}")
+            self.engine = None
+            self.connected = False
             
             # Provide helpful debugging info
             if "password authentication failed" in error_msg.lower():
@@ -133,106 +112,51 @@ class SupabaseDataHandler:
             return {}
     
     def _create_tables(self):
-        """Create all required tables with enhanced schema"""
+        """
+        Tối ưu hóa: Gộp tất cả các lệnh CREATE vào một chuỗi duy nhất
+        để giảm thiểu số lần gọi database.
+        """
+        # **SỬA ĐỔI QUAN TRỌNG**
+        combined_sql = text("""
+            -- Investors
+            CREATE TABLE IF NOT EXISTS investors (
+                id INTEGER PRIMARY KEY, name VARCHAR(255) NOT NULL, phone VARCHAR(50) DEFAULT '',
+                address TEXT DEFAULT '', email VARCHAR(255) DEFAULT '', join_date DATE NOT NULL DEFAULT CURRENT_DATE,
+                is_fund_manager BOOLEAN DEFAULT FALSE, created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            );
+            -- Tranches
+            CREATE TABLE IF NOT EXISTS tranches (
+                id SERIAL PRIMARY KEY, investor_id INTEGER NOT NULL, tranche_id VARCHAR(255) UNIQUE NOT NULL,
+                entry_date TIMESTAMP NOT NULL, entry_nav DECIMAL(18,4) NOT NULL, units DECIMAL(18,8) NOT NULL,
+                hwm DECIMAL(18,4) NOT NULL, original_entry_date TIMESTAMP, original_entry_nav DECIMAL(18,4),
+                cumulative_fees_paid DECIMAL(18,4) DEFAULT 0, created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            );
+            -- Transactions
+            CREATE TABLE IF NOT EXISTS transactions (
+                id INTEGER PRIMARY KEY, investor_id INTEGER NOT NULL, date TIMESTAMP NOT NULL,
+                type VARCHAR(100) NOT NULL, amount DECIMAL(18,4) NOT NULL, nav DECIMAL(18,4) NOT NULL,
+                units_change DECIMAL(18,8) NOT NULL, created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            );
+            -- Fee Records
+            CREATE TABLE IF NOT EXISTS fee_records (
+                id INTEGER PRIMARY KEY, period VARCHAR(20) NOT NULL, investor_id INTEGER NOT NULL,
+                fee_amount DECIMAL(18,4) NOT NULL, fee_units DECIMAL(18,8) NOT NULL,
+                calculation_date TIMESTAMP NOT NULL, units_before DECIMAL(18,8) NOT NULL,
+                units_after DECIMAL(18,8) NOT NULL, nav_per_unit DECIMAL(18,4) NOT NULL,
+                description TEXT DEFAULT '', created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            );
+            -- Indexes
+            CREATE INDEX IF NOT EXISTS idx_investors_fund_manager ON investors(is_fund_manager);
+            CREATE INDEX IF NOT EXISTS idx_tranches_investor_id ON tranches(investor_id);
+            CREATE INDEX IF NOT EXISTS idx_transactions_investor_id ON transactions(investor_id);
+            CREATE INDEX IF NOT EXISTS idx_fee_records_investor_id ON fee_records(investor_id);
+        """)
         try:
             with self.engine.connect() as conn:
-                # Enhanced investors table
-                conn.execute(text("""
-                    CREATE TABLE IF NOT EXISTS investors (
-                        id INTEGER PRIMARY KEY,
-                        name VARCHAR(255) NOT NULL,
-                        phone VARCHAR(50) DEFAULT '',
-                        address TEXT DEFAULT '',
-                        email VARCHAR(255) DEFAULT '',
-                        join_date DATE NOT NULL DEFAULT CURRENT_DATE,
-                        is_fund_manager BOOLEAN DEFAULT FALSE,
-                        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                        updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-                    )
-                """))
-                
-                # Enhanced tranches table with all new fields
-                conn.execute(text("""
-                    CREATE TABLE IF NOT EXISTS tranches (
-                        id SERIAL PRIMARY KEY,
-                        investor_id INTEGER NOT NULL,
-                        tranche_id VARCHAR(255) UNIQUE NOT NULL,
-                        entry_date TIMESTAMP NOT NULL,
-                        entry_nav DECIMAL(18,4) NOT NULL,
-                        units DECIMAL(18,8) NOT NULL,
-                        hwm DECIMAL(18,4) NOT NULL,
-                        original_entry_date TIMESTAMP,
-                        original_entry_nav DECIMAL(18,4),
-                        cumulative_fees_paid DECIMAL(18,4) DEFAULT 0,
-                        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                        updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-                    )
-                """))
-                
-                # Enhanced transactions table
-                conn.execute(text("""
-                    CREATE TABLE IF NOT EXISTS transactions (
-                        id INTEGER PRIMARY KEY,
-                        investor_id INTEGER NOT NULL,
-                        date TIMESTAMP NOT NULL,
-                        type VARCHAR(100) NOT NULL,
-                        amount DECIMAL(18,4) NOT NULL,
-                        nav DECIMAL(18,4) NOT NULL,
-                        units_change DECIMAL(18,8) NOT NULL,
-                        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-                    )
-                """))
-                
-                # Enhanced fee records table
-                conn.execute(text("""
-                    CREATE TABLE IF NOT EXISTS fee_records (
-                        id INTEGER PRIMARY KEY,
-                        period VARCHAR(20) NOT NULL,
-                        investor_id INTEGER NOT NULL,
-                        fee_amount DECIMAL(18,4) NOT NULL,
-                        fee_units DECIMAL(18,8) NOT NULL,
-                        calculation_date TIMESTAMP NOT NULL,
-                        units_before DECIMAL(18,8) NOT NULL,
-                        units_after DECIMAL(18,8) NOT NULL,
-                        nav_per_unit DECIMAL(18,4) NOT NULL,
-                        description TEXT DEFAULT '',
-                        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-                    )
-                """))
-                
-                # Create performance indexes
-                performance_indexes = [
-                    "CREATE INDEX IF NOT EXISTS idx_investors_fund_manager ON investors(is_fund_manager)",
-                    "CREATE INDEX IF NOT EXISTS idx_tranches_investor_id ON tranches(investor_id)",
-                    "CREATE INDEX IF NOT EXISTS idx_tranches_entry_date ON tranches(entry_date)",
-                    "CREATE INDEX IF NOT EXISTS idx_transactions_investor_id ON transactions(investor_id)",
-                    "CREATE INDEX IF NOT EXISTS idx_transactions_date ON transactions(date DESC)",
-                    "CREATE INDEX IF NOT EXISTS idx_transactions_type ON transactions(type)",
-                    "CREATE INDEX IF NOT EXISTS idx_fee_records_investor_id ON fee_records(investor_id)",
-                    "CREATE INDEX IF NOT EXISTS idx_fee_records_period ON fee_records(period)",
-                    "CREATE INDEX IF NOT EXISTS idx_fee_records_calc_date ON fee_records(calculation_date DESC)"
-                ]
-                
-                for index_sql in performance_indexes:
-                    conn.execute(text(index_sql))
-                
-                # Create views for common queries (optional optimization)
-                conn.execute(text("""
-                    CREATE OR REPLACE VIEW v_investor_summary AS
-                    SELECT 
-                        i.id,
-                        i.name,
-                        i.is_fund_manager,
-                        COUNT(t.id) as tranche_count,
-                        COALESCE(SUM(t.units), 0) as total_units,
-                        COALESCE(SUM(t.cumulative_fees_paid), 0) as total_fees_paid
-                    FROM investors i
-                    LEFT JOIN tranches t ON i.id = t.investor_id
-                    GROUP BY i.id, i.name, i.is_fund_manager
-                """))
-                
+                conn.execute(combined_sql)
                 conn.commit()
-                
         except Exception as e:
             st.error(f"❌ Error creating tables: {str(e)}")
     

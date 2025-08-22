@@ -2,7 +2,6 @@ import uuid
 from datetime import datetime, date
 from typing import List, Tuple, Optional, Dict
 import streamlit as st
-
 from config import *
 from models import Investor, Tranche, Transaction, FeeRecord
 
@@ -21,53 +20,53 @@ except Exception as e:
     DATA_HANDLER = EnhancedDataHandler()
 
 from utils import *
+from concurrent.futures import ThreadPoolExecutor
 
 class EnhancedFundManager:
-    """Enhanced Fund Manager với Supabase PostgreSQL storage"""
-    
-    def __init__(self):
+    def __init__(self, data_handler):
+        self.data_handler = data_handler
         self.investors: List[Investor] = []
         self.tranches: List[Tranche] = []
         self.transactions: List[Transaction] = []
         self.fee_records: List[FeeRecord] = []
-        self.data_handler = DATA_HANDLER
         self.load_data()
         self._ensure_fund_manager_exists()
     
     def load_data(self):
-        """Load tất cả dữ liệu từ database"""
+        """
+        Tối ưu hóa: Tải dữ liệu từ các bảng một cách song song
+        để giảm đáng kể thời gian chờ đợi.
+        """
+        # **SỬA ĐỔI QUAN TRỌNG**
+        if not (self.data_handler and self.data_handler.connected):
+            st.error("Cannot load data: No database connection.")
+            return
+
         try:
-            self.investors = self.data_handler.load_investors()
-            self.tranches = self.data_handler.load_tranches()
-            self.transactions = self.data_handler.load_transactions()
-            self.fee_records = self.data_handler.load_fee_records()
-            
-            # Show load statistics
-            if hasattr(self.data_handler, 'connected') and self.data_handler.connected:
-                st.sidebar.info(f"📊 Loaded: {len(self.investors)} investors, {len(self.tranches)} tranches, {len(self.fee_records)} fee records")
-                
+            with ThreadPoolExecutor(max_workers=4) as executor:
+                # Gửi yêu cầu tải 4 bảng cùng một lúc
+                future_investors = executor.submit(self.data_handler.load_investors)
+                future_tranches = executor.submit(self.data_handler.load_tranches)
+                future_transactions = executor.submit(self.data_handler.load_transactions)
+                future_fee_records = executor.submit(self.data_handler.load_fee_records)
+
+                # Chờ và nhận kết quả
+                self.investors = future_investors.result()
+                self.tranches = future_tranches.result()
+                self.transactions = future_transactions.result()
+                self.fee_records = future_fee_records.result()
+
         except Exception as e:
-            st.error(f"❌ Error loading data: {str(e)}")
-            # Initialize empty lists as fallback
-            self.investors = []
-            self.tranches = []
-            self.transactions = []
-            self.fee_records = []
+            st.error(f"❌ Error loading data in parallel: {str(e)}")
+            self.investors, self.tranches, self.transactions, self.fee_records = [], [], [], []
     
     def save_data(self) -> bool:
-        """Save tất cả dữ liệu to database"""
+        """Save tất cả dữ liệu qua data_handler."""
         try:
             success = self.data_handler.save_all_data_enhanced(
                 self.investors, self.tranches, self.transactions, self.fee_records
             )
-            
-            if success and hasattr(self.data_handler, 'connected') and self.data_handler.connected:
-                st.sidebar.success("💾 Data saved to database")
-            elif success:
-                st.sidebar.success("💾 Data saved to CSV")
-            
             return success
-            
         except Exception as e:
             st.error(f"❌ Error saving data: {str(e)}")
             return False
