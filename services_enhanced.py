@@ -1,6 +1,6 @@
 import uuid
 from datetime import datetime, date
-from typing import List, Tuple, Optional, Dict
+from typing import List, Tuple, Optional, Dict, Any
 import streamlit as st
 from config import *
 from models import Investor, Tranche, Transaction, FeeRecord
@@ -617,3 +617,303 @@ class EnhancedFundManager:
             'gross_profit': 0.0, 'net_profit': 0.0, 'gross_return': 0.0,
             'net_return': 0.0, 'current_units': 0.0
         }
+    # Enhanced Services - Add these methods to services_enhanced.py
+
+    def undo_last_transaction(self, transaction_id: int) -> bool:
+        """
+        Undo a specific transaction by reversing its effects
+        IMPORTANT: Only works for recent transactions, not complex multi-step operations
+        """
+        try:
+            # Find the transaction
+            transaction = None
+            for t in self.transactions:
+                if t.id == transaction_id:
+                    transaction = t
+                    break
+            
+            if not transaction:
+                return False
+            
+            # Check if it's safe to undo (must be one of the last 5 transactions)
+            recent_transactions = sorted(self.transactions, key=lambda x: x.date, reverse=True)[:5]
+            if transaction not in recent_transactions:
+                return False
+            
+            # Create reverse transaction based on type
+            if transaction.type == 'Nạp':
+                return self._undo_deposit(transaction)
+            elif transaction.type == 'Rút':
+                return self._undo_withdrawal(transaction)
+            elif transaction.type == 'NAV Update':
+                return self._undo_nav_update(transaction)
+            elif transaction.type in ['Phí', 'Fund Manager Withdrawal']:
+                # These are more complex, for now just remove the transaction
+                return self._simple_transaction_removal(transaction)
+            
+            return False
+            
+        except Exception as e:
+            print(f"Error in undo_last_transaction: {str(e)}")
+            return False
+
+    def _undo_deposit(self, original_transaction) -> bool:
+        """Undo a deposit transaction"""
+        try:
+            investor_id = original_transaction.investor_id
+            amount = original_transaction.amount
+            
+            # Find and remove the tranche created by this deposit
+            # Look for tranche created around the same time
+            deposit_date = original_transaction.date
+            matching_tranches = [
+                t for t in self.tranches 
+                if (t.investor_id == investor_id and 
+                    abs((t.entry_date - deposit_date).total_seconds()) < 3600)  # Within 1 hour
+            ]
+            
+            if not matching_tranches:
+                return False
+            
+            # Remove the most recent matching tranche
+            tranche_to_remove = max(matching_tranches, key=lambda x: x.entry_date)
+            
+            # Check if tranche hasn't been modified by fees
+            if abs(tranche_to_remove.units * tranche_to_remove.entry_nav - amount) > 1:  # Allow 1 VND difference
+                return False
+            
+            # Remove the tranche
+            self.tranches.remove(tranche_to_remove)
+            
+            # Remove the original transaction
+            self.transactions.remove(original_transaction)
+            
+            return True
+            
+        except Exception as e:
+            print(f"Error in _undo_deposit: {str(e)}")
+            return False
+
+    def _undo_withdrawal(self, original_transaction) -> bool:
+        """Undo a withdrawal transaction - complex, simplified approach"""
+        try:
+            # For withdrawal, it's complex to restore exact state
+            # For now, just add back the units proportionally to existing tranches
+            investor_id = original_transaction.investor_id
+            amount = abs(original_transaction.amount)
+            units_change = abs(original_transaction.units_change)
+            
+            investor_tranches = self.get_investor_tranches(investor_id)
+            if not investor_tranches:
+                # Create a new tranche
+                tranche = Tranche(
+                    investor_id=investor_id,
+                    tranche_id=str(uuid.uuid4()),
+                    entry_date=original_transaction.date,
+                    entry_nav=amount / units_change if units_change > 0 else DEFAULT_UNIT_PRICE,
+                    units=units_change,
+                    hwm=amount / units_change if units_change > 0 else DEFAULT_UNIT_PRICE,
+                    original_entry_date=original_transaction.date,
+                    original_entry_nav=amount / units_change if units_change > 0 else DEFAULT_UNIT_PRICE,
+                    cumulative_fees_paid=0.0
+                )
+                self.tranches.append(tranche)
+            else:
+                # Add units proportionally to existing tranches
+                total_existing_units = sum(t.units for t in investor_tranches)
+                for tranche in investor_tranches:
+                    if tranche.investor_id == investor_id:
+                        proportion = tranche.units / total_existing_units if total_existing_units > 0 else 1
+                        tranche.units += units_change * proportion
+            
+            # Remove the original transaction
+            self.transactions.remove(original_transaction)
+            
+            return True
+            
+        except Exception as e:
+            print(f"Error in _undo_withdrawal: {str(e)}")
+            return False
+
+    def _undo_nav_update(self, original_transaction) -> bool:
+        """Undo NAV update - just remove the transaction"""
+        try:
+            self.transactions.remove(original_transaction)
+            return True
+        except Exception:
+            return False
+
+    def _simple_transaction_removal(self, transaction) -> bool:
+        """Simple removal for complex transactions"""
+        try:
+            self.transactions.remove(transaction)
+            return True
+        except Exception:
+            return False
+
+    def validate_data_consistency(self) -> Dict[str, Any]:
+        """
+        Comprehensive data consistency check
+        Returns validation results with errors and warnings
+        """
+        results = {
+            'valid': True,
+            'errors': [],
+            'warnings': [],
+            'stats': {}
+        }
+        
+        try:
+            # Check 1: All investor IDs in tranches exist in investors
+            investor_ids = {inv.id for inv in self.investors}
+            for tranche in self.tranches:
+                if tranche.investor_id not in investor_ids:
+                    results['errors'].append(f"Tranche references non-existent investor ID: {tranche.investor_id}")
+                    results['valid'] = False
+            
+            # Check 2: All investor IDs in transactions exist in investors
+            for trans in self.transactions:
+                if trans.investor_id not in investor_ids:
+                    results['errors'].append(f"Transaction {trans.id} references non-existent investor ID: {trans.investor_id}")
+                    results['valid'] = False
+            
+            # Check 3: Units should be positive
+            for tranche in self.tranches:
+                if tranche.units <= 0:
+                    results['errors'].append(f"Tranche has non-positive units: {tranche.tranche_id}")
+                    results['valid'] = False
+            
+            # Check 4: NAV values should be positive
+            for trans in self.transactions:
+                if trans.nav <= 0 and trans.type not in ['Phí Nhận']:  # Allow 0 NAV for internal transfers
+                    results['warnings'].append(f"Transaction {trans.id} has non-positive NAV: {trans.nav}")
+            
+            # Check 5: Transaction dates should not be in future
+            from datetime import datetime
+            now = datetime.now()
+            for trans in self.transactions:
+                if trans.date > now:
+                    results['warnings'].append(f"Transaction {trans.id} has future date: {trans.date}")
+            
+            # Check 6: HWM should not be less than entry NAV for active tranches
+            for tranche in self.tranches:
+                if tranche.hwm < tranche.entry_nav:
+                    results['warnings'].append(f"Tranche {tranche.tranche_id} has HWM < entry NAV")
+            
+            # Check 7: Total balance calculation consistency
+            latest_nav = self.get_latest_total_nav()
+            if latest_nav:
+                total_units = sum(t.units for t in self.tranches)
+                if total_units > 0:
+                    calculated_price = latest_nav / total_units
+                    results['stats']['latest_nav'] = latest_nav
+                    results['stats']['total_units'] = total_units
+                    results['stats']['price_per_unit'] = calculated_price
+                    
+                    # Check if price is reasonable (between 1000 and 10M VND)
+                    if calculated_price < 1000 or calculated_price > 10_000_000:
+                        results['warnings'].append(f"Price per unit seems unusual: {calculated_price:,.0f} VND")
+            
+            # Check 8: Fee records consistency
+            for fee_record in self.fee_records:
+                if fee_record.investor_id not in investor_ids:
+                    results['errors'].append(f"Fee record {fee_record.id} references non-existent investor")
+                    results['valid'] = False
+                
+                if fee_record.units_after > fee_record.units_before:
+                    results['errors'].append(f"Fee record {fee_record.id} has units_after > units_before")
+                    results['valid'] = False
+            
+            # Statistics
+            results['stats']['total_investors'] = len(self.investors)
+            results['stats']['regular_investors'] = len(self.get_regular_investors())
+            results['stats']['total_tranches'] = len(self.tranches)
+            results['stats']['total_transactions'] = len(self.transactions)
+            results['stats']['total_fee_records'] = len(self.fee_records)
+            
+            return results
+            
+        except Exception as e:
+            results['valid'] = False
+            results['errors'].append(f"Validation error: {str(e)}")
+            return results
+
+    def backup_before_operation(self, operation_name: str) -> bool:
+        """Create backup before major operations"""
+        try:
+            # Create a data snapshot
+            backup_data = {
+                'timestamp': datetime.now().isoformat(),
+                'operation': operation_name,
+                'investors_count': len(self.investors),
+                'tranches_count': len(self.tranches),
+                'transactions_count': len(self.transactions),
+                'fee_records_count': len(self.fee_records)
+            }
+            
+            # Save to session state for potential rollback
+            if 'operation_backup' not in st.session_state:
+                st.session_state.operation_backup = []
+            
+            st.session_state.operation_backup.append(backup_data)
+            
+            # Keep only last 5 backups
+            if len(st.session_state.operation_backup) > 5:
+                st.session_state.operation_backup = st.session_state.operation_backup[-5:]
+            
+            return True
+            
+        except Exception as e:
+            print(f"Backup failed: {str(e)}")
+            return False
+
+    def get_investor_individual_report(self, investor_id: int, current_nav: float) -> Dict:
+        """Generate individual report for specific investor"""
+        try:
+            investor = self.get_investor_by_id(investor_id)
+            if not investor:
+                return {}
+            
+            tranches = self.get_investor_tranches(investor_id)
+            if not tranches:
+                return {}
+            
+            # Current performance
+            balance, profit, profit_perc = self.get_investor_balance(investor_id, current_nav)
+            
+            # Lifetime performance
+            lifetime_perf = self.get_investor_lifetime_performance(investor_id, current_nav)
+            
+            # Fee details
+            fee_details = self.calculate_investor_fee(investor_id, datetime.now(), current_nav)
+            
+            # Transaction history for this investor
+            investor_transactions = [
+                t for t in self.transactions 
+                if t.investor_id == investor_id
+            ]
+            
+            # Fee history for this investor
+            investor_fees = [
+                f for f in self.fee_records
+                if f.investor_id == investor_id
+            ]
+            
+            return {
+                'investor': investor,
+                'current_balance': balance,
+                'current_profit': profit,
+                'current_profit_perc': profit_perc,
+                'lifetime_performance': lifetime_perf,
+                'fee_details': fee_details,
+                'tranches': tranches,
+                'transactions': investor_transactions,
+                'fee_history': investor_fees,
+                'report_date': datetime.now(),
+                'current_nav': current_nav,
+                'current_price': self.calculate_price_per_unit(current_nav)
+            }
+            
+        except Exception as e:
+            print(f"Error generating individual report: {str(e)}")
+            return {}

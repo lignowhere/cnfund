@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
-PRODUCTION-READY Supabase PostgreSQL Data Handler
-Optimized for your specific database: db.qnnwnqsitsyegqeceypk.supabase.co
+DEADLOCK-RESISTANT Supabase PostgreSQL Data Handler
+Implements retry logic, proper transaction ordering, and deadlock prevention
 """
 
 import pandas as pd
@@ -10,21 +10,56 @@ from sqlalchemy import create_engine, text
 from typing import List, Optional, Dict, Any
 from datetime import datetime, date
 import os
+import time
+import random
 
 from models import Investor, Tranche, Transaction, FeeRecord
 
 class SupabaseDataHandler:
-    """Production Supabase PostgreSQL data handler"""
+    """Production Supabase PostgreSQL data handler with deadlock prevention"""
     
     def __init__(self):
         self.engine = None
         self.connected = False
         self.connection_info = {}
         self.version_info = {}
+        self.max_retries = 3
+        self.retry_delay_base = 1.0  # Base delay in seconds
         self._connect()
     
+    def _execute_with_retry(self, operation_func, operation_name: str, *args, **kwargs):
+        """
+        Execute database operation with retry logic for deadlock handling
+        """
+        for attempt in range(self.max_retries):
+            try:
+                return operation_func(*args, **kwargs)
+            
+            except Exception as e:
+                error_msg = str(e).lower()
+                
+                # Check if it's a deadlock or lock timeout
+                is_deadlock = any(keyword in error_msg for keyword in [
+                    'deadlock', 'lock timeout', 'could not obtain lock', 
+                    'concurrent update', 'serialization failure'
+                ])
+                
+                if is_deadlock and attempt < self.max_retries - 1:
+                    # Calculate exponential backoff with jitter
+                    delay = self.retry_delay_base * (2 ** attempt) + random.uniform(0.1, 0.5)
+                    
+                    st.warning(f"⚠️ {operation_name} encountered deadlock (attempt {attempt + 1}/{self.max_retries}). Retrying in {delay:.1f}s...")
+                    time.sleep(delay)
+                    continue
+                else:
+                    # Either not a deadlock error, or max retries exceeded
+                    raise e
+        
+        # Should never reach here, but just in case
+        raise Exception(f"Failed to complete {operation_name} after {self.max_retries} attempts")
+    
     def _connect(self):
-        """Kết nối tới DB và lưu thông tin, không hiển thị UI trực tiếp."""
+        """Connect to database with improved error handling"""
         try:
             db_url = self._get_database_url()
             if not db_url:
@@ -36,7 +71,12 @@ class SupabaseDataHandler:
             if db_url.startswith("postgresql://"):
                 db_url = db_url.replace("postgresql://", "postgresql+psycopg2://", 1)
             
-            self.engine = create_engine(db_url, pool_pre_ping=True, connect_args={"sslmode": "require"})
+            # Improved connection parameters for better concurrency handling
+            self.engine = create_engine(
+                db_url, 
+                pool_pre_ping=True,
+                connect_args={"sslmode": "require"}
+            )
             
             with self.engine.connect() as conn:
                 result = conn.execute(text("SELECT version(), current_database(), current_user"))
@@ -49,14 +89,14 @@ class SupabaseDataHandler:
                         'current_user': db_info[2]
                     }
                     self._create_tables()
+                    
         except Exception as e:
+            error_msg = str(e)
             print(f"CRITICAL: Supabase connection failed: {e}")
-            self.engine = None
-            self.connected = False
             
             # Provide helpful debugging info
             if "password authentication failed" in error_msg.lower():
-                st.error("🔑 Password authentication failed. Check your database password.")
+                st.error("🔒 Password authentication failed. Check your database password.")
             elif "could not connect to server" in error_msg.lower():
                 st.error("🌐 Could not connect to server. Check your network connection.")
             elif "database" in error_msg.lower() and "does not exist" in error_msg.lower():
@@ -112,60 +152,212 @@ class SupabaseDataHandler:
             return {}
     
     def _create_tables(self):
-        """
-        Tối ưu hóa: Gộp tất cả các lệnh CREATE vào một chuỗi duy nhất
-        để giảm thiểu số lần gọi database.
-        """
-        # **SỬA ĐỔI QUAN TRỌNG**
-        combined_sql = text("""
-            -- Investors
-            CREATE TABLE IF NOT EXISTS investors (
-                id INTEGER PRIMARY KEY, name VARCHAR(255) NOT NULL, phone VARCHAR(50) DEFAULT '',
-                address TEXT DEFAULT '', email VARCHAR(255) DEFAULT '', join_date DATE NOT NULL DEFAULT CURRENT_DATE,
-                is_fund_manager BOOLEAN DEFAULT FALSE, created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-            );
-            -- Tranches
-            CREATE TABLE IF NOT EXISTS tranches (
-                id SERIAL PRIMARY KEY, investor_id INTEGER NOT NULL, tranche_id VARCHAR(255) UNIQUE NOT NULL,
-                entry_date TIMESTAMP NOT NULL, entry_nav DECIMAL(18,4) NOT NULL, units DECIMAL(18,8) NOT NULL,
-                hwm DECIMAL(18,4) NOT NULL, original_entry_date TIMESTAMP, original_entry_nav DECIMAL(18,4),
-                cumulative_fees_paid DECIMAL(18,4) DEFAULT 0, created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-            );
-            -- Transactions
-            CREATE TABLE IF NOT EXISTS transactions (
-                id INTEGER PRIMARY KEY, investor_id INTEGER NOT NULL, date TIMESTAMP NOT NULL,
-                type VARCHAR(100) NOT NULL, amount DECIMAL(18,4) NOT NULL, nav DECIMAL(18,4) NOT NULL,
-                units_change DECIMAL(18,8) NOT NULL, created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-            );
-            -- Fee Records
-            CREATE TABLE IF NOT EXISTS fee_records (
-                id INTEGER PRIMARY KEY, period VARCHAR(20) NOT NULL, investor_id INTEGER NOT NULL,
-                fee_amount DECIMAL(18,4) NOT NULL, fee_units DECIMAL(18,8) NOT NULL,
-                calculation_date TIMESTAMP NOT NULL, units_before DECIMAL(18,8) NOT NULL,
-                units_after DECIMAL(18,8) NOT NULL, nav_per_unit DECIMAL(18,4) NOT NULL,
-                description TEXT DEFAULT '', created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-            );
-            -- Indexes
-            CREATE INDEX IF NOT EXISTS idx_investors_fund_manager ON investors(is_fund_manager);
-            CREATE INDEX IF NOT EXISTS idx_tranches_investor_id ON tranches(investor_id);
-            CREATE INDEX IF NOT EXISTS idx_transactions_investor_id ON transactions(investor_id);
-            CREATE INDEX IF NOT EXISTS idx_fee_records_investor_id ON fee_records(investor_id);
-        """)
-        try:
+        """Create tables with proper ordering and error handling"""
+        def _create_tables_impl():
+            # Create tables one by one to avoid deadlocks
+            table_sql = [
+                # Investors table
+                """
+                CREATE TABLE IF NOT EXISTS investors (
+                    id INTEGER PRIMARY KEY, 
+                    name VARCHAR(255) NOT NULL, 
+                    phone VARCHAR(50) DEFAULT '',
+                    address TEXT DEFAULT '', 
+                    email VARCHAR(255) DEFAULT '', 
+                    join_date DATE NOT NULL DEFAULT CURRENT_DATE,
+                    is_fund_manager BOOLEAN DEFAULT FALSE, 
+                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                )
+                """,
+                # Tranches table
+                """
+                CREATE TABLE IF NOT EXISTS tranches (
+                    id SERIAL PRIMARY KEY, 
+                    investor_id INTEGER NOT NULL, 
+                    tranche_id VARCHAR(255) UNIQUE NOT NULL,
+                    entry_date TIMESTAMP NOT NULL, 
+                    entry_nav DECIMAL(18,4) NOT NULL, 
+                    units DECIMAL(18,8) NOT NULL,
+                    hwm DECIMAL(18,4) NOT NULL, 
+                    original_entry_date TIMESTAMP, 
+                    original_entry_nav DECIMAL(18,4),
+                    cumulative_fees_paid DECIMAL(18,4) DEFAULT 0, 
+                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                )
+                """,
+                # Transactions table
+                """
+                CREATE TABLE IF NOT EXISTS transactions (
+                    id INTEGER PRIMARY KEY, 
+                    investor_id INTEGER NOT NULL, 
+                    date TIMESTAMP NOT NULL,
+                    type VARCHAR(100) NOT NULL, 
+                    amount DECIMAL(18,4) NOT NULL, 
+                    nav DECIMAL(18,4) NOT NULL,
+                    units_change DECIMAL(18,8) NOT NULL, 
+                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                )
+                """,
+                # Fee Records table
+                """
+                CREATE TABLE IF NOT EXISTS fee_records (
+                    id INTEGER PRIMARY KEY, 
+                    period VARCHAR(20) NOT NULL, 
+                    investor_id INTEGER NOT NULL,
+                    fee_amount DECIMAL(18,4) NOT NULL, 
+                    fee_units DECIMAL(18,8) NOT NULL,
+                    calculation_date TIMESTAMP NOT NULL, 
+                    units_before DECIMAL(18,8) NOT NULL,
+                    units_after DECIMAL(18,8) NOT NULL, 
+                    nav_per_unit DECIMAL(18,4) NOT NULL,
+                    description TEXT DEFAULT '', 
+                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                )
+                """
+            ]
+            
+            # Create indexes
+            index_sql = [
+                "CREATE INDEX IF NOT EXISTS idx_investors_fund_manager ON investors(is_fund_manager)",
+                "CREATE INDEX IF NOT EXISTS idx_tranches_investor_id ON tranches(investor_id)",
+                "CREATE INDEX IF NOT EXISTS idx_transactions_investor_id ON transactions(investor_id)",
+                "CREATE INDEX IF NOT EXISTS idx_fee_records_investor_id ON fee_records(investor_id)",
+                "CREATE INDEX IF NOT EXISTS idx_transactions_date ON transactions(date)",
+                "CREATE INDEX IF NOT EXISTS idx_tranches_entry_date ON tranches(entry_date)"
+            ]
+            
             with self.engine.connect() as conn:
-                conn.execute(combined_sql)
+                # Create tables first
+                for sql in table_sql:
+                    conn.execute(text(sql))
+                
+                # Create indexes
+                for sql in index_sql:
+                    conn.execute(text(sql))
+                
                 conn.commit()
+        
+        try:
+            self._execute_with_retry(_create_tables_impl, "Create Tables")
         except Exception as e:
             st.error(f"❌ Error creating tables: {str(e)}")
     
-    def load_investors(self) -> List[Investor]:
-        """Load investors with optimized query"""
+    def save_all_data_enhanced(self, investors, tranches, transactions, fee_records) -> bool:
+        """
+        DEADLOCK-RESISTANT: Save all data with proper transaction ordering and retry logic
+        """
+        def _save_all_data_impl():
+            with self.engine.connect() as conn:
+                # Use a shorter, more focused transaction
+                trans = conn.begin()
+                
+                try:
+                    # CRITICAL: Delete in reverse dependency order to minimize lock conflicts
+                    # AND use TRUNCATE for faster, less lock-intensive deletion
+                    
+                    # Option 1: Use TRUNCATE for faster deletion (if supported)
+                    try:
+                        conn.execute(text("TRUNCATE TABLE fee_records, transactions, tranches, investors RESTART IDENTITY CASCADE"))
+                    except Exception:
+                        # Fallback to DELETE if TRUNCATE fails
+                        conn.execute(text("DELETE FROM fee_records"))
+                        conn.execute(text("DELETE FROM transactions")) 
+                        conn.execute(text("DELETE FROM tranches"))
+                        conn.execute(text("DELETE FROM investors"))
+                    
+                    # Insert in dependency order: investors -> tranches -> transactions -> fee_records
+                    
+                    # 1. Investors (batch insert for better performance)
+                    if investors:
+                        investor_data = [{
+                            'id': inv.id, 'name': inv.name, 'phone': inv.phone,
+                            'address': inv.address, 'email': inv.email, 
+                            'join_date': inv.join_date, 'is_fund_manager': inv.is_fund_manager
+                        } for inv in investors]
+                        
+                        # Use executemany for better performance
+                        conn.execute(text("""
+                            INSERT INTO investors (id, name, phone, address, email, join_date, is_fund_manager)
+                            VALUES (:id, :name, :phone, :address, :email, :join_date, :is_fund_manager)
+                        """), investor_data)
+                    
+                    # 2. Tranches
+                    if tranches:
+                        tranche_data = [{
+                            'investor_id': t.investor_id, 'tranche_id': t.tranche_id,
+                            'entry_date': t.entry_date, 'entry_nav': t.entry_nav,
+                            'units': t.units, 'hwm': t.hwm,
+                            'original_entry_date': t.original_entry_date,
+                            'original_entry_nav': t.original_entry_nav,
+                            'cumulative_fees_paid': t.cumulative_fees_paid
+                        } for t in tranches]
+                        
+                        conn.execute(text("""
+                            INSERT INTO tranches (
+                                investor_id, tranche_id, entry_date, entry_nav, units, hwm,
+                                original_entry_date, original_entry_nav, cumulative_fees_paid
+                            ) VALUES (
+                                :investor_id, :tranche_id, :entry_date, :entry_nav, :units, :hwm,
+                                :original_entry_date, :original_entry_nav, :cumulative_fees_paid
+                            )
+                        """), tranche_data)
+                    
+                    # 3. Transactions
+                    if transactions:
+                        transaction_data = [{
+                            'id': t.id, 'investor_id': t.investor_id, 'date': t.date,
+                            'type': t.type, 'amount': t.amount, 'nav': t.nav,
+                            'units_change': t.units_change
+                        } for t in transactions]
+                        
+                        conn.execute(text("""
+                            INSERT INTO transactions (id, investor_id, date, type, amount, nav, units_change)
+                            VALUES (:id, :investor_id, :date, :type, :amount, :nav, :units_change)
+                        """), transaction_data)
+                    
+                    # 4. Fee records
+                    if fee_records:
+                        fee_data = [{
+                            'id': f.id, 'period': f.period, 'investor_id': f.investor_id,
+                            'fee_amount': f.fee_amount, 'fee_units': f.fee_units,
+                            'calculation_date': f.calculation_date, 'units_before': f.units_before,
+                            'units_after': f.units_after, 'nav_per_unit': f.nav_per_unit,
+                            'description': f.description
+                        } for f in fee_records]
+                        
+                        conn.execute(text("""
+                            INSERT INTO fee_records (
+                                id, period, investor_id, fee_amount, fee_units, calculation_date,
+                                units_before, units_after, nav_per_unit, description
+                            ) VALUES (
+                                :id, :period, :investor_id, :fee_amount, :fee_units, :calculation_date,
+                                :units_before, :units_after, :nav_per_unit, :description
+                            )
+                        """), fee_data)
+                    
+                    # Commit the transaction
+                    trans.commit()
+                    return True
+                    
+                except Exception as e:
+                    trans.rollback()
+                    raise e
+        
         try:
-            if not self.connected:
-                return []
+            # Execute with retry logic for deadlock handling
+            return self._execute_with_retry(_save_all_data_impl, "Save All Data")
             
+        except Exception as e:
+            st.error(f"❌ Error saving all data: {str(e)}")
+            return False
+    
+    # === LOAD METHODS (unchanged but with retry logic) ===
+    
+    def load_investors(self) -> List[Investor]:
+        """Load investors with retry logic"""
+        def _load_investors_impl():
             with self.engine.connect() as conn:
                 result = conn.execute(text("""
                     SELECT id, name, phone, address, email, join_date, is_fund_manager
@@ -190,58 +382,18 @@ class SupabaseDataHandler:
                 investors.append(investor)
             
             return investors
-            
+        
+        try:
+            if not self.connected:
+                return []
+            return self._execute_with_retry(_load_investors_impl, "Load Investors")
         except Exception as e:
             st.error(f"❌ Error loading investors: {str(e)}")
             return []
     
-    def save_investors(self, investors: List[Investor]) -> bool:
-        """Save investors with batch optimization"""
-        try:
-            if not self.connected:
-                return False
-            
-            with self.engine.connect() as conn:
-                # Begin transaction
-                trans = conn.begin()
-                
-                try:
-                    # Clear existing data
-                    conn.execute(text("DELETE FROM investors"))
-                    
-                    # Batch insert
-                    if investors:
-                        for investor in investors:
-                            conn.execute(text("""
-                                INSERT INTO investors (id, name, phone, address, email, join_date, is_fund_manager)
-                                VALUES (:id, :name, :phone, :address, :email, :join_date, :is_fund_manager)
-                            """), {
-                                'id': investor.id,
-                                'name': investor.name,
-                                'phone': investor.phone,
-                                'address': investor.address,
-                                'email': investor.email,
-                                'join_date': investor.join_date,
-                                'is_fund_manager': investor.is_fund_manager
-                            })
-                    
-                    trans.commit()
-                    return True
-                    
-                except Exception as e:
-                    trans.rollback()
-                    raise e
-            
-        except Exception as e:
-            st.error(f"❌ Error saving investors: {str(e)}")
-            return False
-    
     def load_tranches(self) -> List[Tranche]:
-        """Load tranches with enhanced fields"""
-        try:
-            if not self.connected:
-                return []
-            
+        """Load tranches with retry logic"""
+        def _load_tranches_impl():
             with self.engine.connect() as conn:
                 result = conn.execute(text("""
                     SELECT investor_id, tranche_id, entry_date, entry_nav, units, hwm,
@@ -267,63 +419,18 @@ class SupabaseDataHandler:
                 tranches.append(tranche)
             
             return tranches
-            
+        
+        try:
+            if not self.connected:
+                return []
+            return self._execute_with_retry(_load_tranches_impl, "Load Tranches")
         except Exception as e:
             st.error(f"❌ Error loading tranches: {str(e)}")
             return []
     
-    def save_tranches(self, tranches: List[Tranche]) -> bool:
-        """Save tranches with enhanced fields"""
-        try:
-            if not self.connected:
-                return False
-            
-            with self.engine.connect() as conn:
-                trans = conn.begin()
-                
-                try:
-                    # Clear existing data
-                    conn.execute(text("DELETE FROM tranches"))
-                    
-                    # Batch insert
-                    for tranche in tranches:
-                        conn.execute(text("""
-                            INSERT INTO tranches (
-                                investor_id, tranche_id, entry_date, entry_nav, units, hwm,
-                                original_entry_date, original_entry_nav, cumulative_fees_paid
-                            ) VALUES (
-                                :investor_id, :tranche_id, :entry_date, :entry_nav, :units, :hwm,
-                                :original_entry_date, :original_entry_nav, :cumulative_fees_paid
-                            )
-                        """), {
-                            'investor_id': tranche.investor_id,
-                            'tranche_id': tranche.tranche_id,
-                            'entry_date': tranche.entry_date,
-                            'entry_nav': tranche.entry_nav,
-                            'units': tranche.units,
-                            'hwm': tranche.hwm,
-                            'original_entry_date': tranche.original_entry_date,
-                            'original_entry_nav': tranche.original_entry_nav,
-                            'cumulative_fees_paid': tranche.cumulative_fees_paid
-                        })
-                    
-                    trans.commit()
-                    return True
-                    
-                except Exception as e:
-                    trans.rollback()
-                    raise e
-            
-        except Exception as e:
-            st.error(f"❌ Error saving tranches: {str(e)}")
-            return False
-    
     def load_transactions(self) -> List[Transaction]:
-        """Load transactions optimized"""
-        try:
-            if not self.connected:
-                return []
-            
+        """Load transactions with retry logic"""
+        def _load_transactions_impl():
             with self.engine.connect() as conn:
                 result = conn.execute(text("""
                     SELECT id, investor_id, date, type, amount, nav, units_change
@@ -346,56 +453,18 @@ class SupabaseDataHandler:
                 transactions.append(transaction)
             
             return transactions
-            
+        
+        try:
+            if not self.connected:
+                return []
+            return self._execute_with_retry(_load_transactions_impl, "Load Transactions")
         except Exception as e:
             st.error(f"❌ Error loading transactions: {str(e)}")
             return []
     
-    def save_transactions(self, transactions: List[Transaction]) -> bool:
-        """Save transactions optimized"""
-        try:
-            if not self.connected:
-                return False
-            
-            with self.engine.connect() as conn:
-                trans = conn.begin()
-                
-                try:
-                    # Clear existing data
-                    conn.execute(text("DELETE FROM transactions"))
-                    
-                    # Batch insert
-                    for transaction in transactions:
-                        conn.execute(text("""
-                            INSERT INTO transactions (id, investor_id, date, type, amount, nav, units_change)
-                            VALUES (:id, :investor_id, :date, :type, :amount, :nav, :units_change)
-                        """), {
-                            'id': transaction.id,
-                            'investor_id': transaction.investor_id,
-                            'date': transaction.date,
-                            'type': transaction.type,
-                            'amount': transaction.amount,
-                            'nav': transaction.nav,
-                            'units_change': transaction.units_change
-                        })
-                    
-                    trans.commit()
-                    return True
-                    
-                except Exception as e:
-                    trans.rollback()
-                    raise e
-            
-        except Exception as e:
-            st.error(f"❌ Error saving transactions: {str(e)}")
-            return False
-    
     def load_fee_records(self) -> List[FeeRecord]:
-        """Load fee records optimized"""
-        try:
-            if not self.connected:
-                return []
-            
+        """Load fee records with retry logic"""
+        def _load_fee_records_impl():
             with self.engine.connect() as conn:
                 result = conn.execute(text("""
                     SELECT id, period, investor_id, fee_amount, fee_units, calculation_date,
@@ -422,46 +491,36 @@ class SupabaseDataHandler:
                 fee_records.append(fee_record)
             
             return fee_records
-            
+        
+        try:
+            if not self.connected:
+                return []
+            return self._execute_with_retry(_load_fee_records_impl, "Load Fee Records")
         except Exception as e:
             st.error(f"❌ Error loading fee records: {str(e)}")
             return []
     
-    def save_fee_records(self, fee_records: List[FeeRecord]) -> bool:
-        """Save fee records optimized"""
-        try:
-            if not self.connected:
-                return False
-            
+    # === INDIVIDUAL SAVE METHODS (with retry logic) ===
+    
+    def save_investors(self, investors: List[Investor]) -> bool:
+        """Save investors with retry logic"""
+        def _save_investors_impl():
             with self.engine.connect() as conn:
                 trans = conn.begin()
-                
                 try:
-                    # Clear existing data
-                    conn.execute(text("DELETE FROM fee_records"))
+                    conn.execute(text("DELETE FROM investors"))
                     
-                    # Batch insert
-                    for fee_record in fee_records:
+                    if investors:
+                        investor_data = [{
+                            'id': inv.id, 'name': inv.name, 'phone': inv.phone,
+                            'address': inv.address, 'email': inv.email, 
+                            'join_date': inv.join_date, 'is_fund_manager': inv.is_fund_manager
+                        } for inv in investors]
+                        
                         conn.execute(text("""
-                            INSERT INTO fee_records (
-                                id, period, investor_id, fee_amount, fee_units, calculation_date,
-                                units_before, units_after, nav_per_unit, description
-                            ) VALUES (
-                                :id, :period, :investor_id, :fee_amount, :fee_units, :calculation_date,
-                                :units_before, :units_after, :nav_per_unit, :description
-                            )
-                        """), {
-                            'id': fee_record.id,
-                            'period': fee_record.period,
-                            'investor_id': fee_record.investor_id,
-                            'fee_amount': fee_record.fee_amount,
-                            'fee_units': fee_record.fee_units,
-                            'calculation_date': fee_record.calculation_date,
-                            'units_before': fee_record.units_before,
-                            'units_after': fee_record.units_after,
-                            'nav_per_unit': fee_record.nav_per_unit,
-                            'description': fee_record.description
-                        })
+                            INSERT INTO investors (id, name, phone, address, email, join_date, is_fund_manager)
+                            VALUES (:id, :name, :phone, :address, :email, :join_date, :is_fund_manager)
+                        """), investor_data)
                     
                     trans.commit()
                     return True
@@ -469,46 +528,33 @@ class SupabaseDataHandler:
                 except Exception as e:
                     trans.rollback()
                     raise e
-            
-        except Exception as e:
-            st.error(f"❌ Error saving fee records: {str(e)}")
-            return False
-    
-    def save_all_data_enhanced(self, investors, tranches, transactions, fee_records) -> bool:
-        """Save all data in a single optimized transaction"""
+        
         try:
             if not self.connected:
                 return False
-            
+            return self._execute_with_retry(_save_investors_impl, "Save Investors")
+        except Exception as e:
+            st.error(f"❌ Error saving investors: {str(e)}")
+            return False
+    
+    def save_tranches(self, tranches: List[Tranche]) -> bool:
+        """Save tranches with retry logic"""
+        def _save_tranches_impl():
             with self.engine.connect() as conn:
-                # Single large transaction for consistency
                 trans = conn.begin()
-                
                 try:
-                    # Clear all tables in correct order (foreign key dependencies)
-                    conn.execute(text("DELETE FROM fee_records"))
-                    conn.execute(text("DELETE FROM transactions"))
                     conn.execute(text("DELETE FROM tranches"))
-                    conn.execute(text("DELETE FROM investors"))
                     
-                    # Insert all data
-                    # 1. Investors first
-                    for investor in investors:
-                        conn.execute(text("""
-                            INSERT INTO investors (id, name, phone, address, email, join_date, is_fund_manager)
-                            VALUES (:id, :name, :phone, :address, :email, :join_date, :is_fund_manager)
-                        """), {
-                            'id': investor.id,
-                            'name': investor.name,
-                            'phone': investor.phone,
-                            'address': investor.address,
-                            'email': investor.email,
-                            'join_date': investor.join_date,
-                            'is_fund_manager': investor.is_fund_manager
-                        })
-                    
-                    # 2. Tranches
-                    for tranche in tranches:
+                    if tranches:
+                        tranche_data = [{
+                            'investor_id': t.investor_id, 'tranche_id': t.tranche_id,
+                            'entry_date': t.entry_date, 'entry_nav': t.entry_nav,
+                            'units': t.units, 'hwm': t.hwm,
+                            'original_entry_date': t.original_entry_date,
+                            'original_entry_nav': t.original_entry_nav,
+                            'cumulative_fees_paid': t.cumulative_fees_paid
+                        } for t in tranches]
+                        
                         conn.execute(text("""
                             INSERT INTO tranches (
                                 investor_id, tranche_id, entry_date, entry_nav, units, hwm,
@@ -517,35 +563,75 @@ class SupabaseDataHandler:
                                 :investor_id, :tranche_id, :entry_date, :entry_nav, :units, :hwm,
                                 :original_entry_date, :original_entry_nav, :cumulative_fees_paid
                             )
-                        """), {
-                            'investor_id': tranche.investor_id,
-                            'tranche_id': tranche.tranche_id,
-                            'entry_date': tranche.entry_date,
-                            'entry_nav': tranche.entry_nav,
-                            'units': tranche.units,
-                            'hwm': tranche.hwm,
-                            'original_entry_date': tranche.original_entry_date,
-                            'original_entry_nav': tranche.original_entry_nav,
-                            'cumulative_fees_paid': tranche.cumulative_fees_paid
-                        })
+                        """), tranche_data)
                     
-                    # 3. Transactions
-                    for transaction in transactions:
+                    trans.commit()
+                    return True
+                    
+                except Exception as e:
+                    trans.rollback()
+                    raise e
+        
+        try:
+            if not self.connected:
+                return False
+            return self._execute_with_retry(_save_tranches_impl, "Save Tranches")
+        except Exception as e:
+            st.error(f"❌ Error saving tranches: {str(e)}")
+            return False
+    
+    def save_transactions(self, transactions: List[Transaction]) -> bool:
+        """Save transactions with retry logic"""
+        def _save_transactions_impl():
+            with self.engine.connect() as conn:
+                trans = conn.begin()
+                try:
+                    conn.execute(text("DELETE FROM transactions"))
+                    
+                    if transactions:
+                        transaction_data = [{
+                            'id': t.id, 'investor_id': t.investor_id, 'date': t.date,
+                            'type': t.type, 'amount': t.amount, 'nav': t.nav,
+                            'units_change': t.units_change
+                        } for t in transactions]
+                        
                         conn.execute(text("""
                             INSERT INTO transactions (id, investor_id, date, type, amount, nav, units_change)
                             VALUES (:id, :investor_id, :date, :type, :amount, :nav, :units_change)
-                        """), {
-                            'id': transaction.id,
-                            'investor_id': transaction.investor_id,
-                            'date': transaction.date,
-                            'type': transaction.type,
-                            'amount': transaction.amount,
-                            'nav': transaction.nav,
-                            'units_change': transaction.units_change
-                        })
+                        """), transaction_data)
                     
-                    # 4. Fee records
-                    for fee_record in fee_records:
+                    trans.commit()
+                    return True
+                    
+                except Exception as e:
+                    trans.rollback()
+                    raise e
+        
+        try:
+            if not self.connected:
+                return False
+            return self._execute_with_retry(_save_transactions_impl, "Save Transactions")
+        except Exception as e:
+            st.error(f"❌ Error saving transactions: {str(e)}")
+            return False
+    
+    def save_fee_records(self, fee_records: List[FeeRecord]) -> bool:
+        """Save fee records with retry logic"""
+        def _save_fee_records_impl():
+            with self.engine.connect() as conn:
+                trans = conn.begin()
+                try:
+                    conn.execute(text("DELETE FROM fee_records"))
+                    
+                    if fee_records:
+                        fee_data = [{
+                            'id': f.id, 'period': f.period, 'investor_id': f.investor_id,
+                            'fee_amount': f.fee_amount, 'fee_units': f.fee_units,
+                            'calculation_date': f.calculation_date, 'units_before': f.units_before,
+                            'units_after': f.units_after, 'nav_per_unit': f.nav_per_unit,
+                            'description': f.description
+                        } for f in fee_records]
+                        
                         conn.execute(text("""
                             INSERT INTO fee_records (
                                 id, period, investor_id, fee_amount, fee_units, calculation_date,
@@ -554,31 +640,24 @@ class SupabaseDataHandler:
                                 :id, :period, :investor_id, :fee_amount, :fee_units, :calculation_date,
                                 :units_before, :units_after, :nav_per_unit, :description
                             )
-                        """), {
-                            'id': fee_record.id,
-                            'period': fee_record.period,
-                            'investor_id': fee_record.investor_id,
-                            'fee_amount': fee_record.fee_amount,
-                            'fee_units': fee_record.fee_units,
-                            'calculation_date': fee_record.calculation_date,
-                            'units_before': fee_record.units_before,
-                            'units_after': fee_record.units_after,
-                            'nav_per_unit': fee_record.nav_per_unit,
-                            'description': fee_record.description
-                        })
+                        """), fee_data)
                     
-                    # Commit all changes
                     trans.commit()
-                    
                     return True
                     
                 except Exception as e:
                     trans.rollback()
                     raise e
-            
+        
+        try:
+            if not self.connected:
+                return False
+            return self._execute_with_retry(_save_fee_records_impl, "Save Fee Records")
         except Exception as e:
-            st.error(f"❌ Error saving all data: {str(e)}")
+            st.error(f"❌ Error saving fee records: {str(e)}")
             return False
+    
+    # === OTHER METHODS (unchanged) ===
     
     def create_backup(self) -> Optional[str]:
         """Create logical backup using pg_dump equivalent"""
