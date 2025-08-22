@@ -917,3 +917,94 @@ class EnhancedFundManager:
         except Exception as e:
             print(f"Error generating individual report: {str(e)}")
             return {}
+        
+
+    def validate_data_consistency(self) -> Dict[str, Any]:
+        """
+        Comprehensive data consistency check
+        Returns validation results with errors and warnings
+        """
+        results = {
+            'valid': True,
+            'errors': [],
+            'warnings': [],
+            'stats': {}
+        }
+        
+        try:
+            # Check 1: All investor IDs in tranches exist in investors
+            investor_ids = {inv.id for inv in self.investors}
+            for tranche in self.tranches:
+                if tranche.investor_id not in investor_ids:
+                    results['errors'].append(f"Tranche references non-existent investor ID: {tranche.investor_id}")
+                    results['valid'] = False
+            
+            # Check 2: All investor IDs in transactions exist in investors
+            for trans in self.transactions:
+                if trans.investor_id not in investor_ids:
+                    results['errors'].append(f"Transaction {trans.id} references non-existent investor ID: {trans.investor_id}")
+                    results['valid'] = False
+            
+            # Check 3: Units should be positive
+            for tranche in self.tranches:
+                if tranche.units <= 0:
+                    results['errors'].append(f"Tranche has non-positive units: {tranche.tranche_id}")
+                    results['valid'] = False
+            
+            # Check 4: NAV values should be positive (warnings only for special cases)
+            for trans in self.transactions:
+                if trans.nav <= 0 and trans.type not in ['Phí Nhận']:  # Allow 0 NAV for internal transfers
+                    results['warnings'].append(f"Transaction {trans.id} has non-positive NAV: {trans.nav}")
+            
+            # Check 5: Transaction dates should not be in future (warnings only)
+            from datetime import datetime
+            now = datetime.now()
+            for trans in self.transactions:
+                if trans.date > now:
+                    results['warnings'].append(f"Transaction {trans.id} has future date: {trans.date}")
+            
+            # Check 6: HWM should not be less than entry NAV for active tranches (warnings only)
+            for tranche in self.tranches:
+                if tranche.hwm < tranche.entry_nav:
+                    results['warnings'].append(f"Tranche {tranche.tranche_id} has HWM < entry NAV")
+            
+            # Check 7: Fee records consistency
+            for fee_record in self.fee_records:
+                if fee_record.investor_id not in investor_ids:
+                    results['errors'].append(f"Fee record {fee_record.id} references non-existent investor")
+                    results['valid'] = False
+                
+                if fee_record.units_after > fee_record.units_before:
+                    results['errors'].append(f"Fee record {fee_record.id} has units_after > units_before")
+                    results['valid'] = False
+            
+            # Check 8: Total balance calculation consistency (warnings only)
+            latest_nav = self.get_latest_total_nav()
+            if latest_nav:
+                total_units = sum(t.units for t in self.tranches)
+                if total_units > 0:
+                    calculated_price = latest_nav / total_units
+                    results['stats']['latest_nav'] = latest_nav
+                    results['stats']['total_units'] = total_units
+                    results['stats']['price_per_unit'] = calculated_price
+                    
+                    # Check if price is unusual (warnings only)
+                    if calculated_price < 1000 or calculated_price > 10_000_000:
+                        results['warnings'].append(f"Price per unit seems unusual: {calculated_price:,.0f} VND")
+            
+            # Statistics
+            results['stats']['total_investors'] = len(self.investors)
+            results['stats']['regular_investors'] = len(self.get_regular_investors())
+            results['stats']['total_tranches'] = len(self.tranches)
+            results['stats']['total_transactions'] = len(self.transactions)
+            results['stats']['total_fee_records'] = len(self.fee_records)
+            
+            # IMPORTANT: Only errors should set valid=False, not warnings
+            results['valid'] = len(results['errors']) == 0
+            
+            return results
+            
+        except Exception as e:
+            results['valid'] = False
+            results['errors'].append(f"Validation error: {str(e)}")
+            return results
