@@ -25,6 +25,8 @@ from transaction_page import TransactionPage
 from fee_page_enhanced import EnhancedFeePage
 from report_page_enhanced import EnhancedReportPage
 
+
+
 # --- CÀI ĐẶT TRANG VÀ CSS ---
 st.set_page_config(**PAGE_CONFIG)
 apply_global_styles()  # Áp dụng tất cả CSS và JS từ file styles.py
