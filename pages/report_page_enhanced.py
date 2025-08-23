@@ -234,23 +234,26 @@ class EnhancedReportPage:
         if composition_data:
             df_composition = pd.DataFrame(composition_data)
             
-            # Pie chart
-            pie_chart = alt.Chart(df_composition).mark_arc(innerRadius=50).encode(
-                theta='Value:Q',
-                color=alt.Color('Investor:N', scale=alt.Scale(scheme='category20')),
-                tooltip=['Investor', 'Value', 'Percentage']
-            ).properties(
-                title="Portfolio Distribution",
-                height=300
-            )
-            
-            st.altair_chart(pie_chart, use_container_width=True)
-            
-            # Table
-            display_df = df_composition.copy()
-            display_df['Value'] = display_df['Value'].apply(format_currency)
-            display_df['Percentage'] = display_df['Percentage'].apply(lambda x: f"{x:.1f}%")
-            st.dataframe(display_df, use_container_width=True, hide_index=True)
+            # =================== THÊM LỚP BẢO VỆ ===================
+            if not df_composition.empty:
+                # Pie chart
+                pie_chart = alt.Chart(df_composition).mark_arc(innerRadius=50).encode(
+                    theta='Value:Q',
+                    color=alt.Color('Investor:N', scale=alt.Scale(scheme='category20')),
+                    tooltip=['Investor', 'Value', 'Percentage']
+                ).properties(
+                    title="Portfolio Distribution",
+                    height=300
+                )
+                st.altair_chart(pie_chart, use_container_width=True)
+                
+                # Table
+                display_df = df_composition.copy()
+                display_df['Value'] = display_df['Value'].apply(format_currency)
+                display_df['Percentage'] = display_df['Percentage'].apply(lambda x: f"{x:.1f}%")
+                st.dataframe(display_df, use_container_width=True, hide_index=True)
+            else:
+                st.info("ℹ️ Không có dữ liệu để hiển thị biểu đồ phân bổ danh mục.")
     
     def _render_performance_summary(self, current_nav):
         """Render performance summary"""
@@ -327,29 +330,33 @@ class EnhancedReportPage:
         if timeline_data:
             df_timeline = pd.DataFrame(timeline_data)
             
-            # Line chart
-            line_chart = alt.Chart(df_timeline).mark_line(point=True).encode(
-                x='Date:T',
-                y='NAV:Q',
-                color=alt.value('steelblue'),
-                tooltip=['Date', 'NAV', 'Type']
-            ).properties(
-                title="Fund NAV Growth Over Time",
-                height=400
-            )
-            
-            st.altair_chart(line_chart, use_container_width=True)
-            
-            # Growth statistics
-            if len(timeline_data) > 1:
-                start_nav = timeline_data[0]['NAV']
-                end_nav = timeline_data[-1]['NAV']
-                growth = (end_nav - start_nav) / start_nav if start_nav > 0 else 0
+            # =================== THÊM LỚP BẢO VỆ ===================
+            if not df_timeline.empty:
+                # Line chart
+                line_chart = alt.Chart(df_timeline).mark_line(point=True).encode(
+                    x='Date:T',
+                    y='NAV:Q',
+                    color=alt.value('steelblue'),
+                    tooltip=['Date', 'NAV', 'Type']
+                ).properties(
+                    title="Fund NAV Growth Over Time",
+                    height=400
+                )
+                st.altair_chart(line_chart, use_container_width=True)
                 
-                col1, col2, col3 = st.columns(3)
-                col1.metric("Starting NAV", format_currency(start_nav))
-                col2.metric("Current NAV", format_currency(end_nav))
-                col3.metric("Total Growth", format_percentage(growth))
+                # Growth statistics
+                if len(timeline_data) > 1:
+                    start_nav = timeline_data[0]['NAV']
+                    end_nav = timeline_data[-1]['NAV']
+                    growth = (end_nav - start_nav) / start_nav if start_nav > 0 else 0
+                    
+                    col1, col2, col3 = st.columns(3)
+                    col1.metric("Starting NAV", format_currency(start_nav))
+                    col2.metric("Current NAV", format_currency(end_nav))
+                    col3.metric("Total Growth", format_percentage(growth))
+            else:
+                st.info("ℹ️ Không có dữ liệu để hiển thị biểu đồ tăng trưởng.")
+            # ==========================================================
     
     def _render_detailed_individual_report(self, investor_id, current_nav, investor_name):
         """Render detailed individual investor report"""

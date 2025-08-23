@@ -1,18 +1,35 @@
 import streamlit as st
 import pandas as pd
 from datetime import date, datetime, timedelta
+import re
+
 try:
     from utils import format_currency, parse_currency, format_percentage, EPSILON
 except ImportError:
     from data_utils import format_currency_safe as format_currency
     
     def parse_currency(text):
+        """Enhanced currency parsing with better error handling"""
         if not text:
             return 0.0
-        clean_text = str(text).replace('đ', '').replace(',', '').replace(' ', '')
+        
+        # Convert to string and clean
+        clean_text = str(text).strip()
+        if not clean_text:
+            return 0.0
+        
+        # Remove currency symbols, commas, spaces
+        clean_text = re.sub(r'[đĐ,\s]', '', clean_text)
+        
+        # Handle empty after cleaning
+        if not clean_text:
+            return 0.0
+        
         try:
-            return float(clean_text)
-        except:
+            # Try to convert to float
+            value = float(clean_text)
+            return max(0.0, value)  # Ensure non-negative
+        except (ValueError, TypeError):
             return 0.0
     
     def format_percentage(value):
@@ -27,7 +44,7 @@ class EnhancedTransactionPage:
         self.fund_manager = fund_manager
     
     def render_transaction_form(self):
-        """Enhanced form thêm giao dịch với validation"""
+        """Enhanced form thêm giao dịch với validation đúng cách bên trong st.form."""
         st.title("💸 Thêm Giao Dịch")
         
         if not self.fund_manager.investors:
@@ -38,10 +55,8 @@ class EnhancedTransactionPage:
         if not latest_nav and not self.fund_manager.transactions:
             st.info("🆕 Quỹ mới, hãy bắt đầu bằng giao dịch Nạp tiền.")
         
-        # Show current NAV and validation warnings
         self._render_current_status(latest_nav)
         
-        # NAV option
         nav_option = st.radio(
             "📊 Cách nhập Total NAV",
             ["Dùng Total NAV mới nhất", "Nhập thủ công"],
@@ -51,84 +66,83 @@ class EnhancedTransactionPage:
         with st.form("transaction_form"):
             col1, col2 = st.columns(2)
             
-            # Chọn investor
+            # --- Các widget để lấy input từ người dùng ---
             options = self.fund_manager.get_investor_options()
             selected_display = col1.selectbox("👤 Chọn Nhà Đầu Tư", list(options.keys()))
-            investor_id = options.get(selected_display, None) if selected_display else None
-            
-            # Loại giao dịch  
             trans_type = col2.selectbox("📝 Loại Giao Dịch", ["Nạp", "Rút"])
-            
-            # Ngày giao dịch với validation
             trans_date = st.date_input(
                 "📅 Ngày Giao Dịch", 
                 value=date.today(),
                 max_value=date.today(),
                 help="Không được chọn ngày tương lai"
             )
-            
-            # Số tiền với smart defaults
-            default_amount = self._get_smart_default_amount(investor_id, trans_type)
             amount_input = st.text_input(
                 "💰 Số Tiền", 
-                value=default_amount,
-                help="Nhập số tiền giao dịch",
-                key="transaction_amount_input"
+                help="Nhập số tiền giao dịch (VD: 100000000 hoặc 100,000,000)",
+                key="transaction_amount_input",
+                placeholder="VD: 100,000,000"
             )
-            amount = parse_currency(amount_input)
-            
-            # Real-time validation display
-            validation_results = self._validate_transaction_inputs(
-                investor_id, trans_type, amount, trans_date, latest_nav
-            )
-            self._display_validation_results(validation_results)
-            
-            # Total NAV calculation
-            if nav_option == "Dùng Total NAV mới nhất":
-                if trans_type == "Nạp":
-                    total_nav = (latest_nav or 0) + amount
-                else:  # Rút
-                    total_nav = (latest_nav or 0) - amount
-                st.write(f"📊 Total NAV sau giao dịch: {format_currency(total_nav)}")
-            else:
+
+            # Xử lý NAV input
+            if nav_option == "Nhập thủ công":
                 default_nav = format_currency(latest_nav) if latest_nav else "0đ"
                 nav_input = st.text_input(
                     "📊 Total NAV sau giao dịch", 
                     value=default_nav,
                     help="Nhập Total NAV sau khi thực hiện giao dịch",
-                    key="transaction_nav_input"
+                    key="transaction_nav_input",
+                    placeholder="VD: 370000000 hoặc 370,000,000"
                 )
-                total_nav = parse_currency(nav_input)
-            
-            # NAV change validation
-            if latest_nav and total_nav > 0:
-                nav_change_pct = abs(total_nav - latest_nav) / latest_nav * 100
-                if nav_change_pct > 10:
-                    st.warning(f"⚠️ NAV thay đổi {nav_change_pct:.1f}% - Kiểm tra lại!")
-            
+            else:
+                nav_input = None # Sẽ tính toán sau
+
+            # Nút submit là điểm chốt để lấy dữ liệu
             submitted = st.form_submit_button(
                 "✅ Thực hiện giao dịch", 
-                use_container_width=True,
-                disabled=not validation_results.get('valid', False)
+                use_container_width=True
             )
             
+            # === TOÀN BỘ LOGIC VALIDATION VÀ XỬ LÝ ĐƯỢC DI CHUYỂN VÀO ĐÂY ===
             if submitted:
+                # Bước 1: Parse và tính toán tất cả các giá trị sau khi đã submit
+                investor_id = options.get(selected_display, None)
+                amount = parse_currency(amount_input)
+                
+                if nav_option == "Nhập thủ công":
+                    total_nav = parse_currency(nav_input)
+                else: # Dùng NAV mới nhất
+                    if trans_type == "Nạp":
+                        total_nav = (latest_nav or 0) + amount
+                    else: # Rút
+                        total_nav = (latest_nav or 0) - amount
+                
+                # Hiển thị lại các giá trị đã parse để người dùng kiểm tra
+                st.info(f"🔍 **Giá trị đã parse:** Số tiền = {format_currency(amount)}, NAV = {format_currency(total_nav)}")
+
+                # Bước 2: Thực hiện validation trên các giá trị đã parse
+                validation_results = self._validate_transaction_inputs(
+                    investor_id, trans_type, amount, trans_date, latest_nav, amount_input
+                )
+
+                # Bước 3: Kiểm tra kết quả validation
                 if validation_results.get('valid', False):
+                    # Nếu hợp lệ, tiến hành xử lý giao dịch
                     success = self._process_validated_transaction(
                         investor_id, trans_type, amount, total_nav, trans_date
                     )
                     if success:
                         st.balloons()
-                        st.rerun()
                 else:
-                    st.error("❌ Vui lòng sửa các lỗi validation trước khi tiếp tục")
+                    # Nếu không hợp lệ, hiển thị các lỗi
+                    self._display_validation_results(validation_results)
+                    st.error("❌ Vui lòng sửa các lỗi và thử lại.")
         
         # === PHẦN HOÀN TÁC Ở CUỐI TRANG ===
         st.markdown("---")
         self._render_undo_section()
     
     def render_nav_update(self):
-        """Enhanced NAV update với validation"""
+        """Enhanced NAV update với validation, không cần xác nhận."""
         st.title("📈 Cập Nhật Total NAV")
         
         latest_nav = self.fund_manager.get_latest_total_nav()
@@ -148,48 +162,59 @@ class EnhancedTransactionPage:
                 "📊 Total NAV mới", 
                 value=default_nav,
                 help="Nhập Total NAV mới của quỹ",
-                key="nav_update_input"
+                key="nav_update_input",
+                placeholder="VD: 370000000 hoặc 370,000,000"
             )
             total_nav = parse_currency(nav_input)
             
-            # NAV change validation
+            if nav_input:
+                st.info(f"🔍 **NAV đã parse:** {format_currency(total_nav)}")
+            
+            # === LOGIC HIỂN THỊ THAY ĐỔI (ĐÃ BỎ HOÀN TOÀN BƯỚC XÁC NHẬN) ===
             if latest_nav and total_nav > 0:
                 change_amount = total_nav - latest_nav
-                change_pct = change_amount / latest_nav * 100
+                change_pct = (change_amount / latest_nav * 100) if latest_nav > 0 else 0
                 
                 col1, col2 = st.columns(2)
                 col1.metric("Thay đổi", format_currency(change_amount))
                 col2.metric("Tỷ lệ thay đổi", f"{change_pct:.2f}%")
                 
+                # Chỉ hiển thị cảnh báo, không yêu cầu xác nhận hay làm gì khác
                 if abs(change_pct) > 15:
-                    st.warning(f"⚠️ NAV thay đổi {abs(change_pct):.1f}% - Rất lớn!")
+                    st.warning(f"⚠️ NAV thay đổi rất lớn ({abs(change_pct):.1f}%) - Hãy kiểm tra lại!")
                 elif abs(change_pct) > 5:
-                    st.info(f"ℹ️ NAV thay đổi {abs(change_pct):.1f}%")
+                    st.info(f"ℹ️ NAV thay đổi đáng chú ý ({abs(change_pct):.1f}%)")
             
-            submitted = st.form_submit_button("✅ Cập nhật NAV", use_container_width=True)
+            # Nút submit bây giờ sẽ luôn hoạt động, không có 'disabled'
+            submitted = st.form_submit_button(
+                "✅ Cập nhật NAV", 
+                use_container_width=True
+            )
             
             if submitted:
                 if total_nav <= 0:
                     st.error("❌ Total NAV phải lớn hơn 0")
                 else:
-                    # Confirmation for large changes
-                    if latest_nav and abs((total_nav - latest_nav) / latest_nav) > 0.1:
-                        if not st.session_state.get('nav_large_change_confirmed', False):
-                            st.warning("⚠️ Thay đổi NAV lớn! Xác nhận bằng cách tick checkbox dưới:")
-                            if st.checkbox("✅ Tôi xác nhận thay đổi NAV này đúng"):
-                                st.session_state.nav_large_change_confirmed = True
-                                st.rerun()
-                            return
-                    
-                    trans_date_dt = datetime.combine(trans_date, datetime.min.time())
+                    trans_date_dt = datetime.combine(trans_date, datetime.now().time())
                     success, message = self.fund_manager.process_nav_update(total_nav, trans_date_dt)
                     
                     if success:
                         st.success(message)
                         st.session_state.data_changed = True
-                        if 'nav_large_change_confirmed' in st.session_state:
-                            del st.session_state.nav_large_change_confirmed
-                        st.rerun()
+
+                        # === LƯU NGAY LẬP TỨC ===
+                        with st.spinner("💾 Đang lưu NAV mới..."):
+                            save_success = self.fund_manager.save_data()
+                            if save_success:
+                                st.toast("NAV đã được lưu an toàn!", icon="✔️")
+                                st.session_state.data_changed = False # Reset cờ
+                                 # === DÒNG QUAN TRỌNG ĐƯỢC THÊM VÀO ===
+                                st.cache_data.clear() # Xóa cache để sidebar cập nhật
+                                # Tải lại dữ liệu để đảm bảo trạng thái nhất quán
+                                self.fund_manager.load_data()
+                                st.rerun() # Làm mới UI với dữ liệu mới nhất
+                            else:
+                                st.error("❌ Lỗi nghiêm trọng: Không thể lưu NAV vào cơ sở dữ liệu!")
                     else:
                         st.error(message)
     
@@ -284,9 +309,14 @@ class EnhancedTransactionPage:
                     "💰 Số Tiền Rút", 
                     value=default_amount,
                     help="Nhập số tiền muốn rút",
-                    key="fm_withdrawal_amount_input"
+                    key="fm_withdrawal_amount_input",
+                    placeholder="VD: 50000000 hoặc 50,000,000"
                 )
                 withdrawal_amount = parse_currency(amount_input)
+                
+                # Show parsed value
+                if amount_input:
+                    st.info(f"🔍 **Số tiền rút đã parse:** {format_currency(withdrawal_amount)}")
                 
                 if withdrawal_amount > fm_balance:
                     st.error(f"❌ Số tiền rút ({format_currency(withdrawal_amount)}) > Balance ({format_currency(fm_balance)})")
@@ -336,7 +366,7 @@ class EnhancedTransactionPage:
                 if success:
                     st.success(f"✅ Fund Manager đã rút {format_currency(withdrawal_amount)}")
                     st.session_state.data_changed = True
-                    st.rerun()
+                    # st.rerun()
     
     def render_transaction_management(self):
         """Render trang quản lý giao dịch"""
@@ -426,14 +456,14 @@ class EnhancedTransactionPage:
                         st.warning("⚠️ Nhấn lại để xác nhận xóa")
     
     def _render_undo_section(self):
-        """Render undo section for recent transactions"""
+        """Render undo section for recent transactions - FIXED VERSION"""
         st.subheader("🔄 Hoàn Tác Giao Dịch")
         
         recent_transactions = sorted(
             self.fund_manager.transactions, 
             key=lambda x: x.date, 
             reverse=True
-        )[:3]  # Show last 3 transactions
+        )[:5]  # Show last 5 transactions for better undo options
         
         if not recent_transactions:
             st.info("📄 Chưa có giao dịch nào để hoàn tác")
@@ -444,26 +474,66 @@ class EnhancedTransactionPage:
             investor = self.fund_manager.get_investor_by_id(trans.investor_id)
             investor_name = investor.display_name if investor else f"ID {trans.investor_id}"
             
-            col1, col2, col3 = st.columns([3, 1, 1])
-            
-            with col1:
-                st.write(f"**{trans.date.strftime('%d/%m/%Y %H:%M')}** - {investor_name}")
-                st.write(f"{trans.type}: {format_currency(trans.amount)}")
-            
-            with col2:
-                st.write(f"NAV: {format_currency(trans.nav)}")
-                st.write(f"Units: {trans.units_change:.6f}")
-            
-            with col3:
-                if st.button(f"🔄 Undo", key=f"undo_{trans.id}"):
-                    if self._confirm_undo_transaction(trans):
-                        success = self.fund_manager.undo_last_transaction(trans.id)
-                        if success:
-                            st.success("✅ Đã hoàn tác giao dịch")
-                            st.session_state.data_changed = True
-                            st.rerun()
-                        else:
-                            st.error("❌ Không thể hoàn tác giao dịch này")
+            # Create a container for each transaction
+            with st.container():
+                col1, col2, col3 = st.columns([3, 1, 1])
+                
+                with col1:
+                    st.write(f"**{trans.date.strftime('%d/%m/%Y %H:%M')}** - {investor_name}")
+                    st.write(f"{trans.type}: {format_currency(trans.amount)}")
+                
+                with col2:
+                    st.write(f"NAV: {format_currency(trans.nav)}")
+                    st.write(f"Units: {trans.units_change:.6f}")
+                
+                with col3:
+                    # FIXED: Direct button with confirmation dialog
+                    if st.button(f"🔄 Undo", key=f"undo_btn_{trans.id}", help="Hoàn tác giao dịch này"):
+                        # Show confirmation dialog in session state
+                        st.session_state[f"show_undo_confirm_{trans.id}"] = True
+                    
+                    # Handle confirmation dialog
+                    if st.session_state.get(f"show_undo_confirm_{trans.id}", False):
+                        st.warning(f"⚠️ **Xác nhận hoàn tác:**\n\n{trans.type} - {format_currency(trans.amount)}\n\nHành động này không thể hoàn tác!")
+                        
+                        col_yes, col_no = st.columns(2)
+                        with col_yes:
+                            if st.button("✅ Xác nhận", key=f"confirm_undo_{trans.id}", type="primary"):
+                                # Create backup before undo
+                                backup_success = self.fund_manager.backup_before_operation(f"Undo transaction {trans.id}")
+                                if not backup_success:
+                                    st.warning("⚠️ Không thể tạo backup, nhưng sẽ tiếp tục...")
+                                
+                                # Perform undo
+                                success = self.fund_manager.undo_last_transaction(trans.id)
+                                
+                                if success:
+                                    st.success("✅ Đã hoàn tác giao dịch thành công!")
+                                    st.session_state.data_changed = True
+                                    
+                                    # Clear confirmation state
+                                    st.session_state[f"show_undo_confirm_{trans.id}"] = False
+                                    
+                                    # Save data immediately
+                                    with st.spinner("💾 Đang lưu thay đổi..."):
+                                        save_success = self.fund_manager.save_data()
+                                        if save_success:
+                                            st.toast("Đã lưu thành công!", icon="✅")
+                                            st.session_state.data_changed = False
+                                            # Reload data to ensure consistency
+                                            self.fund_manager.load_data()
+                                            st.rerun()
+                                        else:
+                                            st.error("❌ Lưu dữ liệu thất bại!")
+                                else:
+                                    st.error("❌ Không thể hoàn tác giao dịch này. Có thể giao dịch đã bị ảnh hưởng bởi các thao tác khác hoặc quá cũ.")
+                        
+                        with col_no:
+                            if st.button("❌ Hủy", key=f"cancel_undo_{trans.id}"):
+                                st.session_state[f"show_undo_confirm_{trans.id}"] = False
+                                st.rerun()
+                
+                st.divider()  # Add visual separator
     
     def _render_current_status(self, latest_nav):
         """Render current fund status"""
@@ -481,7 +551,7 @@ class EnhancedTransactionPage:
     def _get_smart_default_amount(self, investor_id, trans_type):
         """Get smart default amount based on history"""
         if not investor_id:
-            return "0đ"
+            return ""
         
         # Get recent transactions for this investor
         investor_transactions = [
@@ -492,11 +562,11 @@ class EnhancedTransactionPage:
         if investor_transactions:
             # Use most recent transaction amount
             recent_trans = max(investor_transactions, key=lambda x: x.date)
-            return format_currency(abs(recent_trans.amount))
+            return str(int(abs(recent_trans.amount)))  # Return as plain number string
         
-        return "0đ"
+        return ""
     
-    def _validate_transaction_inputs(self, investor_id, trans_type, amount, trans_date, latest_nav):
+    def _validate_transaction_inputs(self, investor_id, trans_type, amount, trans_date, latest_nav, amount_input=""):
         """Comprehensive validation for transaction inputs"""
         results = {
             'valid': True,
@@ -509,8 +579,9 @@ class EnhancedTransactionPage:
             results['errors'].append("Chưa chọn nhà đầu tư")
             results['valid'] = False
         
+        # Amount validation với thông báo lỗi rõ ràng hơn
         if amount <= 0:
-            results['errors'].append("Số tiền phải lớn hơn 0")
+            results['errors'].append("Số tiền không hợp lệ hoặc bằng 0. Vui lòng nhập lại.")
             results['valid'] = False
         
         if trans_date > date.today():
@@ -518,7 +589,7 @@ class EnhancedTransactionPage:
             results['valid'] = False
         
         # Business logic validation
-        if investor_id and trans_type == "Rút":
+        if investor_id and trans_type == "Rút" and amount > 0:
             investor_tranches = self.fund_manager.get_investor_tranches(investor_id)
             if not investor_tranches:
                 results['errors'].append("Nhà đầu tư chưa có vốn để rút")
@@ -555,8 +626,8 @@ class EnhancedTransactionPage:
             st.success("✅ Dữ liệu hợp lệ")
     
     def _process_validated_transaction(self, investor_id, trans_type, amount, total_nav, trans_date):
-        """Process transaction after validation"""
-        trans_date_dt = datetime.combine(trans_date, datetime.min.time())
+        """Process transaction after validation AND SAVE IMMEDIATELY."""
+        trans_date_dt = datetime.combine(trans_date, datetime.now().time()) 
         
         if trans_type == "Nạp":
             success, message = self.fund_manager.process_deposit(
@@ -569,7 +640,20 @@ class EnhancedTransactionPage:
         
         if success:
             st.success(f"✅ {message}")
-            st.session_state.data_changed = True
+            st.session_state.data_changed = True # Vẫn đặt cờ để các module khác biết
+
+            # === LƯU NGAY LẬP TỨC ===
+            with st.spinner("💾 Đang lưu dữ liệu giao dịch..."):
+                save_success = self.fund_manager.save_data()
+                if save_success:
+                    st.toast("Dữ liệu đã được lưu an toàn!", icon="✔️")
+                    st.session_state.data_changed = False # Reset cờ vì đã lưu xong
+                    # Tải lại dữ liệu để đảm bảo trạng thái nhất quán
+                    self.fund_manager.load_data()
+                    st.rerun() # Bây giờ mới là lúc an toàn để làm mới UI
+                else:
+                    st.error("❌ Lỗi nghiêm trọng: Không thể lưu giao dịch vào cơ sở dữ liệu!")
+            
             return True
         else:
             st.error(f"❌ {message}")
@@ -630,3 +714,5 @@ class EnhancedTransactionPage:
         except Exception as e:
             st.error(f"❌ Error processing Fund Manager withdrawal: {str(e)}")
             return False
+        
+    

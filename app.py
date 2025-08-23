@@ -1,4 +1,4 @@
-# app.py - Enhanced Version
+# app.py - Clean Optimized Version - No Loading Screen, Pure Performance
 
 import streamlit as st
 import os
@@ -7,105 +7,357 @@ import time
 from pathlib import Path
 from datetime import datetime, date
 
-# --- THIẾT LẬP CƠ BẢN ---
-from config import PAGE_CONFIG
-from services_enhanced import EnhancedFundManager
-from supabase_data_handler import SupabaseDataHandler
-from google_drive_manager import GoogleDriveManager
 
-# --- IMPORT CÁC MODULE ĐÃ TÁI CẤU TRÚC ---
-from styles import apply_global_styles
-from sidebar_manager import SidebarManager
-from data_utils import ErrorHandler
 
-# --- IMPORT CÁC TRANG ENHANCED ---
-sys.path.append(str(Path(__file__).parent / "pages"))
-from pages.investor_page import InvestorPage
-from pages.transaction_page import EnhancedTransactionPage  
-from pages.fee_page_enhanced import SafeFeePage  
-from pages.report_page_enhanced import EnhancedReportPage
+# === PURE LAZY LOADING - NO BLOAT ===
+@st.cache_resource
+def load_config():
+    """Load config once and cache"""
+    from config import PAGE_CONFIG
+    return PAGE_CONFIG
 
-# --- CÀI ĐẶT TRANG VÀ CSS ---
-st.set_page_config(**PAGE_CONFIG)
-apply_global_styles()
+@st.cache_resource  
+def load_data_handler():
+    """Load and cache data handler"""
+    try:
+        from supabase_data_handler import SupabaseDataHandler
+        data_handler = SupabaseDataHandler()
+        
+        # Kiểm tra kết nối ngay lập tức
+        if not hasattr(data_handler, 'connected') or not data_handler.connected:
+            st.error("❌ Không thể kết nối tới Database")
+            return None   
+        return data_handler
+    except Exception as e:
+        st.error(f"❌ Lỗi khởi tạo Data Handler: {str(e)}")
+        # Fallback to CSV (nếu cần, thêm code từ services_enhanced.py cũ)
+        st.sidebar.warning("📄 Fallback to CSV storage")
+        from data_handler import EnhancedDataHandler
+        return EnhancedDataHandler()
 
-# --- LOGIC BẢO MẬT ---
-try:
-    ADMIN_PASSWORD = st.secrets["ADMIN_PASSWORD"]
-except (KeyError, FileNotFoundError, AttributeError):
-    ADMIN_PASSWORD = os.getenv("ADMIN_PASSWORD", "1997")
+@st.cache_resource
+def load_fund_manager_class():
+    """Load fund manager class"""
+    try:
+        from services_enhanced import EnhancedFundManager
+        return EnhancedFundManager
+    except Exception:
+        from services import FundManager
+        return FundManager
 
-# === NGUỒN CHÂN LÝ DUY NHẤT CHO CÁC TRANG ===
+@st.cache_resource
+def load_styles():
+    """Load styles"""
+    from styles import apply_global_styles
+    from mobile_styles_addon import apply_complete_mobile_styles
+    apply_global_styles()
+    apply_complete_mobile_styles()
+    return True
+
+# === OPTIMIZATIONS LOADER ===
+def load_optimizations():
+    """Load all optimizations and return what's available"""
+    optimizations = {
+        'save_optimization': None,
+        'database_optimization': None,
+        'realtime_sync': None
+    }
+    
+    try:
+        from save_optimization import enhance_save_operations
+        optimizations['save_optimization'] = enhance_save_operations
+    except ImportError:
+        pass
+        
+    try:
+        from database_save_optimization import apply_database_save_optimization
+        optimizations['database_optimization'] = apply_database_save_optimization
+    except ImportError:
+        pass
+        
+    try:
+        from realtime_sync_fix import TransactionHandler
+        optimizations['realtime_sync'] = TransactionHandler
+    except ImportError:
+        pass
+    
+    return optimizations
+
+# === PAGE COMPONENTS LOADER ===
+def load_page_components():
+    """Load all page components"""
+    sys.path.append(str(Path(__file__).parent / "pages"))
+    
+    pages = {}
+    
+    page_imports = [
+        ('investor', 'pages.investor_page', 'InvestorPage'),
+        ('transaction', 'pages.transaction_page', 'EnhancedTransactionPage'),
+        ('fee', 'pages.fee_page_enhanced', 'SafeFeePage'),
+        ('report', 'pages.report_page_enhanced', 'EnhancedReportPage')
+    ]
+    
+    for key, module, class_name in page_imports:
+        try:
+            module_obj = __import__(module, fromlist=[class_name])
+            pages[key] = getattr(module_obj, class_name)
+        except Exception:
+            pages[key] = None
+    
+    return pages
+
+# === CACHED DATA FUNCTIONS ===
+@st.cache_data(ttl=300)
+def get_cached_nav(fund_manager_id):
+    """Get cached NAV data"""
+    fund_manager = st.session_state.get('fund_manager')
+    if fund_manager:
+        return fund_manager.get_latest_total_nav()
+    return None
+
+@st.cache_data(ttl=180)
+def get_cached_investors(fund_manager_id):
+    """Get cached investors data"""
+    fund_manager = st.session_state.get('fund_manager')
+    if fund_manager:
+        return fund_manager.get_regular_investors()
+    return []
+
+def clear_app_cache():
+    """Clear application caches"""
+    get_cached_nav.clear()
+    get_cached_investors.clear()
+
+# === PAGE CONSTANTS ===
 PAGE_ADD_INVESTOR = "👥 Thêm Nhà Đầu Tư"
 PAGE_EDIT_INVESTOR = "✏️ Sửa Thông Tin NĐT"
 PAGE_ADD_TRANSACTION = "💸 Thêm Giao Dịch"
 PAGE_ADD_NAV = "📈 Thêm Total NAV"
-PAGE_FM_WITHDRAWAL = "🛒 Fund Manager Withdrawal"
+PAGE_FM_WITHDRAWAL = "🛠 FM Withdrawal"
 PAGE_MANAGE_TRANSACTIONS = "🔧 Quản Lý Giao Dịch"
 PAGE_CALCULATE_FEES = "🧮 Tính Toán Phí"
 PAGE_CALCULATE_INDIVIDUAL_FEE = "📋 Tính Phí Riêng"
 PAGE_REPORTS = "📊 Báo Cáo & Thống Kê"
-# PAGE_STRESS_TEST = "🧪 Stress Test System"  # NEW PAGE
 
-# Danh sách tất cả các trang cho sidebar
 ALL_PAGES = [
     PAGE_REPORTS, PAGE_ADD_INVESTOR, PAGE_EDIT_INVESTOR, 
     PAGE_ADD_TRANSACTION, PAGE_ADD_NAV, PAGE_FM_WITHDRAWAL, 
     PAGE_MANAGE_TRANSACTIONS, PAGE_CALCULATE_FEES, 
-    PAGE_CALCULATE_INDIVIDUAL_FEE, #PAGE_STRESS_TEST
+    PAGE_CALCULATE_INDIVIDUAL_FEE
 ]
 
-# Danh sách các trang yêu cầu đăng nhập để chỉnh sửa
 EDIT_PAGES = [
     PAGE_ADD_INVESTOR, PAGE_EDIT_INVESTOR, PAGE_ADD_TRANSACTION,
     PAGE_ADD_NAV, PAGE_FM_WITHDRAWAL, PAGE_MANAGE_TRANSACTIONS,
-    PAGE_CALCULATE_FEES, #PAGE_STRESS_TEST
+    PAGE_CALCULATE_FEES
 ]
 
-
-class EnhancedFundManagementApp:
+# === MAIN APPLICATION CLASS ===
+class FundManagementApp:
+    """Clean, optimized Fund Management Application"""
+    
     def __init__(self):
-        # Khởi tạo các thành phần theo đúng thứ tự
-        if 'fund_manager' not in st.session_state:
-            with st.spinner("🚀 Khởi động và tải dữ liệu từ database... Vui lòng chờ trong giây lát."):
-                print(f"[{datetime.now()}] --- Initializing enhanced services for the first time...")
-                
-                # 1. Tạo data_handler trước
-                data_handler = SupabaseDataHandler()
-                
-                # 2. Kiểm tra kết nối
-                if not data_handler.connected:
-                    st.error("Không thể kết nối tới Database. Vui lòng kiểm tra lại cấu hình.")
-                    st.stop()
-
-                # 3. Truyền data_handler vào EnhancedFundManager
-                st.session_state.fund_manager = EnhancedFundManager(data_handler)
-                st.session_state.data_handler = data_handler
+        self.initialize_session_state()
+        self.setup_app()
+    
+    def initialize_session_state(self):
+        """Initialize session state variables"""
+        if 'app_start_time' not in st.session_state:
+            st.session_state.app_start_time = time.time()
         
-        self.fund_manager = st.session_state.fund_manager
-        self.data_handler = self.fund_manager.data_handler
-
-        # Khởi tạo GoogleDriveManager (chỉ chạy 1 lần)
-        if 'gdrive_manager' not in st.session_state:
-            st.session_state.gdrive_manager = GoogleDriveManager(self.fund_manager)
-        self.gdrive_manager = st.session_state.gdrive_manager
-
         if 'logged_in' not in st.session_state:
             st.session_state.logged_in = False
         
-        self.sidebar_manager = SidebarManager(
-            self.fund_manager,
-            self.data_handler,
-            menu_options=ALL_PAGES
-        )
+        if 'menu_selection' not in st.session_state:
+            st.session_state.menu_selection = PAGE_REPORTS
+            
+        if 'show_startup_validation' not in st.session_state:
+            st.session_state.show_startup_validation = True
+    
+    def setup_app(self):
+        """Setup application with optimized loading"""
+        # Load configuration and set page config
+        page_config = load_config()
+        try:
+            st.set_page_config(**page_config)
+        except Exception:
+            pass  # Page config already set
+        
+        # Load styles
+        load_styles()
+        
+        # Initialize or load from cache
+        if self.should_reinitialize():
+            self.initialize_components()
+        else:
+            self.load_from_session()
+    
+    def should_reinitialize(self) -> bool:
+        """Check if we need to reinitialize components"""
+        required_keys = ['fund_manager', 'data_handler', 'sidebar_manager', 'pages']
+        
+        # Check if all required components exist
+        if not all(key in st.session_state for key in required_keys):
+            return True
+        
+        # Check if components are still valid
+        try:
+            fund_manager = st.session_state.get('fund_manager')
+            data_handler = st.session_state.get('data_handler')
+            
+            if not fund_manager or not data_handler:
+                return True
+                
+            if hasattr(data_handler, 'connected') and not data_handler.connected:
+                return True
+            
+            # Check if last initialization was too long ago (optional)
+            last_init = st.session_state.get('last_init', 0)
+            if time.time() - last_init > 3600:  # 1 hour
+                return True
+                
+        except Exception as e:
+            st.warning(f"⚠️ Lỗi kiểm tra component: {str(e)}")
+            return True
+        
+        return False
+    
+    def initialize_components(self):
+        """Initialize all components with simple loading screen"""
+        try:
+            progress = st.progress(0)
+            status = st.empty()
 
+            # Step 1: Data handler
+            status.info("🔌 Connecting to database...")
+            self.data_handler = load_data_handler()
+            if not self.data_handler or not getattr(self.data_handler, "connected", False):
+                st.error("❌ Không thể kết nối Database. Vui lòng kiểm tra cấu hình.")
+                self.render_error_recovery()
+                st.stop()
+            progress.progress(25)
+
+            # Step 2: Fund manager
+            status.info("📦 Loading fund manager...")
+            FundManagerClass = load_fund_manager_class()
+            self.fund_manager = FundManagerClass(self.data_handler)
+            progress.progress(50)
+
+            # Step 3: Optimizations
+            status.info("⚡ Applying optimizations...")
+            optimizations = load_optimizations()
+            self.apply_optimizations(optimizations)
+            progress.progress(65)
+
+            # Step 4: Load pages
+            status.info("📑 Loading pages...")
+            self.pages = load_page_components()
+            progress.progress(80)
+
+            # Step 5: Sidebar
+            status.info("🧭 Initializing sidebar...")
+            from sidebar_manager import SidebarManager
+            self.sidebar_manager = SidebarManager(
+                self.fund_manager,
+                self.data_handler,
+                menu_options=ALL_PAGES
+            )
+            progress.progress(90)
+
+            # Step 6: Admin password
+            status.info("🔐 Loading security settings...")
+            try:
+                self.admin_password = st.secrets["ADMIN_PASSWORD"]
+            except Exception:
+                self.admin_password = os.getenv("ADMIN_PASSWORD", "1997")
+            progress.progress(100)
+
+            # Save to session
+            self.save_to_session()
+
+            # Clear loading UI
+            progress.empty()
+            status.empty()
+            st.success("✅ Ứng dụng đã sẵn sàng!")
+
+        except Exception as e:
+            st.error(f"❌ Khởi tạo ứng dụng thất bại: {str(e)}")
+            with st.expander("🔍 Chi tiết lỗi", expanded=True):
+                st.code(str(e))
+            self.render_error_recovery()
+            st.stop()
+    
+    def apply_optimizations(self, optimizations):
+        """Apply available optimizations"""
+        if optimizations['save_optimization']:
+            self.fund_manager = optimizations['save_optimization'](self.fund_manager)
+        
+        if optimizations['database_optimization']:
+            self.fund_manager = optimizations['database_optimization'](self.fund_manager)
+        
+        if optimizations['realtime_sync']:
+            self.transaction_handler = optimizations['realtime_sync'](self.fund_manager)
+    
+    def save_to_session(self):
+        """Save components to session state"""
+        st.session_state.fund_manager = self.fund_manager
+        st.session_state.data_handler = self.data_handler
+        st.session_state.sidebar_manager = self.sidebar_manager
+        st.session_state.pages = self.pages
+        st.session_state.admin_password = self.admin_password
+        st.session_state.last_init = time.time()
+    
+    def load_from_session(self):
+        """Load components from session state"""
+        self.fund_manager = st.session_state.fund_manager
+        self.data_handler = st.session_state.data_handler
+        self.sidebar_manager = st.session_state.sidebar_manager
+        self.pages = st.session_state.pages
+        self.admin_password = st.session_state.admin_password
+    
+    def render_error_recovery(self):
+        """Render error recovery options"""
+        st.subheader("🚨 Tùy chọn khôi phục")
+        
+        col1, col2, col3 = st.columns(3)
+        
+        with col1:
+            if st.button("🔄 Thử lại", key="retry_init"):
+                self.clear_session_cache()
+                st.rerun()
+        
+        with col2:
+            if st.button("🧹 Xóa Cache", key="clear_cache"):
+                self.clear_session_cache()
+                clear_app_cache()
+                st.success("✅ Đã xóa cache")
+                st.rerun()
+        
+        with col3:
+            if st.button("🏠 Trang chủ", key="go_home"):
+                st.session_state.menu_selection = PAGE_REPORTS
+                st.rerun()
+    
+    def clear_session_cache(self):
+        """Clear session cache"""
+        keys_to_clear = [
+            'fund_manager', 'data_handler', 'sidebar_manager', 'pages',
+            'admin_password', 'last_init'
+        ]
+        for key in keys_to_clear:
+            if key in st.session_state:
+                del st.session_state[key]
+    
     def render_login_form(self):
-        """Render form đăng nhập với giao diện cải tiến."""
+        """Render login form for edit pages"""
         st.markdown("""
-            <div style='max-width: 400px; margin: 2rem auto; padding: 2rem;
-                        background: white; border-radius: 10px; box-shadow: 0 4px 12px rgba(0,0,0,0.1);'>
-                <h3 style='text-align: center; color: #2c3e50; margin-bottom: 1.5rem;'>
-                    🔐 Yêu cầu đăng nhập để chỉnh sửa
+            <div style='max-width: 400px; margin: 3rem auto; padding: 2rem;
+                        background: white; border-radius: 15px; 
+                        box-shadow: 0 8px 32px rgba(0,0,0,0.1);
+                        border: 1px solid rgba(255,255,255,0.2);'>
+                <h3 style='text-align: center; color: #2c3e50; margin-bottom: 2rem;
+                           font-weight: 600;'>
+                    🔐 Xác thực quyền chỉnh sửa
                 </h3>
             </div>
         """, unsafe_allow_html=True)
@@ -113,302 +365,203 @@ class EnhancedFundManagementApp:
         col1, col2, col3 = st.columns([1, 2, 1])
         with col2:
             password = st.text_input(
-                "Mật khẩu",
+                "Mật khẩu quản trị",
                 type="password",
-                placeholder="Nhập mật khẩu admin...",
-                label_visibility="collapsed"
+                placeholder="Nhập mật khẩu để tiếp tục...",
+                help="Cần mật khẩu admin để truy cập tính năng chỉnh sửa",
+                label_visibility="visible"
             )
-            if st.button("🚀 Đăng nhập", use_container_width=True, type="primary"):
-                if password == ADMIN_PASSWORD:
+            
+            if st.button("🚀 Xác thực", use_container_width=True, type="primary"):
+                if password == self.admin_password:
                     st.session_state.logged_in = True
-                    st.success("✅ Đăng nhập thành công!")
+                    st.success("✅ Xác thực thành công!")
+                    time.sleep(0.8)
                     st.rerun()
                 else:
                     st.error("❌ Mật khẩu không chính xác.")
-
+                    time.sleep(1)
+    
     def render_main_content(self, page: str):
-        """Render nội dung chính với enhanced pages"""
+        """Render main content based on selected page"""
+        # Check authentication for edit pages
         if page in EDIT_PAGES and not st.session_state.logged_in:
             self.render_login_form()
             return
-
-        with ErrorHandler(f"tải trang '{page}'"):
-            # Enhanced page mapping
-            page_map = {
-                PAGE_ADD_INVESTOR: lambda: InvestorPage(self.fund_manager).render_add_form(),
-                PAGE_EDIT_INVESTOR: lambda: InvestorPage(self.fund_manager).render_edit_page(),
-                PAGE_ADD_TRANSACTION: lambda: EnhancedTransactionPage(self.fund_manager).render_transaction_form(),
-                PAGE_ADD_NAV: lambda: EnhancedTransactionPage(self.fund_manager).render_nav_update(),
-                PAGE_FM_WITHDRAWAL: lambda: EnhancedTransactionPage(self.fund_manager).render_fund_manager_withdrawal(),
-                PAGE_MANAGE_TRANSACTIONS: lambda: EnhancedTransactionPage(self.fund_manager).render_transaction_management(),
-                PAGE_CALCULATE_FEES: lambda: SafeFeePage(self.fund_manager).render_enhanced_fee_calculation(),
-                PAGE_CALCULATE_INDIVIDUAL_FEE: lambda: SafeFeePage(self.fund_manager).render_individual_fee(),
-                PAGE_REPORTS: lambda: EnhancedReportPage(self.fund_manager).render_reports(),
-                # PAGE_STRESS_TEST: lambda: self.render_stress_test_page(),
-            }
-            
-            render_function = page_map.get(page)
-            if render_function:
-                render_function()
+        
+        try:
+            # Render appropriate page
+            if page == PAGE_ADD_INVESTOR and self.pages.get('investor'):
+                self.pages['investor'](self.fund_manager).render_add_form()
+                
+            elif page == PAGE_EDIT_INVESTOR and self.pages.get('investor'):
+                self.pages['investor'](self.fund_manager).render_edit_page()
+                
+            elif page == PAGE_ADD_TRANSACTION and self.pages.get('transaction'):
+                self.pages['transaction'](self.fund_manager).render_transaction_form()
+                
+            elif page == PAGE_ADD_NAV and self.pages.get('transaction'):
+                self.pages['transaction'](self.fund_manager).render_nav_update()
+                
+            elif page == PAGE_FM_WITHDRAWAL and self.pages.get('transaction'):
+                self.pages['transaction'](self.fund_manager).render_fund_manager_withdrawal()
+                
+            elif page == PAGE_MANAGE_TRANSACTIONS and self.pages.get('transaction'):
+                self.pages['transaction'](self.fund_manager).render_transaction_management()
+                
+            elif page == PAGE_CALCULATE_FEES and self.pages.get('fee'):
+                self.pages['fee'](self.fund_manager).render_enhanced_fee_calculation()
+                
+            elif page == PAGE_CALCULATE_INDIVIDUAL_FEE and self.pages.get('fee'):
+                self.pages['fee'](self.fund_manager).render_individual_fee()
+                
+            elif page == PAGE_REPORTS and self.pages.get('report'):
+                self.pages['report'](self.fund_manager).render_reports()
+                
             else:
-                st.warning(f"Trang '{page}' chưa được triển khai.")
-
-    # def render_stress_test_page(self):
-    #     """Render stress test page"""
-    #     st.title("🧪 System Stress Test")
-        
-    #     st.info("""
-    #     **Stress Test** kiểm tra hệ thống với dữ liệu lớn để đảm bảo:
-    #     - Tính toán phí chính xác
-    #     - Consistency của dữ liệu
-    #     - Performance với nhiều investor & giao dịch
-    #     - Validation logic
-    #     """)
-        
-    #     # Import stress tester
-    #     try:
-    #         from fund_stress_test import FundStressTester
-            
-    #         # Scenario selection
-    #         scenario_options = {
-    #             'light': '🟢 Light (5 investors, 3 trans/investor, 2 fee periods)',
-    #             'medium': '🟡 Medium (15 investors, 8 trans/investor, 3 fee periods)',
-    #             'heavy': '🟠 Heavy (50 investors, 15 trans/investor, 5 fee periods)',
-    #             'extreme': '🔴 Extreme (100 investors, 25 trans/investor, 7 fee periods)'
-    #         }
-            
-    #         selected_display = st.selectbox(
-    #             "📊 Chọn Scenario Test",
-    #             list(scenario_options.values()),
-    #             index=1  # Default to medium
-    #         )
-            
-    #         # Get scenario key
-    #         scenario = next(
-    #             (key for key, value in scenario_options.items() if value == selected_display),
-    #             'medium'
-    #         )
-            
-    #         # Warning for heavy tests
-    #         if scenario in ['heavy', 'extreme']:
-    #             st.warning(f"⚠️ {scenario.upper()} test sẽ tạo rất nhiều dữ liệu test và có thể mất vài phút!")
-            
-    #         # Data preservation warning
-    #         st.error("""
-    #         🚨 **QUAN TRỌNG:** 
-    #         - Test sẽ thêm nhiều investor & giao dịch test
-    #         - Dữ liệu thật sẽ được bảo toàn
-    #         - Sau test có thể xóa dữ liệu test nếu muốn
-    #         """)
-            
-    #         # Confirmation
-    #         confirmed = st.checkbox(f"✅ Tôi xác nhận chạy {scenario.upper()} stress test")
-            
-    #         col1, col2 = st.columns(2)
-            
-    #         # Run test button
-    #         if col1.button("🚀 Chạy Stress Test", 
-    #                       disabled=not confirmed, 
-    #                       use_container_width=True, 
-    #                       type="primary"):
+                st.warning(f"⚠️ Trang '{page}' đang được phát triển.")
+                st.info("💡 Vui lòng chọn trang khác từ menu bên trái.")
                 
-    #             if not confirmed:
-    #                 st.error("❌ Vui lòng xác nhận trước khi chạy test")
-    #                 return
-                
-    #             # Create tester and run
-    #             with st.spinner(f"🧪 Đang chạy {scenario.upper()} stress test..."):
-    #                 tester = FundStressTester(self.fund_manager)
-    #                 results = tester.run_comprehensive_test(scenario)
-                
-    #             # Display results
-    #             if results.get('success', False):
-    #                 st.success("✅ Stress test PASSED!")
-    #                 st.balloons()
-    #             else:
-    #                 st.error("❌ Stress test FAILED!")
-                
-    #             # Show summary
-    #             with st.expander("📋 Test Results Summary", expanded=True):
-    #                 col_res1, col_res2, col_res3 = st.columns(3)
-                    
-    #                 col_res1.metric("Duration", f"{results.get('duration_seconds', 0):.1f}s")
-                    
-    #                 if 'data_stats' in results:
-    #                     stats = results['data_stats']
-    #                     col_res2.metric("Test Investors", stats.get('investors', {}).get('test_investors', 0))
-    #                     col_res3.metric("Total Transactions", stats.get('transactions', {}).get('total', 0))
-                
-    #             # Detailed report
-    #             report = tester.generate_test_report()
-    #             st.text_area("📄 Detailed Report", report, height=400)
-                
-    #             # Export options
-    #             st.markdown("### 📤 Export Results")
-    #             export_col1, export_col2 = st.columns(2)
-                
-    #             with export_col1:
-    #                 # Text report download
-    #                 timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-    #                 report_filename = f"stress_test_report_{scenario}_{timestamp}.txt"
-                    
-    #                 st.download_button(
-    #                     label="📄 Download Text Report",
-    #                     data=report,
-    #                     file_name=report_filename,
-    #                     mime="text/plain",
-    #                     use_container_width=True
-    #                 )
-                
-    #             with export_col2:
-    #                 # Excel report download
-    #                 try:
-    #                     excel_data = tester.export_test_results_to_excel()
-    #                     if excel_data:
-    #                         excel_filename = f"stress_test_results_{scenario}_{timestamp}.xlsx"
-    #                         st.download_button(
-    #                             label="📊 Download Excel Report",
-    #                             data=excel_data,
-    #                             file_name=excel_filename,
-    #                             mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-    #                             use_container_width=True
-    #                         )
-    #                 except Exception as e:
-    #                     st.error(f"Excel export failed: {str(e)}")
-                
-    #             # Mark data as changed to trigger save
-    #             st.session_state.data_changed = True
+        except Exception as e:
+            st.error(f"❌ Lỗi khi tải trang '{page}': {str(e)}")
             
-    #         # Clean up test data button
-    #         if col2.button("🧹 Xóa Dữ Liệu Test", use_container_width=True):
-    #             self._cleanup_test_data()
-    #             st.success("✅ Đã xóa dữ liệu test")
-    #             st.session_state.data_changed = True
-    #             st.rerun()
-        
-    #     except ImportError:
-    #         st.error("❌ Không thể import FundStressTester. Kiểm tra file fund_stress_test.py")
-    #     except Exception as e:
-    #         st.error(f"❌ Lỗi stress test: {str(e)}")
+            # Error recovery options
+            col1, col2, col3 = st.columns(3)
+            with col1:
+                if st.button(f"🔄 Thử lại '{page}'", key="retry_page"):
+                    st.rerun()
+            with col2:
+                if st.button("🧹 Xóa Cache", key="clear_page_cache"):
+                    clear_app_cache()
+                    st.rerun()
+            with col3:
+                if st.button("🏠 Về trang chủ", key="home_from_error"):
+                    st.session_state.menu_selection = PAGE_REPORTS
+                    st.rerun()
     
-    # def _cleanup_test_data(self):
-    #     """Enhanced cleanup with deadlock prevention"""
-    #     try:
-    #         # Get test investor IDs BEFORE any deletion
-    #         test_investor_ids = {
-    #             inv.id for inv in self.fund_manager.investors 
-    #             if inv.name.startswith('Test_')
-    #         }
+    def handle_data_save(self):
+        """Handle data saving operations"""
+        if not st.session_state.get('data_changed', False):
+            return
+        
+        try:
+            # Validate data before saving
+            validation_results = self.fund_manager.validate_data_consistency()
+            if not validation_results['valid']:
+                st.error("❌ Dữ liệu không nhất quán. Không thể lưu.")
+                with st.expander("🔍 Chi tiết lỗi", expanded=False):
+                    for error in validation_results['errors']:
+                        st.error(f"• {error}")
+                return
             
-    #         if not test_investor_ids:
-    #             st.info("No test data found to clean up")
-    #             return
-            
-    #         # Use small batches to avoid deadlocks
-    #         batch_size = 10
-    #         test_ids_list = list(test_investor_ids)
-            
-    #         for i in range(0, len(test_ids_list), batch_size):
-    #             batch_ids = test_ids_list[i:i + batch_size]
+            # Save data
+            with st.spinner("💾 Đang lưu dữ liệu..."):
+                save_success = self.fund_manager.save_data()
                 
-    #             # Remove data in small batches
-    #             self.fund_manager.investors = [
-    #                 inv for inv in self.fund_manager.investors 
-    #                 if inv.id not in batch_ids
-    #             ]
-                
-    #             self.fund_manager.tranches = [
-    #                 t for t in self.fund_manager.tranches 
-    #                 if t.investor_id not in batch_ids
-    #             ]
-                
-    #             self.fund_manager.transactions = [
-    #                 t for t in self.fund_manager.transactions 
-    #                 if t.investor_id not in batch_ids
-    #             ]
-                
-    #             self.fund_manager.fee_records = [
-    #                 f for f in self.fund_manager.fee_records 
-    #                 if f.investor_id not in batch_ids
-    #             ]
-                
-    #             # Save after each batch
-    #             if not self.fund_manager.save_data():
-    #                 st.error(f"Failed to save batch {i//batch_size + 1}")
-    #                 return
-                
-    #             # Small delay between batches
-    #             time.sleep(0.5)
-            
-    #         st.success(f"✅ Cleaned up {len(test_investor_ids)} test investors")
-            
-    #     except Exception as e:
-    #         st.error(f"❌ Cleanup failed: {str(e)}")
-
-    def handle_save(self):
-        """Enhanced save handling with retry logic"""
-        if st.session_state.get('data_changed', False):
-            max_retries = 3
-            
-            for attempt in range(max_retries):
-                try:
-                    # Validate before saving
-                    validation_results = self.fund_manager.validate_data_consistency()
+                if save_success:
+                    st.session_state.data_changed = False
+                    st.toast("✅ Đã lưu thành công!", icon="💾")
                     
-                    if not validation_results['valid']:
-                        st.error("❌ Dữ liệu không nhất quán! Không thể lưu.")
-                        return
+                    # Refresh data after save
+                    with st.spinner("🔄 Đang đồng bộ hóa..."):
+                        clear_app_cache()
+                        self.fund_manager.load_data()
                     
-                    # Try to save
-                    if self.fund_manager.save_data():
-                        st.session_state.data_changed = False
-                        st.toast("✅ Đã lưu dữ liệu!", icon="💾")
-                        st.rerun()
-                        return
-                    else:
-                        raise Exception("Save operation returned False")
-                        
-                except Exception as e:
-                    error_msg = str(e).lower()
-                    is_deadlock = any(keyword in error_msg for keyword in [
-                        'deadlock', 'lock timeout', 'could not obtain lock'
-                    ])
+                    st.toast("🔗 Dữ liệu đã được đồng bộ hóa", icon="🔄")
+                    st.rerun()
+                else:
+                    st.error("❌ Lưu dữ liệu thất bại!")
                     
-                    if is_deadlock and attempt < max_retries - 1:
-                        wait_time = (2 ** attempt) + random.uniform(0.1, 0.5)
-                        st.warning(f"⚠️ Deadlock detected (attempt {attempt + 1}/{max_retries}). Retrying in {wait_time:.1f}s...")
-                        time.sleep(wait_time)
-                        continue
-                    else:
-                        st.error(f"❌ Lưu dữ liệu thất bại: {str(e)}")
-                        return
-
+        except Exception as e:
+            st.error(f"❌ Lỗi khi lưu dữ liệu: {str(e)}")
+    
+    def run_startup_validation(self):
+        """Run startup validation if needed"""
+        if st.session_state.get('show_startup_validation', True):
+            validation_results = self.fund_manager.validate_data_consistency()
+            if not validation_results['valid']:
+                st.error("⚠️ Phát hiện vấn đề với dữ liệu!")
+                with st.expander("🔍 Chi tiết vấn đề", expanded=True):
+                    for error in validation_results['errors']:
+                        st.error(f"• {error}")
+                st.warning("🔧 Hãy kiểm tra và khắc phục trước khi tiếp tục.")
+            
+            st.session_state.show_startup_validation = False
+    
     def run(self):
-        """Chạy vòng lặp chính của ứng dụng enhanced"""
-        with ErrorHandler("khởi chạy ứng dụng"):
-            # Auto backup scheduling
-            if self.gdrive_manager:
-                self.gdrive_manager.schedule_monthly_export()
+        """Main application execution"""
+        try:
+            # Kiểm tra xem các component đã sẵn sàng chưa
+            if not hasattr(self, 'sidebar_manager') or not hasattr(self, 'fund_manager'):
+                st.error("❌ App chưa được khởi tạo đúng cách")
+                self.render_error_recovery()
+                return
+            # Run startup validation if needed
+            self.run_startup_validation()
             
-            # Enhanced data consistency check on startup
-            if st.session_state.get('show_startup_validation', True):
-                validation_results = self.fund_manager.validate_data_consistency()
-                if not validation_results['valid']:
-                    st.error("⚠️ Phát hiện vấn đề với dữ liệu!")
-                    with st.expander("🔍 Chi tiết vấn đề", expanded=True):
-                        for error in validation_results['errors']:
-                            st.error(f"• {error}")
-                    st.warning("🔧 Hãy kiểm tra và sửa các vấn đề trước khi tiếp tục.")
-                
-                # Only show once per session
-                st.session_state.show_startup_validation = False
-            
+            # Render sidebar and get selected page
             selected_page = self.sidebar_manager.render()
+            
+            # Render main content
             self.render_main_content(selected_page)
-            self.handle_save()
+            
+            # Handle data saving
+            self.handle_data_save()
+            
+        except Exception as e:
+            st.error("💥 Lỗi nghiêm trọng của ứng dụng!")
+            
+            with st.expander("🔍 Chi tiết lỗi", expanded=True):
+                st.code(str(e))
+            
+            st.subheader("🚨 Tùy chọn khôi phục")
+            col1, col2, col3 = st.columns(3)
+            
+            with col1:
+                if st.button("🔄 Khởi động lại ứng dụng"):
+                    # Clear everything and restart
+                    for key in list(st.session_state.keys()):
+                        del st.session_state[key]
+                    st.rerun()
+            
+            with col2:
+                if st.button("🧹 Xóa toàn bộ Cache"):
+                    self.clear_session_cache()
+                    clear_app_cache()
+                    st.success("✅ Đã xóa cache")
+                    time.sleep(1)
+                    st.rerun()
+            
+            with col3:
+                if st.button("🛠 Thông tin Debug"):
+                    st.write("**Session State Keys:**", list(st.session_state.keys()))
+                    st.write("**App Start Time:**", st.session_state.get('app_start_time', 'Unknown'))
+                    if 'fund_manager' in st.session_state:
+                        st.write("**Fund Manager Status:**", "Loaded")
+                    if 'data_handler' in st.session_state:
+                        st.write("**Data Handler Status:**", "Loaded")
 
+# === APPLICATION ENTRY POINT ===
+def main():
+    """Application entry point"""
+    try:
+        app = FundManagementApp()
+        app.run()
+    except Exception as e:
+        st.error("💥 Ứng dụng không thể khởi động!")
+        st.code(str(e))
+        
+        st.subheader("🚨 Hành động khẩn cấp")
+        col1, col2 = st.columns(2)
+        
+        with col1:
+            if st.button("🔄 Thử khởi động lại"):
+                st.rerun()
+        
+        with col2:
+            if st.button("📞 Thông tin hỗ trợ"):
+                st.info("🔧 Vui lòng liên hệ bộ phận kỹ thuật để được hỗ trợ.")
 
-# --- ĐIỂM KHỞI ĐỘNG ---
+# === RUN APPLICATION ===
 if __name__ == "__main__":
-    app = EnhancedFundManagementApp()
-    app.run()
+    main()
