@@ -4,7 +4,7 @@ from datetime import date, datetime
 from utils import format_currency, parse_currency, format_percentage, highlight_profit_loss
 
 class SafeFeePage:
-    """Enhanced Fee Page với comprehensive safety features"""
+    """Enhanced Fee Page với comprehensive safety features - COMPLETE VERSION"""
     
     def __init__(self, fund_manager):
         self.fund_manager = fund_manager
@@ -42,7 +42,7 @@ class SafeFeePage:
         # Show fund manager current status
         fund_manager = self.fund_manager.get_fund_manager()
         if fund_manager:
-            with st.expander("🛒 Fund Manager Status", expanded=False):
+            with st.expander("🛡️ Fund Manager Status", expanded=False):
                 fm_tranches = self.fund_manager.get_investor_tranches(fund_manager.id)
                 if fm_tranches:
                     fm_units = sum(t.units for t in fm_tranches)
@@ -54,10 +54,11 @@ class SafeFeePage:
                 else:
                     st.info("Fund Manager chưa có units")
         
-        tab1, tab2, tab3, tab4 = st.tabs([
+        tab1, tab2, tab3, tab4, tab5 = st.tabs([
             "🧮 Preview & Safety Check", 
             "📋 Phí Chi Tiết", 
             "📊 Chi Tiết Tranches",
+            "💰 Performance Analysis",
             "⚡ Apply Phí"
         ])
         
@@ -71,6 +72,9 @@ class SafeFeePage:
             self._render_tranches_detail(ending_nav)
         
         with tab4:
+            self._render_performance_analysis(ending_nav)
+        
+        with tab5:
             self._render_safe_fee_application(year, ending_date, ending_nav)
     
     def render_individual_fee(self):
@@ -167,17 +171,25 @@ class SafeFeePage:
         for investor in self.fund_manager.get_regular_investors():
             details = self.fund_manager.calculate_investor_fee(investor.id, ending_date_dt, ending_nav)
             lifetime_perf = self.fund_manager.get_investor_lifetime_performance(investor.id, ending_nav)
+            
+            # FIXED: Tính current cost basis chính xác
+            current_cost_basis = self.fund_manager.get_investor_current_cost_basis(investor.id)
+            original_investment = self.fund_manager.get_investor_original_investment(investor.id)
+            
             tranches = self.fund_manager.get_investor_tranches(investor.id)
             total_units = sum(t.units for t in tranches) if tranches else 0
             units_fee = details['total_fee'] / ending_price if details['total_fee'] > 0 and ending_price > 0 else 0
             
+            # FIXED: Hiển thị cả current và original investment
             results.append({
                 'Nhà Đầu Tư': investor.display_name,
                 'Units Hiện Tại': f"{total_units:.6f}",
-                'Vốn Gốc': lifetime_perf['original_invested'],
+                'Vốn Gốc Ban Đầu': original_investment,
+                'Vốn Hiện Tại': current_cost_basis,
                 'Phí Đã Trả': lifetime_perf['total_fees_paid'],
                 'Số Dư': details['balance'],
-                'Lãi/Lỗ': details['profit'],
+                'L/L vs Current': details['profit'],
+                'L/L vs Original': lifetime_perf['gross_profit'],
                 'Phí Mới': details['total_fee'],
                 'Units Chuyển': f"{units_fee:.6f}",
                 'Units Còn Lại': f"{total_units - units_fee:.6f}",
@@ -188,7 +200,7 @@ class SafeFeePage:
         
         if results:
             df_results = pd.DataFrame(results)
-            currency_cols = ['Vốn Gốc', 'Phí Đã Trả', 'Số Dư', 'Lãi/Lỗ', 'Phí Mới']
+            currency_cols = ['Vốn Gốc Ban Đầu', 'Vốn Hiện Tại', 'Phí Đã Trả', 'Số Dư', 'L/L vs Current', 'L/L vs Original', 'Phí Mới']
             for col in currency_cols:
                 df_results[col] = df_results[col].apply(format_currency)
             
@@ -198,17 +210,95 @@ class SafeFeePage:
             col1, col2, col3, col4 = st.columns(4)
             col1.success(f"💰 **Tổng phí:** {format_currency(total_fees)}")
             col2.info(f"📊 **Units chuyển:** {total_units_transfer:,.6f}")
-            col3.warning(f"🛒 **Về Fund Manager:** {format_currency(total_fees)}")
+            col3.warning(f"🛡️ **Về Fund Manager:** {format_currency(total_fees)}")
             col4.metric("📈 **Fee Rate**", f"{(total_fees/ending_nav*100):.2f}%" if ending_nav > 0 else "0%")
             
             # Additional insights
             if total_fees > 0:
+                total_portfolio_value = sum(
+                    self.fund_manager.get_investor_balance(inv.id, ending_nav)[0] 
+                    for inv in self.fund_manager.get_regular_investors()
+                )
+                
                 st.info(f"""
-                📈 **Phân tích fee:**
+                📈 **Phân tích fee chi tiết:**
                 - Fee rate: {(total_fees/ending_nav*100):.2f}% of total NAV
+                - Fee vs portfolio: {(total_fees/total_portfolio_value*100):.2f}% of investor portfolio
                 - Units transfer: {(total_units_transfer/sum(t.units for t in self.fund_manager.tranches)*100):.1f}% of total units
-                - Estimated FM units after: {sum(t.units for t in self.fund_manager.get_investor_tranches(self.fund_manager.get_fund_manager().id)) + total_units_transfer:.6f}
+                - FM units sau fee: {sum(t.units for t in self.fund_manager.get_investor_tranches(self.fund_manager.get_fund_manager().id)) + total_units_transfer:.6f}
                 """)
+    
+    def _render_performance_analysis(self, ending_nav: float):
+        """FIXED: Render comprehensive performance analysis"""
+        st.subheader("📊 Phân Tích Performance Chi Tiết")
+        
+        if ending_nav <= 0:
+            st.warning("ℹ️ Vui lòng nhập Total NAV để xem phân tích.")
+            return
+        
+        # Overall fund performance
+        st.markdown("### 🏆 Performance Tổng Quát")
+        
+        total_original = sum(
+            self.fund_manager.get_investor_original_investment(inv.id) 
+            for inv in self.fund_manager.get_regular_investors()
+        )
+        total_current_value = sum(
+            self.fund_manager.get_investor_balance(inv.id, ending_nav)[0]
+            for inv in self.fund_manager.get_regular_investors()
+        )
+        total_fees_paid = sum(
+            sum(t.cumulative_fees_paid for t in self.fund_manager.get_investor_tranches(inv.id))
+            for inv in self.fund_manager.get_regular_investors()
+        )
+        
+        col1, col2, col3, col4 = st.columns(4)
+        col1.metric("💰 Tổng Vốn Gốc", format_currency(total_original))
+        col2.metric("📊 Giá Trị Hiện Tại", format_currency(total_current_value))
+        col3.metric("💸 Tổng Phí Đã Trả", format_currency(total_fees_paid))
+        
+        gross_return = (total_current_value + total_fees_paid - total_original) / total_original if total_original > 0 else 0
+        col4.metric("📈 Gross Return", format_percentage(gross_return))
+        
+        # Individual investor performance breakdown
+        st.markdown("### 👥 Performance Từng Nhà Đầu Tư")
+        
+        performance_data = []
+        for investor in self.fund_manager.get_regular_investors():
+            lifetime_perf = self.fund_manager.get_investor_lifetime_performance(investor.id, ending_nav)
+            balance, current_profit, current_profit_perc = self.fund_manager.get_investor_balance(investor.id, ending_nav)
+            
+            # FIXED: Tính toán performance metrics chính xác
+            original_investment = lifetime_perf['original_invested']
+            current_cost_basis = self.fund_manager.get_investor_current_cost_basis(investor.id)
+            
+            performance_data.append({
+                'Nhà Đầu Tư': investor.display_name,
+                'Vốn Gốc': original_investment,
+                'Cost Basis Hiện Tại': current_cost_basis,
+                'Giá Trị Hiện Tại': balance,
+                'Gross Profit': lifetime_perf['gross_profit'],
+                'Gross Return': lifetime_perf['gross_return'],
+                'Phí Đã Trả': lifetime_perf['total_fees_paid'],
+                'Net Profit': lifetime_perf['net_profit'],
+                'Net Return': lifetime_perf['net_return'],
+                'Fee Impact': lifetime_perf['total_fees_paid'] / original_investment if original_investment > 0 else 0
+            })
+        
+        if performance_data:
+            df_performance = pd.DataFrame(performance_data)
+            
+            # Format currency columns
+            currency_cols = ['Vốn Gốc', 'Cost Basis Hiện Tại', 'Giá Trị Hiện Tại', 'Gross Profit', 'Phí Đã Trả', 'Net Profit']
+            for col in currency_cols:
+                df_performance[col] = df_performance[col].apply(format_currency)
+            
+            # Format percentage columns
+            percentage_cols = ['Gross Return', 'Net Return', 'Fee Impact']
+            for col in percentage_cols:
+                df_performance[col] = df_performance[col].apply(format_percentage)
+            
+            st.dataframe(df_performance, use_container_width=True, hide_index=True)
     
     def _render_safe_fee_application(self, year: int, ending_date: date, ending_nav: float):
         """Render safe fee application với multiple confirmations"""
@@ -226,7 +316,7 @@ class SafeFeePage:
             return
         
         # Multi-step confirmation
-        st.markdown("### 🔒 Xác Nhận Áp Dụng Phí (3 bước)")
+        st.markdown("### 🔐 Xác Nhận Áp Dụng Phí (3 bước)")
         
         # Step 1: Acknowledge risks
         step1 = st.checkbox("1️⃣ Tôi hiểu rằng việc áp dụng phí sẽ thay đổi dữ liệu vĩnh viễn")
@@ -282,7 +372,17 @@ class SafeFeePage:
                         if key.startswith(('step1', 'step2', 'step3')):
                             del st.session_state[key]
                     
-                    st.rerun()
+                    # Save immediately after applying fees
+                    with st.spinner("💾 Đang lưu dữ liệu sau áp dụng phí..."):
+                        save_success = self.fund_manager.save_data()
+                        if save_success:
+                            st.success("💾 Đã lưu thành công!")
+                            st.session_state.data_changed = False
+                            # Reload data to ensure consistency
+                            self.fund_manager.load_data()
+                            st.rerun()
+                        else:
+                            st.error("❌ Lưu dữ liệu thất bại!")
                 else:
                     st.error(f"❌ {message}")
         else:
@@ -297,24 +397,25 @@ class SafeFeePage:
             st.info(f"ℹ️ Cần hoàn thành: {', '.join(remaining_steps)}")
     
     def _render_individual_fee_analysis(self, investor_id, calc_date, calc_nav, investor_name):
-        """Render comprehensive individual fee analysis"""
+        """FIXED: Render comprehensive individual fee analysis"""
         calc_date_dt = datetime.combine(calc_date, datetime.min.time())
         details = self.fund_manager.calculate_investor_fee(investor_id, calc_date_dt, calc_nav)
         lifetime_perf = self.fund_manager.get_investor_lifetime_performance(investor_id, calc_nav)
         
         st.markdown(f"## 📊 Phân Tích Chi Tiết: {investor_name}")
         
-        # Current vs Lifetime Performance
+        # FIXED: Current vs Lifetime Performance với dữ liệu chính xác
         col1, col2 = st.columns(2)
         
         with col1:
             st.subheader("📊 Current Performance")
-            st.metric("💰 Vốn Đầu Tư Hiện Tại", format_currency(details['invested_value']))
+            current_cost = self.fund_manager.get_investor_current_cost_basis(investor_id)
+            st.metric("💰 Vốn Đầu Tư Hiện Tại", format_currency(current_cost))
             st.metric("📊 Số Dư Hiện Tại", format_currency(details['balance']))
             profit_color = "normal" if details['profit'] >= 0 else "inverse"
-            st.metric("📈 Lãi/Lỗ Hiện Tại", format_currency(details['profit']), delta_color=profit_color)
+            st.metric("📈 L/L vs Current Cost", format_currency(details['profit']), delta_color=profit_color)
             perc_color = "normal" if details['profit_perc'] >= 0 else "inverse"
-            st.metric("📊 Tỷ Lệ L/L Hiện Tại", format_percentage(details['profit_perc']), delta_color=perc_color)
+            st.metric("📊 Tỷ Lệ L/L vs Current", format_percentage(details['profit_perc']), delta_color=perc_color)
         
         with col2:
             st.subheader("🎯 Lifetime Performance")
@@ -331,21 +432,42 @@ class SafeFeePage:
         
         fee_col1, fee_col2, fee_col3, fee_col4 = st.columns(4)
         fee_col1.metric("🎯 Hurdle Value (6%)", format_currency(details['hurdle_value']))
-        fee_col2.metric("🏔️ HWM Value", format_currency(details['hwm_value']))
+        fee_col2.metric("🔝 HWM Value", format_currency(details['hwm_value']))
         fee_col3.metric("💎 Lợi Nhuận Vượt Ngưỡng", format_currency(details['excess_profit']))
         fee_col4.metric("💸 Phí Performance (20%)", format_currency(details['total_fee']))
         
-        # Performance insights
+        # Performance insights với thông tin chính xác hơn
         if details['total_fee'] > 0:
             st.success(f"🎉 Investor có performance vượt ngưỡng! Phí: {format_currency(details['total_fee'])}")
             
-            # Show fee impact
-            if lifetime_perf['total_fees_paid'] > 0:
-                total_fees_after = lifetime_perf['total_fees_paid'] + details['total_fee']
-                fee_impact = total_fees_after / lifetime_perf['original_invested'] * 100
-                st.info(f"📊 Tổng phí cumulative sẽ là: {format_currency(total_fees_after)} ({fee_impact:.1f}% của vốn gốc)")
+            # Show fee impact chi tiết
+            current_fee_rate = details['total_fee'] / lifetime_perf['original_invested'] * 100 if lifetime_perf['original_invested'] > 0 else 0
+            total_fees_after = lifetime_perf['total_fees_paid'] + details['total_fee']
+            cumulative_fee_rate = total_fees_after / lifetime_perf['original_invested'] * 100 if lifetime_perf['original_invested'] > 0 else 0
+            
+            st.info(f"""
+            📊 **Phân tích impact của phí:**
+            - Phí này: {format_currency(details['total_fee'])} ({current_fee_rate:.1f}% của vốn gốc)
+            - Tổng phí cumulative: {format_currency(total_fees_after)} ({cumulative_fee_rate:.1f}% của vốn gốc)
+            - Net return sau phí: {format_percentage((lifetime_perf['current_value'] - details['total_fee'] - lifetime_perf['original_invested']) / lifetime_perf['original_invested'])}
+            """)
         else:
             st.info("ℹ️ Không có phí performance (chưa vượt hurdle rate hoặc HWM)")
+            
+            # Show why no fee
+            current_price = self.fund_manager.calculate_price_per_unit(calc_nav)
+            tranches = self.fund_manager.get_investor_tranches(investor_id)
+            
+            if tranches:
+                st.markdown("**Lý do không có phí:**")
+                for i, tranche in enumerate(tranches):
+                    time_delta_days = (calc_date_dt - tranche.entry_date).days
+                    if time_delta_days > 0:
+                        time_delta_years = time_delta_days / 365.25
+                        hurdle_price = tranche.entry_nav * ((1 + 0.06) ** time_delta_years)
+                        threshold_price = max(hurdle_price, tranche.hwm)
+                        
+                        st.write(f"- Tranche {i+1}: Current price {format_currency(current_price)} ≤ Threshold {format_currency(threshold_price)}")
         
         # Tranches breakdown
         tranches = self.fund_manager.get_investor_tranches(investor_id)
@@ -371,14 +493,16 @@ class SafeFeePage:
                 tranche_data.append({
                     'Entry Date': tranche.entry_date.strftime("%d/%m/%Y"),
                     'Entry NAV': format_currency(tranche.entry_nav),
+                    'Original NAV': format_currency(tranche.original_entry_nav),
                     'Units': f"{tranche.units:.6f}",
                     'Days Held': time_delta_days,
                     'Hurdle Price': format_currency(hurdle_price),
                     'HWM': format_currency(tranche.hwm),
                     'Threshold': format_currency(threshold_price),
                     'Current Value': format_currency(tranche.units * current_price),
+                    'Fees Paid': format_currency(tranche.cumulative_fees_paid),
                     'Excess Profit': format_currency(tranche_excess),
-                    'Fee': format_currency(tranche_fee)
+                    'New Fee': format_currency(tranche_fee)
                 })
             
             df_tranches = pd.DataFrame(tranche_data)
@@ -436,6 +560,17 @@ class SafeFeePage:
                 checks['warnings'].append(f"Unusual price per unit: {format_currency(price_per_unit)}")
         checks['checks'].append(f"Price per unit: {format_currency(price_per_unit) if total_units > 0 else 'N/A'}")
         
+        # Check 6: FIXED - Check for unrealistic fee amounts
+        total_fees = sum(
+            self.fund_manager.calculate_investor_fee(inv.id, datetime.combine(ending_date, datetime.min.time()), ending_nav)['total_fee']
+            for inv in self.fund_manager.get_regular_investors()
+        )
+        
+        if total_fees > ending_nav * 0.1:  # More than 10% of NAV
+            checks['warnings'].append(f"Phí rất cao: {format_currency(total_fees)} ({total_fees/ending_nav*100:.1f}% of NAV)")
+        
+        checks['checks'].append(f"Fee amount check: {format_currency(total_fees)}")
+        
         return checks
     
     def _display_safety_results(self, safety_results):
@@ -463,38 +598,77 @@ class SafeFeePage:
                     st.warning(warning)
     
     def _render_detailed_fee_calculation(self, ending_date, ending_nav):
-        """Hiển thị kết quả tính phí chi tiết (unchanged from original)"""
+        """FIXED: Hiển thị kết quả tính phí chi tiết với thông tin chính xác"""
+        st.subheader("📋 Chi Tiết Tính Phí Từng Nhà Đầu Tư")
+        
+        if ending_nav <= 0:
+            st.warning("ℹ️ Vui lòng nhập Total NAV để xem chi tiết.")
+            return
+            
         ending_date_dt = datetime.combine(ending_date, datetime.min.time())
         results = []
+        
         for investor in self.fund_manager.get_regular_investors():
             details = self.fund_manager.calculate_investor_fee(investor.id, ending_date_dt, ending_nav)
+            lifetime_perf = self.fund_manager.get_investor_lifetime_performance(investor.id, ending_nav)
+            
+            # FIXED: Lấy thông tin chính xác
             tranches = self.fund_manager.get_investor_tranches(investor.id)
             total_units = sum(t.units for t in tranches) if tranches else 0
+            original_investment = lifetime_perf['original_invested']
+            current_cost_basis = self.fund_manager.get_investor_current_cost_basis(investor.id)
+            
             results.append({
-                'Nhà Đầu Tư': investor.display_name, 'Tổng Units': f"{total_units:.6f}",
-                'Vốn Đầu Tư': details['invested_value'], 'Số Dư': details['balance'],
-                'Lãi/Lỗ': details['profit'], 'Tỷ Lệ L/L': details['profit_perc'],
-                'Hurdle Value': details['hurdle_value'], 'HWM Value': details['hwm_value'],
-                'Lợi Nhuận Vượt': details['excess_profit'], 'Phí': details['total_fee']
+                'Nhà Đầu Tư': investor.display_name, 
+                'Tổng Units': f"{total_units:.6f}",
+                'Vốn Gốc': original_investment,
+                'Vốn Hiện Tại': current_cost_basis,
+                'Số Dư': details['balance'],
+                'L/L vs Gốc': lifetime_perf['gross_profit'],
+                'L/L vs Hiện Tại': details['profit'], 
+                'Tỷ Lệ L/L': details['profit_perc'],
+                'Hurdle Value': details['hurdle_value'], 
+                'HWM Value': details['hwm_value'],
+                'Lợi Nhuận Vượt': details['excess_profit'], 
+                'Phí Mới': details['total_fee'],
+                'Phí Đã Trả': lifetime_perf['total_fees_paid']
             })
         
         if results:
             df_results = pd.DataFrame(results)
-            currency_cols = ['Vốn Đầu Tư', 'Số Dư', 'Lãi/Lỗ', 'Hurdle Value', 'HWM Value', 'Lợi Nhuận Vượt', 'Phí']
+            currency_cols = ['Vốn Gốc', 'Vốn Hiện Tại', 'Số Dư', 'L/L vs Gốc', 'L/L vs Hiện Tại', 
+                           'Hurdle Value', 'HWM Value', 'Lợi Nhuận Vượt', 'Phí Mới', 'Phí Đã Trả']
             for col in currency_cols:
                 df_results[col] = df_results[col].apply(format_currency)
             df_results['Tỷ Lệ L/L'] = df_results['Tỷ Lệ L/L'].apply(format_percentage)
+            
             st.dataframe(df_results, use_container_width=True, hide_index=True)
             
-            total_fee = sum(self.fund_manager.calculate_investor_fee(inv.id, ending_date_dt, ending_nav)['total_fee'] 
-                           for inv in self.fund_manager.get_regular_investors())
+            total_fee = sum(
+                self.fund_manager.calculate_investor_fee(inv.id, ending_date_dt, ending_nav)['total_fee'] 
+                for inv in self.fund_manager.get_regular_investors()
+            )
+            
             if total_fee > 0:
                 st.success(f"💰 **Tổng phí performance:** {format_currency(total_fee)}")
+                
+                # Additional statistics
+                eligible_investors = sum(1 for inv in self.fund_manager.get_regular_investors() 
+                                       if self.fund_manager.calculate_investor_fee(inv.id, ending_date_dt, ending_nav)['total_fee'] > 0)
+                
+                st.info(f"""
+                📊 **Thống kê phí:**
+                - Số investor phải trả phí: {eligible_investors}/{len(self.fund_manager.get_regular_investors())}
+                - Phí trung bình: {format_currency(total_fee / eligible_investors) if eligible_investors > 0 else 'N/A'}
+                - Tỷ lệ phí/NAV: {total_fee/ending_nav*100:.2f}%
+                """)
             else:
                 st.info("ℹ️ Không có phí performance được tính.")
     
     def _render_tranches_detail(self, ending_nav):
-        """Hiển thị chi tiết tranches (unchanged from original)"""
+        """FIXED: Hiển thị chi tiết tranches với thông tin chính xác"""
+        st.subheader("📊 Chi Tiết Tất Cả Tranches")
+        
         if not self.fund_manager.tranches:
             st.info("📄 Chưa có tranches nào.")
             return
@@ -507,7 +681,12 @@ class SafeFeePage:
             investor_name = investor.display_name if investor else f"ID {tranche.investor_id}"
             
             current_value = tranche.units * current_price if current_price > 0 else 0
-            profit_loss = current_value - tranche.invested_value
+            
+            # FIXED: Tính profit/loss chính xác
+            current_cost = tranche.units * tranche.entry_nav
+            original_cost = tranche.units * tranche.original_entry_nav
+            current_profit_loss = current_value - current_cost
+            lifetime_profit_loss = current_value - original_cost
             
             data.append({
                 'Investor': investor_name,
@@ -517,11 +696,23 @@ class SafeFeePage:
                 'Units': f"{tranche.units:.6f}",
                 'HWM': format_currency(tranche.hwm),
                 'Phí Đã Trả': format_currency(tranche.cumulative_fees_paid),
-                'Vốn': format_currency(tranche.invested_value),
+                'Vốn Hiện Tại': format_currency(current_cost),
+                'Vốn Gốc': format_currency(original_cost),
                 'Giá Trị Hiện Tại': format_currency(current_value),
-                'L/L': format_currency(profit_loss)
+                'L/L vs Current': format_currency(current_profit_loss),
+                'L/L vs Original': format_currency(lifetime_profit_loss)
             })
         
         if data:
             df_tranches = pd.DataFrame(data)
             st.dataframe(df_tranches, use_container_width=True)
+            
+            # Summary statistics
+            total_current_value = sum(t.units * current_price for t in self.fund_manager.tranches if current_price > 0)
+            total_fees_paid = sum(t.cumulative_fees_paid for t in self.fund_manager.tranches)
+            total_units = sum(t.units for t in self.fund_manager.tranches)
+            
+            col1, col2, col3 = st.columns(3)
+            col1.metric("💰 Tổng Giá Trị", format_currency(total_current_value))
+            col2.metric("💸 Tổng Phí Đã Trả", format_currency(total_fees_paid))
+            col3.metric("📊 Tổng Units", f"{total_units:.6f}")

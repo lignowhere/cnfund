@@ -389,7 +389,7 @@ def apply_global_styles():
                 top: 1rem;
                 right: 1rem;
                 z-index: 10002;
-                background: rgba(255, 255, 255, 0.2);
+                background: rgba(150, 150, 150, 0.2);
                 color: white;
                 border: none;
                 border-radius: 50%;
@@ -624,6 +624,18 @@ def apply_global_styles():
                 document.body.style.overflow = ''; // Restore scroll
             }
         }
+        document.addEventListener("DOMContentLoaded", function() {
+        const sidebar = document.querySelector('[data-testid="stSidebar"]') || 
+                    document.querySelector('.css-1d391kg');
+        const overlay = document.querySelector('.sidebar-overlay');
+        const toggleButton = document.querySelector('.mobile-toggle-btn');
+        if (sidebar && overlay && toggleButton) {
+            sidebar.classList.remove('mobile-active');
+            overlay.classList.remove('active');
+            toggleButton.classList.remove('active');
+            sidebarOpen = false;
+        }
+    });
 
         // Touch gesture support
         function handleTouchStart(e) {

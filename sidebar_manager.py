@@ -303,6 +303,9 @@ class SidebarManager:
     
     def render(self) -> str:
         """Render toàn bộ sidebar và trả về trang được chọn - theo flow code gốc"""
+        # Nút này giờ là một phần của sidebar, sẽ ẩn/hiện cùng với sidebar
+        
+        
         self.render_header()
         
         # Thứ tự render theo code gốc

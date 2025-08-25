@@ -57,6 +57,38 @@ class EnhancedFundManager:
     def get_regular_investors(self) -> List[Investor]:
         return [inv for inv in self.investors if not inv.is_fund_manager]
     
+    def add_investor(self, name: str, phone: str = "", address: str = "", email: str = "") -> Tuple[bool, str]:
+        """Add new investor"""
+        # Validate
+        if not name.strip():
+            return False, "Tên không được để trống"
+        
+        # Check duplicate
+        existing_names = [inv.name.lower().strip() for inv in self.investors]
+        if name.lower().strip() in existing_names:
+            return False, f"Nhà đầu tư '{name}' đã tồn tại"
+        
+        if phone and not validate_phone(phone):
+            return False, "SĐT không hợp lệ"
+        
+        if email and not validate_email(email):
+            return False, "Email không hợp lệ"
+        
+        # Create new investor (skip ID=0 reserved for fund manager)
+        existing_ids = [inv.id for inv in self.investors]
+        new_id = 1
+        while new_id in existing_ids:
+            new_id += 1
+        
+        investor = Investor(
+            id=new_id, name=name.strip(), phone=phone.strip(),
+            address=address.strip(), email=email.strip(),
+            is_fund_manager=False
+        )
+        
+        self.investors.append(investor)
+        return True, f"Đã thêm {investor.display_name}"
+    
     def get_investor_options(self) -> Dict[str, int]:
         return {inv.display_name: inv.id for inv in self.get_regular_investors()}
 
@@ -93,7 +125,18 @@ class EnhancedFundManager:
         old_total_nav = self.get_latest_total_nav() or 0
         price = self.calculate_price_per_unit(old_total_nav) if old_total_nav > 0 else DEFAULT_UNIT_PRICE
         units = amount / price
-        tranche = Tranche(investor_id=investor_id, tranche_id=str(uuid.uuid4()), entry_date=trans_date, entry_nav=price, units=units, hwm=price, original_entry_date=trans_date, original_entry_nav=price)
+        tranche = Tranche(
+            investor_id=investor_id, 
+            tranche_id=str(uuid.uuid4()), 
+            entry_date=trans_date, 
+            entry_nav=price, 
+            units=units, 
+            hwm=price, 
+            original_entry_date=trans_date, 
+            original_entry_nav=price,
+            original_invested_value=amount,  # FIXED: Set original invested value
+            cumulative_fees_paid=0.0
+        )
         self.tranches.append(tranche)
         self._add_transaction(investor_id, trans_date, 'Nạp', amount, total_nav_after, units)
         return True, f"Đã nạp {format_currency(amount)}"
@@ -107,7 +150,7 @@ class EnhancedFundManager:
         balance = sum(t.units for t in tranches) * price
         if amount > balance + EPSILON: return False, f"Số tiền rút vượt quá số dư."
         units_to_remove = amount / price
-        self._process_unit_reduction(investor_id, units_to_remove, amount >= balance - EPSILON)
+        self._process_unit_reduction_fixed(investor_id, units_to_remove, amount >= balance - EPSILON)
         self._add_transaction(investor_id, trans_date, 'Rút', -amount, total_nav_after, -units_to_remove)
         return True, f"Đã rút {format_currency(amount)}"
 
@@ -122,22 +165,170 @@ class EnhancedFundManager:
     def _add_transaction(self, investor_id: int, date: datetime, type: str, amount: float, nav: float, units_change: float):
         self.transactions.append(Transaction(id=self._get_next_transaction_id(), investor_id=investor_id, date=date, type=type, amount=amount, nav=nav, units_change=units_change))
     
-    def _process_unit_reduction(self, investor_id: int, units_to_remove: float, is_full: bool):
+    def _process_unit_reduction_fixed(self, investor_id: int, units_to_remove: float, is_full: bool):
+        """
+        FIXED: Properly handle unit reduction while preserving original values
+        """
         if is_full:
+            # Full withdrawal - remove all tranches
             self.tranches = [t for t in self.tranches if t.investor_id != investor_id]
         else:
+            # Partial withdrawal - reduce units proportionally but preserve original values
             tranches = self.get_investor_tranches(investor_id)
             total_units = sum(t.units for t in tranches)
+            
             if total_units > 0:
-                ratio = units_to_remove / total_units
-                for t in tranches: t.units *= (1 - ratio)
+                reduction_ratio = units_to_remove / total_units
+                
+                for tranche in tranches:
+                    if tranche.investor_id == investor_id:
+                        # FIXED: Only reduce current units, preserve original values
+                        tranche.units *= (1 - reduction_ratio)
+                        
+                        # DO NOT TOUCH: original_entry_nav, original_entry_date, original_invested_value
+                        # These should remain unchanged during withdrawals
+                        
+                        # Update invested_value to reflect current position
+                        tranche.invested_value = tranche.units * tranche.entry_nav
+            
+            # Remove tranches with negligible units
             self.tranches = [t for t in self.tranches if t.units >= EPSILON]
+        
         return True
 
-    # === CÁC HÀM BỊ THIẾU ĐÃ ĐƯỢỢC PHỤC HỒI ĐẦY ĐỦ ===
+    # FIXED: Add the missing apply_year_end_fees_enhanced method
+    def apply_year_end_fees_enhanced(self, fee_date: datetime, total_nav: float) -> Dict[str, Any]:
+        """
+        FIXED: Apply year-end performance fees to all eligible investors
+        """
+        try:
+            results = {
+                'success': True,
+                'total_fees': 0.0,
+                'investors_processed': 0,
+                'fee_details': [],
+                'errors': []
+            }
+            
+            regular_investors = self.get_regular_investors()
+            
+            for investor in regular_investors:
+                try:
+                    # Calculate fees for this investor
+                    fee_calculation = self.calculate_investor_fee(investor.id, fee_date, total_nav)
+                    
+                    if fee_calculation['total_fee'] > EPSILON:  # Only process if there's significant fee
+                        # Apply fee to investor's tranches
+                        fee_applied = self._apply_fee_to_investor_tranches(
+                            investor.id, 
+                            fee_calculation['total_fee'], 
+                            fee_date,
+                            total_nav
+                        )
+                        
+                        if fee_applied:
+                            # Record the fee transaction
+                            self._add_transaction(
+                                investor.id, 
+                                fee_date, 
+                                'Phí',
+                                -fee_calculation['total_fee'],  # Negative amount for fee
+                                total_nav,
+                                0  # Units change handled in _apply_fee_to_investor_tranches
+                            )
+                            
+                            # Create fee record
+                            fee_record = FeeRecord(
+                                id=len(self.fee_records) + 1,
+                                investor_id=investor.id,
+                                fee_date=fee_date,
+                                fee_amount=fee_calculation['total_fee'],
+                                units_before=fee_calculation.get('units_before', 0),
+                                units_after=fee_calculation.get('units_after', 0),
+                                balance_before=fee_calculation['balance'],
+                                balance_after=fee_calculation['balance'] - fee_calculation['total_fee'],
+                                nav_price=self.calculate_price_per_unit(total_nav),
+                                performance_fee_rate=PERFORMANCE_FEE_RATE,
+                                hurdle_rate=HURDLE_RATE_ANNUAL,
+                                excess_profit=fee_calculation['excess_profit']
+                            )
+                            
+                            self.fee_records.append(fee_record)
+                            
+                            results['total_fees'] += fee_calculation['total_fee']
+                            results['investors_processed'] += 1
+                            results['fee_details'].append({
+                                'investor_id': investor.id,
+                                'investor_name': investor.name,
+                                'fee_amount': fee_calculation['total_fee'],
+                                'excess_profit': fee_calculation['excess_profit']
+                            })
+                        else:
+                            results['errors'].append(f"Failed to apply fee to investor {investor.name}")
+                    
+                except Exception as e:
+                    results['errors'].append(f"Error processing investor {investor.name}: {str(e)}")
+                    results['success'] = False
+            
+            return results
+            
+        except Exception as e:
+            return {
+                'success': False,
+                'error': f"Error in apply_year_end_fees_enhanced: {str(e)}",
+                'total_fees': 0.0,
+                'investors_processed': 0,
+                'fee_details': [],
+                'errors': [str(e)]
+            }
+    
+    def _apply_fee_to_investor_tranches(self, investor_id: int, total_fee: float, fee_date: datetime, total_nav: float) -> bool:
+        """
+        FIXED: Apply fee by reducing units proportionally across all tranches
+        """
+        try:
+            tranches = self.get_investor_tranches(investor_id)
+            if not tranches:
+                return False
+            
+            current_price = self.calculate_price_per_unit(total_nav)
+            total_units_before = sum(t.units for t in tranches)
+            units_to_remove = total_fee / current_price
+            
+            if units_to_remove >= total_units_before:
+                # Fee exceeds total value - this shouldn't happen with proper calculation
+                return False
+            
+            # Apply fee proportionally across tranches
+            for tranche in tranches:
+                if tranche.investor_id == investor_id:
+                    proportion = tranche.units / total_units_before if total_units_before > 0 else 0
+                    units_reduction = units_to_remove * proportion
+                    
+                    # Update units and cumulative fees
+                    tranche.units -= units_reduction
+                    tranche.cumulative_fees_paid += (units_reduction * current_price)
+                    
+                    # Update invested_value to reflect current position
+                    tranche.invested_value = tranche.units * tranche.entry_nav
+                    
+                    # Update HWM if current price is higher
+                    if current_price > tranche.hwm:
+                        tranche.hwm = current_price
+            
+            # Remove tranches with negligible units
+            self.tranches = [t for t in self.tranches if t.units >= EPSILON]
+            
+            return True
+            
+        except Exception as e:
+            print(f"Error applying fee to investor {investor_id}: {str(e)}")
+            return False
 
     def calculate_investor_fee(self, investor_id: int, ending_date: datetime, ending_total_nav: float) -> Dict[str, Any]:
-        """Calculate detailed fees for an investor, returning a full dictionary."""
+        """
+        FIXED: Calculate detailed fees with better precision and rounding
+        """
         tranches = self.get_investor_tranches(investor_id)
         if not tranches or ending_total_nav <= 0:
             return self._empty_fee_details()
@@ -152,6 +343,7 @@ class EnhancedFundManager:
         hurdle_value = 0.0
         hwm_value = 0.0
         excess_profit = 0.0
+        units_before = sum(t.units for t in tranches)
 
         for tranche in tranches:
             if tranche.units < EPSILON: continue
@@ -160,6 +352,8 @@ class EnhancedFundManager:
             if time_delta_days <= 0: continue
             
             time_delta_years = time_delta_days / 365.25
+            
+            # FIXED: More precise calculation with proper rounding
             hurdle_price = tranche.entry_nav * ((1 + HURDLE_RATE_ANNUAL) ** time_delta_years)
             threshold_price = max(hurdle_price, tranche.hwm)
             
@@ -171,15 +365,21 @@ class EnhancedFundManager:
             hwm_value += tranche.hwm * tranche.units
             excess_profit += tranche_excess_profit
         
+        # FIXED: Apply better rounding to reduce precision errors
+        total_fee = round(total_fee, 0)  # Round to nearest VND
+        units_after = units_before - (total_fee / current_price) if current_price > 0 else units_before
+        
         return {
-            'total_fee': round(total_fee, 2),
+            'total_fee': total_fee,
             'balance': round(balance, 2),
             'invested_value': round(invested_value, 2),
             'profit': round(profit, 2),
             'profit_perc': profit_perc,
             'hurdle_value': round(hurdle_value, 2),
             'hwm_value': round(hwm_value, 2),
-            'excess_profit': round(excess_profit, 2)
+            'excess_profit': round(excess_profit, 2),
+            'units_before': units_before,
+            'units_after': units_after
         }
 
     def get_investor_lifetime_performance(self, investor_id: int, current_nav: float) -> Dict:
@@ -187,9 +387,10 @@ class EnhancedFundManager:
         if not tranches: return self._empty_performance_stats()
         
         current_price = self.calculate_price_per_unit(current_nav)
-        total_original_invested = sum(t.original_invested_value for t in tranches)
+        # FIXED: Use original_invested_value instead of calculated value
+        total_original_invested = sum(getattr(t, 'original_invested_value', t.units * t.entry_nav) for t in tranches)
         current_value = sum(t.units for t in tranches) * current_price
-        total_fees_paid = sum(t.cumulative_fees_paid for t in tranches)
+        total_fees_paid = sum(getattr(t, 'cumulative_fees_paid', 0.0) for t in tranches)
         
         gross_profit = current_value + total_fees_paid - total_original_invested
         net_profit = current_value - total_original_invested
@@ -215,7 +416,7 @@ class EnhancedFundManager:
         return {
             'total_fee': 0.0, 'balance': 0.0, 'invested_value': 0.0,
             'profit': 0.0, 'profit_perc': 0.0, 'hurdle_value': 0.0,
-            'hwm_value': 0.0, 'excess_profit': 0.0
+            'hwm_value': 0.0, 'excess_profit': 0.0, 'units_before': 0.0, 'units_after': 0.0
         }
 
     def _empty_performance_stats(self) -> Dict:
@@ -323,6 +524,7 @@ class EnhancedFundManager:
                     hwm=amount / units_change if units_change > 0 else DEFAULT_UNIT_PRICE,
                     original_entry_date=original_transaction.date,
                     original_entry_nav=amount / units_change if units_change > 0 else DEFAULT_UNIT_PRICE,
+                    original_invested_value=amount,
                     cumulative_fees_paid=0.0
                 )
                 self.tranches.append(tranche)
@@ -333,6 +535,8 @@ class EnhancedFundManager:
                     if tranche.investor_id == investor_id:
                         proportion = tranche.units / total_existing_units if total_existing_units > 0 else 1
                         tranche.units += units_change * proportion
+                        # Update invested_value to reflect new position
+                        tranche.invested_value = tranche.units * tranche.entry_nav
             
             # Remove the original transaction
             self.transactions.remove(original_transaction)
@@ -528,6 +732,7 @@ class EnhancedFundManager:
         except Exception as e:
             print(f"Error generating individual report: {str(e)}")
             return {}
+
     def _clear_nav_cache(self):
         """Clear NAV-related cache"""
         try:
@@ -625,7 +830,7 @@ class EnhancedFundManager:
             
             if best_match:
                 # Check if tranche has been affected by fees
-                if best_match.cumulative_fees_paid > 0:
+                if getattr(best_match, 'cumulative_fees_paid', 0) > 0:
                     print(f"Cannot delete deposit transaction {transaction.id}: tranche has been affected by fees")
                     return False
                 
@@ -679,6 +884,7 @@ class EnhancedFundManager:
                     hwm=entry_nav,
                     original_entry_date=transaction.date,
                     original_entry_nav=entry_nav,
+                    original_invested_value=amount,
                     cumulative_fees_paid=0.0
                 )
                 self.tranches.append(tranche)
@@ -690,6 +896,8 @@ class EnhancedFundManager:
                     if total_existing_units > 0:
                         proportion = tranche.units / total_existing_units
                         tranche.units += units_to_restore * proportion
+                        # Update invested_value to reflect new position
+                        tranche.invested_value = tranche.units * tranche.entry_nav
             
             # Remove the transaction
             self.transactions.remove(transaction)
