@@ -154,7 +154,7 @@ class EnhancedDataHandler:
             return False
     
     def load_tranches(self) -> List[Tranche]:
-        """FIXED: Load tranches với comprehensive validation"""
+        """Load tranches với comprehensive validation + hỗ trợ InvestedValue"""
         try:
             if not TRANCHES_FILE.exists():
                 return []
@@ -171,25 +171,29 @@ class EnhancedDataHandler:
                 'HWM': 'EntryNAV',
                 'OriginalEntryDate': 'EntryDate', 
                 'OriginalEntryNAV': 'EntryNAV',
-                'CumulativeFeesPaid': 0.0
+                'CumulativeFeesPaid': 0.0,
+                'OriginalInvestedValue': None,
+                'InvestedValue': None
             }
             
             for col, default_source in required_columns.items():
                 if col not in df.columns:
                     if isinstance(default_source, str):
                         df[col] = df[default_source]
+                    elif col == "OriginalInvestedValue":
+                        df[col] = df['Units'] * df['EntryNAV']
+                    elif col == "InvestedValue":
+                        df[col] = df['Units'] * df['EntryNAV']
                     else:
                         df[col] = default_source
             
             # Handle original date parsing
             df['OriginalEntryDate'] = pd.to_datetime(df['OriginalEntryDate'], errors='coerce')
-            # Fill NaT values with EntryDate
             df['OriginalEntryDate'] = df['OriginalEntryDate'].fillna(df['EntryDate'])
             
             tranches = []
             for _, row in df.iterrows():
                 try:
-                    # Validate required fields
                     if pd.isna(row['EntryDate']) or row['Units'] <= 0 or row['EntryNAV'] <= 0:
                         print(f"Skipping invalid tranche: {row['TrancheID']}")
                         continue
@@ -200,13 +204,17 @@ class EnhancedDataHandler:
                         entry_date=row['EntryDate'],
                         entry_nav=float(row['EntryNAV']),
                         units=float(row['Units']),
+                        original_invested_value=float(row.get('OriginalInvestedValue', row['Units'] * row['EntryNAV'])),
                         hwm=float(row.get('HWM', row['EntryNAV'])),
                         original_entry_date=row['OriginalEntryDate'],
                         original_entry_nav=float(row.get('OriginalEntryNAV', row['EntryNAV'])),
                         cumulative_fees_paid=float(row.get('CumulativeFeesPaid', 0.0))
                     )
                     
-                    # Validate tranche
+                    # Set invested_value nếu file có cột này
+                    if "InvestedValue" in row and pd.notna(row["InvestedValue"]):
+                        tranche.invested_value = float(row["InvestedValue"])
+                    
                     is_valid, errors = validate_tranche(tranche)
                     if is_valid:
                         tranches.append(tranche)
@@ -224,11 +232,11 @@ class EnhancedDataHandler:
         except Exception as e:
             st.error(f"Lỗi load tranches: {str(e)}")
             return []
+
     
     def save_tranches(self, tranches: List[Tranche]) -> bool:
-        """FIXED: Save tranches với validation"""
+        """Save tranches với validation + lưu InvestedValue"""
         try:
-            # Validate tranches before saving
             valid_tranches = []
             for t in tranches:
                 is_valid, errors = validate_tranche(t)
@@ -238,9 +246,9 @@ class EnhancedDataHandler:
                     print(f"Skipping invalid tranche {t.tranche_id}: {errors}")
             
             if not tranches:
-                # Create empty file
                 columns = ['InvestorID', 'TrancheID', 'EntryDate', 'EntryNAV', 'Units', 
-                          'HWM', 'OriginalEntryDate', 'OriginalEntryNAV', 'CumulativeFeesPaid']
+                        'HWM', 'OriginalEntryDate', 'OriginalEntryNAV', 'CumulativeFeesPaid',
+                        'OriginalInvestedValue', 'InvestedValue']
                 pd.DataFrame(columns=columns).to_csv(TRANCHES_FILE, index=False)
                 return True
             
@@ -255,18 +263,19 @@ class EnhancedDataHandler:
                     'HWM': t.hwm,
                     'OriginalEntryDate': t.original_entry_date,
                     'OriginalEntryNAV': t.original_entry_nav,
-                    'CumulativeFeesPaid': t.cumulative_fees_paid
+                    'CumulativeFeesPaid': t.cumulative_fees_paid,
+                    'OriginalInvestedValue': t.original_invested_value,
+                    'InvestedValue': t.invested_value
                 })
             
-            # Ensure directory exists
             DATA_DIR.mkdir(parents=True, exist_ok=True)
-            
             pd.DataFrame(data).to_csv(TRANCHES_FILE, index=False)
             return True
             
         except Exception as e:
             st.error(f"Lỗi save tranches: {str(e)}")
             return False
+
     
     def load_transactions(self) -> List[Transaction]:
         """FIXED: Load transactions với validation"""

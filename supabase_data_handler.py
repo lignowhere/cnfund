@@ -163,11 +163,40 @@ class SupabaseDataHandler:
         try:
             if not self.connected: return []
             with self.engine.connect() as conn:
-                result = conn.execute(text("SELECT investor_id, tranche_id, entry_date, entry_nav, units, hwm, original_entry_date, original_entry_nav, cumulative_fees_paid FROM tranches ORDER BY entry_date ASC, investor_id ASC"))
+                result = conn.execute(text("""
+                    SELECT investor_id, tranche_id, entry_date, entry_nav, units, hwm, 
+                        original_entry_date, original_entry_nav, cumulative_fees_paid
+                    FROM tranches 
+                    ORDER BY entry_date ASC, investor_id ASC
+                """))
                 rows = result.fetchall()
-            return [Tranche(investor_id=r[0], tranche_id=r[1], entry_date=r[2], entry_nav=float(r[3]), units=float(r[4]), hwm=float(r[5]), original_entry_date=r[6] or r[2], original_entry_nav=float(r[7] or r[3]), cumulative_fees_paid=float(r[8] or 0.0)) for r in rows]
+            
+            tranches = []
+            for row in rows:
+                try:
+                    # Tính original_invested_value từ units * original_entry_nav
+                    original_invested = float(row[4]) * float(row[7] or row[3])
+                    
+                    tranche = Tranche(
+                        investor_id=row[0], 
+                        tranche_id=row[1], 
+                        entry_date=row[2], 
+                        entry_nav=float(row[3]), 
+                        units=float(row[4]), 
+                        hwm=float(row[5]), 
+                        original_entry_date=row[6] or row[2], 
+                        original_entry_nav=float(row[7] or row[3]), 
+                        cumulative_fees_paid=float(row[8] or 0.0),
+                        original_invested_value=original_invested  # Tính từ units * nav
+                    )
+                    tranches.append(tranche)
+                except Exception as e:
+                    continue
+            
+            return tranches
+            
         except Exception as e:
-            st.error(f"Lỗi tải các lô đầu tư: {str(e)}")
+            print(f"Error in load_tranches: {e}")
             return []
 
     def load_transactions(self) -> List[Transaction]:
@@ -229,27 +258,38 @@ class SupabaseDataHandler:
             return False
     
     def save_tranches(self, tranches: List[Tranche]) -> bool:
-        """Save tranches"""
         try:
             if not self.connected:
+                print("DEBUG: Not connected to database")
                 return False
                 
             with self.engine.connect() as conn:
                 trans = conn.begin()
                 try:
-                    conn.execute(text("DELETE FROM tranches"))
+                    print(f"DEBUG: Deleting existing tranches...")
+                    result = conn.execute(text("DELETE FROM tranches"))
+                    print(f"DEBUG: Deleted {result.rowcount} existing tranches")
                     
                     if tranches:
-                        tranche_data = [{
-                            'investor_id': t.investor_id, 'tranche_id': t.tranche_id,
-                            'entry_date': t.entry_date, 'entry_nav': t.entry_nav,
-                            'units': t.units, 'hwm': t.hwm,
-                            'original_entry_date': t.original_entry_date,
-                            'original_entry_nav': t.original_entry_nav,
-                            'cumulative_fees_paid': t.cumulative_fees_paid
-                        } for t in tranches]
+                        print(f"DEBUG: Preparing to insert {len(tranches)} tranches")
+                        tranche_data = []
+                        for t in tranches:
+                            data = {
+                                'investor_id': t.investor_id, 
+                                'tranche_id': t.tranche_id,
+                                'entry_date': t.entry_date, 
+                                'entry_nav': t.entry_nav,
+                                'units': t.units, 
+                                'hwm': t.hwm,
+                                'original_entry_date': t.original_entry_date,
+                                'original_entry_nav': t.original_entry_nav,
+                                'cumulative_fees_paid': t.cumulative_fees_paid
+                            }
+                            tranche_data.append(data)
+                            print(f"DEBUG: Prepared tranche {t.tranche_id}")
                         
-                        conn.execute(text("""
+                        print("DEBUG: Executing INSERT...")
+                        result = conn.execute(text("""
                             INSERT INTO tranches (
                                 investor_id, tranche_id, entry_date, entry_nav, units, hwm,
                                 original_entry_date, original_entry_nav, cumulative_fees_paid
@@ -258,16 +298,21 @@ class SupabaseDataHandler:
                                 :original_entry_date, :original_entry_nav, :cumulative_fees_paid
                             )
                         """), tranche_data)
+                        print(f"DEBUG: INSERT completed, {result.rowcount} rows affected")
                     
+                    print("DEBUG: Committing transaction...")
                     trans.commit()
+                    print("DEBUG: Transaction committed successfully")
                     return True
                     
                 except Exception as e:
+                    print(f"DEBUG: Error in transaction: {e}")
                     trans.rollback()
+                    print("DEBUG: Transaction rolled back")
                     raise e
                     
         except Exception as e:
-            st.error(f"❌ Error saving tranches: {str(e)}")
+            print(f"DEBUG: Error in save_tranches: {str(e)}")
             return False
     
     def save_transactions(self, transactions: List[Transaction]) -> bool:

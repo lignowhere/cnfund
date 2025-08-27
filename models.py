@@ -49,15 +49,18 @@ class Tranche:
             self.original_entry_date = self.entry_date
         if self.original_entry_nav is None:
             self.original_entry_nav = self.entry_nav
+        # 🔹 backing field để lưu cost basis hiện tại
+        self._invested_value = self.units * self.entry_nav
     
     @property 
     def invested_value(self) -> float:
-        """
-        Vốn đầu tư hiện tại (luôn được tính toán dựa trên units hiện tại)
-        """
-        return self.units * self.entry_nav
-    
-    # BỎ HOÀN TOÀN @property của original_invested_value
+        """Vốn đầu tư hiện tại (có thể được cập nhật qua setter)."""
+        return self._invested_value
+
+    @invested_value.setter
+    def invested_value(self, value: float):
+        """Cho phép cập nhật cost basis khi có rút/fee."""
+        self._invested_value = float(value)
     
     @property
     def days_held(self) -> int:
@@ -107,11 +110,11 @@ class Tranche:
             self.hwm = new_price
     
     def apply_fee(self, fee_amount: float, current_price: float) -> None:
-        """
-        Áp dụng phí: cập nhật cumulative_fees_paid và có thể cập nhật HWM
-        """
+        # chỉ ghi nhận phí, không đụng tới HWM
         self.cumulative_fees_paid += fee_amount
-        self.update_hwm(current_price)
+        # nếu muốn thì trừ units tại đây
+        fee_units = fee_amount / current_price if current_price > 0 else 0
+        self.units = max(0.0, self.units - fee_units)
 
 @dataclass
 class Transaction:
