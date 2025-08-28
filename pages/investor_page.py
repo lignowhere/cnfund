@@ -22,7 +22,7 @@ class InvestorPage:
             address = col3.text_input("Địa chỉ", help="Địa chỉ (tùy chọn)")
             email = col4.text_input("Email", help="Email (tùy chọn)")
             
-            submitted = st.form_submit_button("➕ Thêm Nhà Đầu Tư", use_container_width=True)
+            submitted = st.form_submit_button("➕ Thêm Nhà Đầu Tư", width='stretch')
             
             if submitted:
                 success, message = self.fund_manager.add_investor(name, phone, address, email)
@@ -76,7 +76,7 @@ class InvestorPage:
         
         col1, col2 = st.columns([1, 4])
         
-        if col1.button("💾 Lưu Thay Đổi", use_container_width=True):
+        if col1.button("💾 Lưu Thay Đổi", width="stretch"):
             # Cập nhật fund_manager
             self.fund_manager.investors.clear()
             

@@ -79,7 +79,7 @@ class EnhancedReportPage:
         self._render_fund_growth_timeline()
         
         # Export full dashboard
-        if st.button("📤 Export Executive Summary", use_container_width=True):
+        if st.button("📤 Export Executive Summary", width='stretch'):
             self._export_executive_summary(current_nav)
     
     def _render_individual_reports(self):
@@ -119,15 +119,15 @@ class EnhancedReportPage:
         col1, col2, col3 = st.columns(3)
         
         with col1:
-            if st.button("📄 Export PDF Report", use_container_width=True, key="export_pdf"):
+            if st.button("📄 Export PDF Report", width='stretch', key="export_pdf"):
                 st.info("🚧 PDF export đang phát triển")
         
         with col2:
-            if st.button("📊 Export Excel Report", use_container_width=True, key="export_excel_individual"):
+            if st.button("📊 Export Excel Report", width='stretch', key="export_excel_individual"):
                 self._export_individual_excel_report(investor_id, current_nav, selected_display)
         
         with col3:
-            if st.button("📧 Email to Client", use_container_width=True, key="email_client"):
+            if st.button("📧 Email to Client", width='stretch', key="email_client"):
                 st.info("🚧 Email feature đang phát triển")
     
     def _render_kpi_section(self, current_nav):

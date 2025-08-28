@@ -149,7 +149,7 @@ class SidebarManager:
         """Render trạng thái người dùng - theo style code gốc"""
         if st.session_state.get('logged_in', False):
             st.sidebar.success("👤 Chế độ Admin")
-            if st.sidebar.button("🚪 Đăng xuất", use_container_width=True):
+            if st.sidebar.button("🚪 Đăng xuất", width="stretch"):
                 st.session_state.logged_in = False
                 st.rerun()
         else:
@@ -161,11 +161,11 @@ class SidebarManager:
         
         col1, col2 = st.sidebar.columns(2)
         
-        if col1.button("📊 Export Excel", use_container_width=True, 
+        if col1.button("📊 Export Excel", width="stretch", 
                       help="Xuất báo cáo tổng hợp ra file Excel"):
             self.handle_excel_export()
         
-        if col2.button("☁️ Test Drive", use_container_width=True, 
+        if col2.button("☁️ Test Drive", width="stretch", 
                       help="Kiểm tra kết nối tới Google Drive"):
             self.handle_drive_test()
 
@@ -175,13 +175,6 @@ class SidebarManager:
 
         if self.data_handler and hasattr(self.data_handler, 'connected') and self.data_handler.connected:
             st.sidebar.success("🟢 Supabase Connected")
-            if hasattr(self.data_handler, 'connection_info') and hasattr(self.data_handler, 'version_info'):
-                with st.sidebar.expander("📊 Database Info"):
-                    conn_info = self.data_handler.connection_info
-                    ver_info = self.data_handler.version_info
-                    st.write(f"**Host:** `{conn_info.get('host', 'N/A')}`")
-                    st.write(f"**Database:** `{ver_info.get('database_name', 'N/A')}`")
-                    st.write(f"**User:** `{ver_info.get('current_user', 'N/A')}`")
         else:
             st.sidebar.error("🔴 Supabase Disconnected")
 

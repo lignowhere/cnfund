@@ -130,7 +130,7 @@ class UIRefreshManager:
     def manual_refresh_button():
         """Manual refresh - chỉ khi cần thiết"""
         if st.session_state.get('data_changed', False):
-            if st.sidebar.button("🔄 Refresh Data", use_container_width=True):
+            if st.sidebar.button("🔄 Refresh Data", width="stretch"):
                 RealTimeDataSync.force_data_refresh()
                 st.rerun()
 

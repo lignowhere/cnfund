@@ -99,7 +99,7 @@ class EnhancedTransactionPage:
             # Nút submit là điểm chốt để lấy dữ liệu
             submitted = st.form_submit_button(
                 "✅ Thực hiện giao dịch", 
-                use_container_width=True
+                width="stretch"
             )
             
             # === TOÀN BỘ LOGIC VALIDATION VÀ XỬ LÝ ĐƯỢC DI CHUYỂN VÀO ĐÂY ===
@@ -188,7 +188,7 @@ class EnhancedTransactionPage:
             # Nút submit bây giờ sẽ luôn hoạt động, không có 'disabled'
             submitted = st.form_submit_button(
                 "✅ Cập nhật NAV", 
-                use_container_width=True
+                width="stretch"
             )
             
             if submitted:
@@ -342,7 +342,7 @@ class EnhancedTransactionPage:
             
             submitted = st.form_submit_button(
                 "💸 Xác Nhận Fund Manager Withdrawal", 
-                use_container_width=True,
+                width="stretch",
                 disabled=not confirmed or withdrawal_amount <= 0
             )
             

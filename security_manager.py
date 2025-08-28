@@ -70,7 +70,7 @@ class SecurityManager:
                                        placeholder="Nhập mật khẩu admin...",
                                        key="login_password")
                 
-                if st.button("🚀 Đăng nhập", use_container_width=True, type="primary"):
+                if st.button("🚀 Đăng nhập", width="stretch", type="primary"):
                     if self.login(password):
                         st.success("✅ Đăng nhập thành công!")
                         st.rerun()

@@ -379,7 +379,7 @@ class FundManagementApp:
                 label_visibility="visible"
             )
             
-            if st.button("🚀 Xác thực", use_container_width=True, type="primary"):
+            if st.button("🚀 Xác thực", width="stretch", type="primary"):
                 if password == self.admin_password:
                     st.session_state.logged_in = True
                     st.success("✅ Xác thực thành công!")

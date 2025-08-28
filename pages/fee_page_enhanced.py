@@ -103,7 +103,7 @@ class SafeFeePage:
                                    key="individual_fee_nav_input")
         calc_nav = parse_currency(nav_input)
         
-        if st.button("🧮 Tính Toán", use_container_width=True):
+        if st.button("🧮 Tính Toán", width="stretch"):
             if calc_nav <= 0:
                 st.error("❌ Total NAV phải lớn hơn 0")
             else:
@@ -114,7 +114,7 @@ class SafeFeePage:
     def _render_data_consistency_check(self):
         """Render data consistency check"""
         with st.expander("🔍 Kiểm Tra Tính Nhất Quán Dữ Liệu", expanded=False):
-            if st.button("🔍 Chạy Kiểm Tra", use_container_width=True):
+            if st.button("🔍 Chạy Kiểm Tra", width="stretch"):
                 validation_results = self.fund_manager.validate_data_consistency()
                 
                 col1, col2 = st.columns(2)
@@ -352,7 +352,7 @@ class SafeFeePage:
         if step1 and step2 and step3:
             st.success("✅ Tất cả xác nhận hoàn thành")
             
-            if st.button("🚀 ÁP DỤNG PHÍ CUỐI NĂM", type="primary", use_container_width=True):
+            if st.button("🚀 ÁP DỤNG PHÍ CUỐI NĂM", type="primary", width="stretch"):
                 # 1. Tạo backup trước khi thao tác
                 self.fund_manager.backup_before_operation(f"Fee Application {year}")
                 st.info("💾 Đã tạo backup trước khi áp dụng phí.")

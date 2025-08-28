@@ -654,7 +654,7 @@ class ExportManager:
         with st.sidebar.expander("📤 Export & Backup"):
             col1, col2 = st.sidebar.columns(2)
 
-            if col1.button("📊 Export", use_container_width=True, key="export_btn"):
+            if col1.button("📊 Export", width="stretch", key="export_btn"):
                 try:
                     gdrive = GoogleDriveManager(fund_manager)
                     with st.spinner("Exporting..."):
@@ -664,7 +664,7 @@ class ExportManager:
                 except Exception as e:
                     st.error(f"Export failed: {str(e)}")
 
-            if col2.button("☁️ Test", use_container_width=True, key="test_btn"):
+            if col2.button("☁️ Test", width="stretch", key="test_btn"):
                 try:
                     gdrive = GoogleDriveManager(fund_manager)
                     test_result = gdrive.test_connection()

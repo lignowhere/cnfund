@@ -287,7 +287,7 @@ def smart_save_handler(fund_manager):
     
     elif save_mode == "📊 Detailed Save":
         # Save with progress and detailed feedback
-        if st.sidebar.button("💾 Save with Progress", use_container_width=True):
+        if st.sidebar.button("💾 Save with Progress", width="stretch"):
             async_save_manager = AsyncSaveManager(fund_manager)
             success = async_save_manager.save_with_progress()
             
@@ -301,7 +301,7 @@ def smart_save_handler(fund_manager):
         col1, col2 = st.sidebar.columns(2)
         
         with col1:
-            if st.button("⚡ Quick", use_container_width=True):
+            if st.button("⚡ Quick", width="stretch"):
                 success = fund_manager.save_data()
                 if success:
                     st.sidebar.success("✅ Quick save")
@@ -309,7 +309,7 @@ def smart_save_handler(fund_manager):
                     st.sidebar.error("❌ Quick save failed")
         
         with col2:
-            if st.button("🔍 Validate", use_container_width=True):
+            if st.button("🔍 Validate", width="stretch"):
                 validation = fund_manager.validate_data_consistency()
                 if validation['valid']:
                     st.sidebar.success("✅ Data valid")

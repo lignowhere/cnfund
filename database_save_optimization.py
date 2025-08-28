@@ -382,7 +382,7 @@ def render_database_diagnostics(data_handler):
     col1, col2 = st.columns(2)
     
     with col1:
-        if st.button("🏃 Test Connection Speed", use_container_width=True):
+        if st.button("🏃 Test Connection Speed", width="stretch"):
             with st.spinner("Testing connection speed..."):
                 speed_results = network_optimizer.test_connection_speed()
                 
@@ -400,7 +400,7 @@ def render_database_diagnostics(data_handler):
                     st.error(f"Speed test failed: {speed_results['error']}")
     
     with col2:
-        if st.button("💡 Get Optimization Tips", use_container_width=True):
+        if st.button("💡 Get Optimization Tips", width="stretch"):
             suggestions = network_optimizer.optimize_connection_settings()
             
             if suggestions:
@@ -426,7 +426,7 @@ def enhanced_save_options(fund_manager):
     )
     
     if save_method == "🚀 Ultra Fast":
-        if st.sidebar.button("💾 Ultra Fast Save", use_container_width=True):
+        if st.sidebar.button("💾 Ultra Fast Save", width="stretch"):
             if hasattr(fund_manager, 'ultra_fast_save_data'):
                 success = fund_manager.ultra_fast_save_data()
             else:
@@ -439,7 +439,7 @@ def enhanced_save_options(fund_manager):
                 st.sidebar.error("❌ Ultra fast save failed")
     
     elif save_method == "⚡ Minimal":
-        if st.sidebar.button("💾 Minimal Save", use_container_width=True):
+        if st.sidebar.button("💾 Minimal Save", width="stretch"):
             if hasattr(fund_manager, 'minimal_save_data'):
                 success = fund_manager.minimal_save_data()
             else:
@@ -452,7 +452,7 @@ def enhanced_save_options(fund_manager):
                 st.sidebar.error("❌ Minimal save failed")
     
     elif save_method == "📊 Standard":
-        if st.sidebar.button("💾 Standard Save", use_container_width=True):
+        if st.sidebar.button("💾 Standard Save", width="stretch"):
             start_time = time.time()
             success = fund_manager.save_data()
             save_time = time.time() - start_time
