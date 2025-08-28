@@ -1,10 +1,14 @@
-from copy import copy
+import copy as cp
 import uuid
 from datetime import datetime, date
 from typing import List, Tuple, Optional, Dict, Any
 import streamlit as st
 from config import *
 from models import Investor, Tranche, Transaction, FeeRecord
+import logging # Sử dụng logging chuyên nghiệp hơn
+
+# Thiết lập logging (có thể đặt ở đầu file)
+logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 
 from utils import *
 from concurrent.futures import ThreadPoolExecutor
@@ -236,132 +240,73 @@ class EnhancedFundManager:
             self.tranches = [t for t in self.tranches if t.units >= EPSILON]
         return True
 
+    # +++++ THAY THẾ TOÀN BỘ HÀM process_withdrawal BẰNG PHIÊN BẢN HOÀN THIỆN NÀY +++++
     def process_withdrawal(
         self, investor_id: int, net_amount: float, total_nav_after: float, trans_date: datetime
     ) -> Tuple[bool, str]:
-        """
-        Xử lý rút tiền (Net -> Gross):
-        - Tính performance fee tương ứng (tỉ lệ rút so với toàn bộ balance)
-        - Áp fee (giảm units & tạo FeeRecord + transaction 'Phí' cho investor)
-        - Trừ units cho phần rút (tạo transaction 'Rút' chỉ cho phần net)
-        - Chuyển fee units cho Fund Manager (tạo transaction 'Phí Nhận' + tranche cho FM)
-        """
+        """Xử lý rút tiền với logic rõ ràng và chính xác cho mọi trường hợp."""
 
-        # NAV & price trước khi rút
+        # 1. Lấy thông tin trạng thái
         old_total_nav = self.get_latest_total_nav() or 0
-        if old_total_nav <= 0:
-            return False, "Không có NAV để thực hiện giao dịch."
+        if old_total_nav <= 0: return False, "Không có NAV để thực hiện giao dịch."
         current_price = self.calculate_price_per_unit(old_total_nav)
-
+        
         tranches = self.get_investor_tranches(investor_id)
-        if not tranches:
-            return False, "Nhà đầu tư không có vốn."
+        if not tranches: return False, "Nhà đầu tư không có vốn."
+        
         balance = sum(t.units for t in tranches) * current_price
-        if net_amount > balance + EPSILON:
-            return False, f"Số tiền rút ({format_currency(net_amount)}) vượt quá số dư khả dụng ({format_currency(balance)})."
 
-        # 1) Tính fee full (nếu áp cả quỹ)
+        # 2. Tính toán phí và số dư thực nhận
         fee_info = self.calculate_investor_fee(investor_id, trans_date, old_total_nav)
-        perf_fee_full = fee_info.get("total_fee", 0.0)
+        fee_on_full_balance = fee_info.get("total_fee", 0.0)
+        net_balance = balance - fee_on_full_balance
 
-        # 2) Tỷ lệ phân bổ fee theo net requested
-        gross_if_full = balance
-        denom = gross_if_full - perf_fee_full if (gross_if_full - perf_fee_full) > EPSILON else gross_if_full
-        proportion = net_amount / denom if denom > EPSILON else 1.0
-        performance_fee = max(0.0, min(perf_fee_full * proportion, perf_fee_full))
-
-        gross_withdrawal = net_amount + performance_fee
-        if gross_withdrawal > balance + EPSILON:
-            gross_withdrawal = balance
-            performance_fee = max(0.0, gross_withdrawal - net_amount)
-
-        # 3) compute units
-        fee_units = round(performance_fee / current_price, 8) if current_price > 0 else 0.0
-        
-        # Lấy tổng units trước khi làm gì cả
-        total_units_before_any_deduction = sum(t.units for t in tranches)
-        
-        # Nếu net_amount yêu cầu gần bằng toàn bộ số dư (sau khi trừ phí dự kiến), 
-        # coi như đây là rút toàn bộ
-        balance_after_fee_estimate = balance - performance_fee
-        is_intended_full_withdrawal = net_amount >= balance_after_fee_estimate - EPSILON
-
-        if is_intended_full_withdrawal:
-            # Nếu rút toàn bộ, units rút ra sẽ bằng toàn bộ units còn lại sau khi trừ phí
-            withdrawal_units = total_units_before_any_deduction - fee_units
-            # Và số tiền net thực nhận có thể khác một chút do làm tròn
-            net_amount = withdrawal_units * current_price
+        # 3. Phân loại yêu cầu và điều chỉnh
+        is_full_withdrawal = False
+        if net_amount >= net_balance - EPSILON:
+            is_full_withdrawal = True
+            performance_fee = fee_on_full_balance
+            net_amount = net_balance # Tự ĐỘNG ĐIỀU CHỈNH
         else:
-            withdrawal_units = round(net_amount / current_price, 8) if current_price > 0 else 0.0
+            proportion = net_amount / net_balance if net_balance > EPSILON else 1.0
+            performance_fee = fee_on_full_balance * proportion
+        
+        gross_withdrawal = net_amount + performance_fee
+        
+        # Kiểm tra cuối cùng để đảm bảo không có lỗi logic nào
+        if gross_withdrawal > balance + EPSILON:
+            error_msg = f"Lỗi logic: Gross withdrawal ({format_currency(gross_withdrawal)}) > Balance ({format_currency(balance)})"
+            logging.error(error_msg)
+            return False, error_msg
 
-        # 4) Apply fee first (reduce units and update cumulative_fees_paid per tranche)
+        fee_units = round(performance_fee / current_price, 8) if current_price > 0 else 0.0
+        withdrawal_units = round(net_amount / current_price, 8) if current_price > 0 else 0.0
+
+        # 4. Ghi nhận giao dịch
+        units_before = sum(t.units for t in tranches)
         if performance_fee > EPSILON:
-            # units_before for fee_record
-            units_before = sum(t.units for t in tranches)
-
-            # Try to apply via existing helper
-            fee_applied = self._apply_fee_to_investor_tranches(investor_id, performance_fee, trans_date, old_total_nav)
-
-            # Fallback if helper fails (e.g., extreme edge)
-            if not fee_applied:
-                total_units = units_before
-                if total_units > EPSILON:
-                    for tranche in tranches:
-                        proportion_tr = tranche.units / total_units
-                        units_reduction = fee_units * proportion_tr
-                        tranche.units = max(0.0, tranche.units - units_reduction)
-                        tranche.cumulative_fees_paid = getattr(tranche, "cumulative_fees_paid", 0.0) + (units_reduction * current_price)
-                        tranche.invested_value = tranche.units * tranche.entry_nav
-                else:
-                    # can't apply fee (no units) -> zero it
-                    performance_fee = 0.0
-                    fee_units = 0.0
-
-            # record investor-side 'Phí' transaction and FeeRecord (so investor's total_fees_paid is tracked)
-            if performance_fee > EPSILON:
-                # 4.a Transaction 'Phí' (âm) for investor
-                self._add_transaction(investor_id, trans_date, "Phí", -performance_fee, total_nav_after, -fee_units)
-
-                # 4.b FeeRecord for the payer (investor)
-                units_after = sum(t.units for t in self.get_investor_tranches(investor_id))
-                fee_record = FeeRecord(
-                    id=len(self.fee_records) + 1,
-                    period=f"Withdrawal {trans_date.strftime('%Y-%m-%d')}",
-                    investor_id=investor_id,
-                    fee_amount=performance_fee,
-                    fee_units=fee_units,
-                    calculation_date=trans_date,
-                    units_before=units_before,
-                    units_after=units_after,
-                    nav_per_unit=current_price,
-                    description="Performance fee charged on withdrawal",
-                )
-                self.fee_records.append(fee_record)
-
-        # 5) Remove withdrawal units for net amount (separately)
-        # compute current tranches snapshot; is_full if withdraw all remaining units
-        tranches_after_fee = self.get_investor_tranches(investor_id)
-        total_units_after_fee = sum(t.units for t in tranches_after_fee)
-        is_full_withdraw = withdrawal_units >= total_units_after_fee - EPSILON
-
-        # Remove withdrawal units (this will adjust invested_value)
-        self._process_unit_reduction_fixed(investor_id, withdrawal_units, is_intended_full_withdrawal)
-
-        # 6) Transaction 'Rút' for investor (net amount) — units_change = -withdrawal_units
-        self._add_transaction(investor_id, trans_date, "Rút", -net_amount, total_nav_after, -withdrawal_units)
-
-        # 7) Transfer fee units to Fund Manager (create FM tranche + 'Phí Nhận' transaction)
-        if performance_fee > EPSILON and fee_units > EPSILON:
-            # _transfer_fee_to_fund_manager will create FM tranche and 'Phí Nhận' transaction
+            self._add_transaction(investor_id, trans_date, "Phí", -performance_fee, total_nav_after, -fee_units)
+            self.fee_records.append(FeeRecord(
+                id=len(self.fee_records) + 1,
+                period=f"Withdrawal {trans_date.strftime('%Y-%m-%d')}", investor_id=investor_id,
+                fee_amount=performance_fee, fee_units=fee_units, calculation_date=trans_date,
+                units_before=units_before, units_after=units_before - fee_units - withdrawal_units, 
+                nav_per_unit=current_price, description="Performance fee charged on withdrawal"
+            ))
             self._transfer_fee_to_fund_manager(fee_units, current_price, trans_date, total_nav_after, performance_fee)
 
-        # CUỐI HÀM, THÊM BƯỚC KIỂM TRA
-        if is_intended_full_withdrawal:
-            remaining_units = self.get_investor_units(investor_id)
-            if remaining_units > EPSILON:
-                print(f"WARNING: Full withdrawal processed, but investor {investor_id} still has {remaining_units} units.")
-                # Có thể thêm logic dọn dẹp nốt ở đây nếu cần
-                self.tranches = [t for t in self.tranches if t.investor_id != investor_id]
+        self._add_transaction(investor_id, trans_date, "Rút", -net_amount, total_nav_after, -withdrawal_units)
+
+        # 5. Cập nhật tranches
+        if is_full_withdrawal:
+            self.tranches = [t for t in self.tranches if t.investor_id != investor_id]
+            logging.info(f"Investor {investor_id} performed a full withdrawal. All tranches removed.")
+        else:
+            if performance_fee > EPSILON:
+                fee_details = {"total_fee": performance_fee, "current_price": current_price}
+                self._apply_fee_to_investor_tranches(investor_id, fee_details, trans_date, crystallize=False)
+            self._process_unit_reduction_fixed(investor_id, withdrawal_units, is_full=False)
+                
         return True, f"Nhà đầu tư nhận {format_currency(net_amount)} (Gross {format_currency(gross_withdrawal)}, Phí {format_currency(performance_fee)})"
 
 
@@ -383,15 +328,15 @@ class EnhancedFundManager:
 
         return True, f"Đã cập nhật NAV: {format_currency(total_nav)}"
 
-    def crystallize_hwm(self, current_price: float):
-        """
-        Chốt High Water Mark cho tất cả các tranche tại một mức giá nhất định.
-        Hàm này nên được gọi SAU KHI phí đã được tính và áp dụng.
-        """
-        print(f"💎 Crystallizing HWM at price: {current_price:,.2f}")
-        for tranche in self.tranches:
-            if current_price > tranche.hwm:
-                tranche.hwm = current_price
+    # def crystallize_hwm(self, current_price: float):
+    #     """
+    #     Chốt High Water Mark cho tất cả các tranche tại một mức giá nhất định.
+    #     Hàm này nên được gọi SAU KHI phí đã được tính và áp dụng.
+    #     """
+    #     print(f"💎 Crystallizing HWM at price: {current_price:,.2f}")
+    #     for tranche in self.tranches:
+    #         if current_price > tranche.hwm:
+    #             tranche.hwm = current_price
     # Fees
     # ================================
     def calculate_investor_fee(
@@ -405,7 +350,7 @@ class EnhancedFundManager:
         balance = sum(t.units for t in tranches) * current_price
         invested_value = sum(getattr(t, "invested_value", t.units * t.entry_nav) for t in tranches)
         profit = balance - invested_value
-        profit_perc = profit / invested_value if invested_value > 0 else 0.0
+        profit_perc = (profit / invested_value) if invested_value > 0 else 0.0
 
         total_fee = 0.0
         hurdle_value = 0.0
@@ -416,24 +361,17 @@ class EnhancedFundManager:
         for tranche in tranches:
             if tranche.units < EPSILON:
                 continue
-
-            time_delta_days = (ending_date - tranche.entry_date).days
-            if time_delta_days <= 0:
-                continue
-
-            time_delta_years = time_delta_days / 365.25
-            hurdle_price = tranche.entry_nav * ((1 + HURDLE_RATE_ANNUAL) ** time_delta_years)
-            threshold_price = max(hurdle_price, tranche.hwm)
-
-            profit_per_unit = max(0, current_price - threshold_price)
-            tranche_excess_profit = profit_per_unit * tranche.units
+            
+            # Sửa đổi: Truyền ending_date vào hàm tính toán
+            tranche_excess_profit = tranche.calculate_excess_profit(current_price, ending_date)
+            hurdle_price = tranche.calculate_hurdle_price(ending_date)
 
             total_fee += PERFORMANCE_FEE_RATE * tranche_excess_profit
             hurdle_value += hurdle_price * tranche.units
             hwm_value += tranche.hwm * tranche.units
             excess_profit += tranche_excess_profit
 
-        total_fee = round(total_fee, 0)  # làm tròn tiền phí (VND)
+        total_fee = round(total_fee, 0)
         units_after = units_before - (total_fee / current_price) if current_price > 0 else units_before
 
         return {
@@ -450,95 +388,73 @@ class EnhancedFundManager:
         }
 
     def _apply_fee_to_investor_tranches(
-        self, investor_id: int, total_fee: float, fee_date: datetime, total_nav: float
+        self, 
+        investor_id: int, 
+        fee_details: Dict[str, Any],
+        fee_date: datetime,
+        crystallize: bool
     ) -> bool:
-        """
-        NÂNG CẤP HOÀN THIỆN: Áp dụng phí một cách an toàn và chính xác.
-        - Đảm bảo tính "nguyên tử": Hoặc tất cả thay đổi được áp dụng, hoặc không gì cả.
-        - Xử lý sai số làm tròn: Đảm bảo tổng units bị trừ khớp chính xác với tổng phí.
-        - Bảo toàn lịch sử: Không reset `entry_date` của tranche.
-        - Reset HWM có điều kiện: Chỉ reset HWM/entry_nav cho các tranche thực sự trả phí.
-        """
         try:
-            # Lấy các tranche gốc của nhà đầu tư
+            total_fee = fee_details.get("total_fee", 0.0)
+            current_price = fee_details.get("current_price")
+            
             tranches_original = self.get_investor_tranches(investor_id)
-            if not tranches_original or total_fee <= EPSILON:
-                return False # Không có gì để làm nếu không có tranche hoặc không có phí
+            if not tranches_original or total_fee <= EPSILON or not current_price:
+                return False
 
-            # 1. TÍNH TOÁN BAN ĐẦU
-            current_price = self.calculate_price_per_unit(total_nav)
-            if current_price <= 0: return False
-
-            # Xác định các tranche sẽ bị tính phí
             tranches_with_profit = [
                 t for t in tranches_original 
-                if t.calculate_excess_profit(current_price) > EPSILON
+                if t.calculate_excess_profit(current_price, fee_date) > EPSILON
             ]
-            
-            # Nếu không có tranche nào có lãi, không làm gì cả
             if not tranches_with_profit:
+                logging.warning(f"Investor {investor_id} has a total fee but no tranches with excess profit. Skipping fee application.")
                 return False
 
-            total_excess_profit = sum(t.calculate_excess_profit(current_price) for t in tranches_with_profit)
-            if total_excess_profit < EPSILON:
-                return False
+            total_excess_profit_for_allocation = sum(
+                t.calculate_excess_profit(current_price, fee_date) for t in tranches_with_profit
+            )
+            if total_excess_profit_for_allocation < EPSILON: return False
 
+            tranches_copy = cp.deepcopy(tranches_original)
             total_units_to_reduce = round(total_fee / current_price, 8)
             units_reduced_so_far = 0.0
-
-            # 2. THAO TÁC TRÊN BẢN SAO ĐỂ ĐẢM BẢO AN TOÀN (TÍNH NGUYÊN TỬ)
-            tranches_copy = copy.deepcopy(tranches_original)
             
-            # 3. VÒNG LẶP XỬ LÝ PHÍ
-            num_tranches_with_profit = len(tranches_with_profit)
-
-            for i, tranche_id_to_modify in enumerate(t.tranche_id for t in tranches_with_profit):
-                # Tìm tranche tương ứng trong bản sao để chỉnh sửa
-                tranche = next(t for t in tranches_copy if t.tranche_id == tranche_id_to_modify)
+            for i, original_tranche in enumerate(tranches_with_profit):
+                tranche = next(t for t in tranches_copy if t.tranche_id == original_tranche.tranche_id)
                 
-                # Xử lý sai số làm tròn cho tranche cuối cùng
-                if i == num_tranches_with_profit - 1:
+                if i == len(tranches_with_profit) - 1:
                     units_reduction = total_units_to_reduce - units_reduced_so_far
                 else:
-                    tranche_excess_profit = tranche.calculate_excess_profit(current_price)
-                    fee_proportion = tranche_excess_profit / total_excess_profit
+                    tranche_excess_profit = tranche.calculate_excess_profit(current_price, fee_date)
+                    fee_proportion = tranche_excess_profit / total_excess_profit_for_allocation
                     fee_for_this_tranche = total_fee * fee_proportion
                     units_reduction = round(fee_for_this_tranche / current_price, 8)
 
                 if units_reduction < EPSILON: continue
+                units_reduction = min(units_reduction, tranche.units)
 
-                # Cập nhật các giá trị của tranche trong bản sao
-                tranche.cumulative_fees_paid += (units_reduction * current_price)
+                fee_amount_for_tranche = units_reduction * current_price
+                tranche.cumulative_fees_paid += fee_amount_for_tranche
                 tranche.units -= units_reduction
                 units_reduced_so_far += units_reduction
                 
-                # CHỐT LÃI VÀ RESET NGƯỠNG TRONG BẢN SAO
-                tranche.invested_value = tranche.units * current_price
-                tranche.entry_nav = current_price
-                # Không reset entry_date để giữ lại lịch sử
-                tranche.hwm = current_price
+                if not crystallize:
+                    tranche.invested_value = tranche.units * tranche.entry_nav
 
-            # 4. SWAP: THAY THẾ DỮ LIỆU GỐC BẰNG BẢN SAO ĐÃ CẬP NHẬT
-            # Chỉ thực hiện bước này khi toàn bộ vòng lặp đã chạy thành công
-            
-            # Xóa các tranche gốc của nhà đầu tư này khỏi danh sách chính
+                if crystallize:
+                    logging.info(f"Crystallizing tranche {tranche.tranche_id} for investor {investor_id}")
+                    tranche.invested_value = tranche.units * current_price
+                    tranche.entry_nav = current_price
+                    tranche.hwm = current_price
+
             self.tranches = [t for t in self.tranches if t.investor_id != investor_id]
-            
-            # Thêm các tranche đã được cập nhật từ bản sao vào
             self.tranches.extend(tranches_copy)
-            
-            # Dọn dẹp các tranche có thể bị rỗng do làm tròn
             self.tranches = [t for t in self.tranches if t.units >= EPSILON]
             
             return True
-
         except Exception as e:
-            # Nếu có bất kỳ lỗi nào xảy ra, self.tranches gốc không bị ảnh hưởng
-            print(f"Error applying fee to investor {investor_id}: {str(e)}")
-            import traceback
-            traceback.print_exc()
+            logging.error(f"Error in _apply_fee_to_investor_tranches for investor {investor_id}: {e}", exc_info=True)
             return False
-
     def _transfer_fee_to_fund_manager(
         self, fee_units: float, current_price: float, fee_date: datetime, total_nav: float, fee_amount: float
     ):
@@ -595,6 +511,8 @@ class EnhancedFundManager:
             }
 
             regular_investors = self.get_regular_investors()
+            if not regular_investors: return results # Trả về success=True nếu không có NĐT
+
             fund_manager = self.get_fund_manager()
             if not fund_manager:
                 results["errors"].append("Fund Manager not found")
@@ -605,31 +523,29 @@ class EnhancedFundManager:
 
             for investor in regular_investors:
                 try:
+                    # Tính toán chi tiết phí MỘT LẦN
                     fee_calculation = self.calculate_investor_fee(investor.id, fee_date, total_nav)
-
+                    
                     if fee_calculation["total_fee"] > 1:
+                        # Thêm giá vào dictionary để truyền đi
+                        fee_calculation["current_price"] = current_price
+                        
+                        # Gọi với crystallize=True
                         fee_applied = self._apply_fee_to_investor_tranches(
-                            investor.id, fee_calculation["total_fee"], fee_date, total_nav
+                            investor.id, fee_calculation, fee_date, crystallize=True
                         )
+                        
                         if fee_applied:
-                            units_removed = fee_calculation["total_fee"] / current_price
+                            units_removed = round(fee_calculation["total_fee"] / current_price, 8)
 
-                            # ghi giao dịch phí (âm cho investor)
                             self._add_transaction(
-                                investor.id,
-                                fee_date,
-                                "Phí",
-                                -fee_calculation["total_fee"],
-                                total_nav,
-                                -units_removed,
+                                investor.id, fee_date, "Phí",
+                                -fee_calculation["total_fee"], total_nav, -units_removed,
                             )
-
-                            # chuyển units phí cho FM
                             self._transfer_fee_to_fund_manager(
                                 units_removed, current_price, fee_date, total_nav, fee_calculation["total_fee"]
                             )
-
-                            # ghi FeeRecord
+                            
                             fee_record = FeeRecord(
                                 id=len(self.fee_records) + 1,
                                 period=fee_date.strftime("%Y"),
@@ -638,54 +554,38 @@ class EnhancedFundManager:
                                 fee_units=units_removed,
                                 calculation_date=fee_date,
                                 units_before=fee_calculation.get("units_before", 0.0),
-                                units_after=fee_calculation.get("units_after", 0.0),
+                                units_after=fee_calculation.get("units_before", 0.0) - units_removed,
                                 nav_per_unit=current_price,
                                 description=f"Performance fee for year {fee_date.year}",
                             )
                             self.fee_records.append(fee_record)
 
+                            # Cập nhật kết quả
                             results["total_fees"] += fee_calculation["total_fee"]
                             results["investors_processed"] += 1
                             results["fund_manager_units_received"] += units_removed
-                            results["fee_details"].append(
-                                {
-                                    "investor_id": investor.id,
-                                    "investor_name": investor.name,
-                                    "fee_amount": fee_calculation["total_fee"],
-                                    "fee_units": units_removed,
-                                    "excess_profit": fee_calculation["excess_profit"],
-                                }
-                            )
+                            results["fee_details"].append({
+                                "investor_id": investor.id, "investor_name": investor.name,
+                                "fee_amount": fee_calculation["total_fee"], "fee_units": units_removed,
+                                "excess_profit": fee_calculation["excess_profit"],
+                            })
                         else:
                             results["errors"].append(f"Failed to apply fee to investor {investor.name}")
-                    else:
-                        # Không đủ lớn để áp
-                        pass
-
                 except Exception as e:
                     err = f"Error processing investor {investor.name}: {str(e)}"
                     results["errors"].append(err)
                     results["success"] = False
 
-            print(
-                f"Fee application completed. Total fees: {results['total_fees']:,.0f} VND, "
-                f"FM units received: {results['fund_manager_units_received']:.6f}"
-            )
+            print(f"Fee application completed. Total fees: {results['total_fees']:,.0f} VND, "
+                f"FM units received: {results['fund_manager_units_received']:.6f}")
             return results
 
         except Exception as e:
             error_msg = f"Critical error in apply_year_end_fees_enhanced: {str(e)}"
-            print(error_msg)
-            import traceback
-
-            print(f"Traceback: {traceback.format_exc()}")
+            logging.error(error_msg, exc_info=True)
             return {
-                "success": False,
-                "error": error_msg,
-                "total_fees": 0.0,
-                "investors_processed": 0,
-                "fee_details": [],
-                "errors": [error_msg],
+                "success": False, "error": error_msg, "total_fees": 0.0,
+                "investors_processed": 0, "fee_details": [], "errors": [error_msg],
                 "fund_manager_units_received": 0.0,
             }
 

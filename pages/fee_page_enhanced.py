@@ -367,7 +367,7 @@ class SafeFeePage:
                     # ✅✅✅ BƯỚC QUAN TRỌNG NHẤT ✅✅✅
                     # Sau khi áp dụng phí thành công, chốt HWM mới cho toàn quỹ
                     current_price = self.fund_manager.calculate_price_per_unit(ending_nav)
-                    self.fund_manager.crystallize_hwm(current_price)
+                    # self.fund_manager.crystallize_hwm(current_price)
                     
                     # 4. Thông báo, bật cờ và làm mới giao diện
                     st.balloons()

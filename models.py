@@ -62,44 +62,47 @@ class Tranche:
         """Cho phép cập nhật cost basis khi có rút/fee."""
         self._invested_value = float(value)
     
-    @property
-    def days_held(self) -> int:
-        """Số ngày đã hold"""
-        return (datetime.now() - self.entry_date).days
+    # @property
+    # def days_held(self) -> int:
+    #     """Số ngày đã hold"""
+    #     return (datetime.now() - self.entry_date).days
     
-    @property
-    def years_held(self) -> float:
-        """Số năm đã hold (dùng để tính hurdle)"""
-        return self.days_held / 365.25
+    # @property
+    # def years_held(self) -> float:
+    #     """Số năm đã hold (dùng để tính hurdle)"""
+    #     return self.days_held / 365.25
     
-    def calculate_hurdle_price(self, hurdle_rate: float = 0.06) -> float:
-        """
-        Tính hurdle price dựa trên hurdle rate
-        """
-        return self.entry_nav * ((1 + hurdle_rate) ** self.years_held)
+    def days_held(self, current_date: datetime) -> int:
+        """Số ngày đã hold tính đến một ngày cụ thể."""
+        return (current_date - self.entry_date).days
+
+    def years_held(self, current_date: datetime) -> float:
+        """Số năm đã hold tính đến một ngày cụ thể."""
+        # Thêm kiểm tra để tránh số âm nếu current_date < entry_date
+        days = self.days_held(current_date)
+        return max(0, days / 365.25)
     
-    def get_performance_threshold(self, hurdle_rate: float = 0.06) -> float:
-        """
-        Lấy ngưỡng performance (max của hurdle và HWM)
-        """
-        hurdle_price = self.calculate_hurdle_price(hurdle_rate)
+    def calculate_hurdle_price(self, current_date: datetime, hurdle_rate: float = 0.06) -> float:
+        """Tính hurdle price dựa trên hurdle rate và một ngày cụ thể."""
+        years = self.years_held(current_date)
+        return self.entry_nav * ((1 + hurdle_rate) ** years)
+
+    def get_performance_threshold(self, current_date: datetime, hurdle_rate: float = 0.06) -> float:
+        """Lấy ngưỡng performance (max của hurdle và HWM) tại một ngày cụ thể."""
+        hurdle_price = self.calculate_hurdle_price(current_date, hurdle_rate)
         return max(hurdle_price, self.hwm)
-    
-    def calculate_excess_profit(self, current_price: float, hurdle_rate: float = 0.06) -> float:
-        """
-        Tính lợi nhuận vượt ngưỡng cho tranche này
-        """
-        threshold = self.get_performance_threshold(hurdle_rate)
+
+    def calculate_excess_profit(self, current_price: float, current_date: datetime, hurdle_rate: float = 0.06) -> float:
+        """Tính lợi nhuận vượt ngưỡng cho tranche này tại một ngày cụ thể."""
+        threshold = self.get_performance_threshold(current_date, hurdle_rate)
         if current_price > threshold:
             profit_per_unit = current_price - threshold
             return profit_per_unit * self.units
         return 0.0
-    
-    def calculate_performance_fee(self, current_price: float, fee_rate: float = 0.20, hurdle_rate: float = 0.06) -> float:
-        """
-        Tính performance fee cho tranche này
-        """
-        excess_profit = self.calculate_excess_profit(current_price, hurdle_rate)
+
+    def calculate_performance_fee(self, current_price: float, current_date: datetime, fee_rate: float = 0.20, hurdle_rate: float = 0.06) -> float:
+        """Tính performance fee cho tranche này tại một ngày cụ thể."""
+        excess_profit = self.calculate_excess_profit(current_price, current_date, hurdle_rate)
         return excess_profit * fee_rate
     
     def update_hwm(self, new_price: float) -> None:
