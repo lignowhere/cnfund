@@ -241,6 +241,13 @@ class FundManagementApp:
             status.info("📦 Loading fund manager...")
             FundManagerClass = load_fund_manager_class()
             self.fund_manager = FundManagerClass(self.data_handler)
+
+            # ++++++ THÊM 2 DÒNG QUAN TRỌNG NÀY ++++++
+            status.info("📂 Loading data from database...")
+            self.fund_manager.load_data()  # Chủ động tải dữ liệu
+            self.fund_manager._ensure_fund_manager_exists() # Đảm bảo có Fund Manager
+            # +++++++++++++++++++++++++++++++++++++++
+
             progress.progress(50)
 
             # Step 3: Optimizations

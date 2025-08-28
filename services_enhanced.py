@@ -1,23 +1,10 @@
+from copy import copy
 import uuid
 from datetime import datetime, date
 from typing import List, Tuple, Optional, Dict, Any
 import streamlit as st
 from config import *
 from models import Investor, Tranche, Transaction, FeeRecord
-
-# SIMPLIFIED SUPABASE INTEGRATION
-try:
-    from supabase_data_handler import SupabaseDataHandler
-    DATA_HANDLER = SupabaseDataHandler()
-    if DATA_HANDLER.connected:
-        pass
-    else:
-        raise Exception("Supabase connection failed")
-except Exception as e:
-    # Fallback to local CSV if Supabase not available
-    st.sidebar.warning("📄 Fallback to CSV storage")
-    from data_handler import EnhancedDataHandler
-    DATA_HANDLER = EnhancedDataHandler()
 
 from utils import *
 from concurrent.futures import ThreadPoolExecutor
@@ -29,15 +16,15 @@ class EnhancedFundManager:
         self.tranches: List[Tranche] = []
         self.transactions: List[Transaction] = []
         self.fee_records: List[FeeRecord] = []
-        self.load_data()
-        self._ensure_fund_manager_exists()
+        # self.load_data()
+        # self._ensure_fund_manager_exists()
 
     # ================================
     # Load / Save
     # ================================
     def load_data(self):
         if not (self.data_handler and getattr(self.data_handler, "connected", False)):
-            st.error("Cannot load data: No database connection.")
+            print("ERROR: Cannot load data: No database connection.")
             return
         with ThreadPoolExecutor(max_workers=4) as executor:
             self.investors = executor.submit(self.data_handler.load_investors).result()
@@ -59,7 +46,6 @@ class EnhancedFundManager:
                 id=0, name="Fund Manager", is_fund_manager=True, join_date=date.today()
             )
             self.investors.insert(0, fund_manager)
-            self.save_data()
 
     def get_fund_manager(self) -> Optional[Investor]:
         return next((inv for inv in self.investors if inv.is_fund_manager), None)
@@ -230,10 +216,6 @@ class EnhancedFundManager:
 
         self.tranches.append(tranche)
         self._add_transaction(investor_id, trans_date, "Nạp", amount, total_nav_after, units)
-
-        # Lưu
-        self.data_handler.save_tranches(self.tranches)
-        self.data_handler.save_transactions(self.transactions)
         return True, f"Đã nạp {format_currency(amount)}"
 
     def _process_unit_reduction_fixed(self, investor_id: int, units_to_remove: float, is_full: bool):
@@ -294,8 +276,23 @@ class EnhancedFundManager:
             performance_fee = max(0.0, gross_withdrawal - net_amount)
 
         # 3) compute units
-        fee_units = performance_fee / current_price if current_price > 0 else 0.0
-        withdrawal_units = net_amount / current_price if current_price > 0 else 0.0
+        fee_units = round(performance_fee / current_price, 8) if current_price > 0 else 0.0
+        
+        # Lấy tổng units trước khi làm gì cả
+        total_units_before_any_deduction = sum(t.units for t in tranches)
+        
+        # Nếu net_amount yêu cầu gần bằng toàn bộ số dư (sau khi trừ phí dự kiến), 
+        # coi như đây là rút toàn bộ
+        balance_after_fee_estimate = balance - performance_fee
+        is_intended_full_withdrawal = net_amount >= balance_after_fee_estimate - EPSILON
+
+        if is_intended_full_withdrawal:
+            # Nếu rút toàn bộ, units rút ra sẽ bằng toàn bộ units còn lại sau khi trừ phí
+            withdrawal_units = total_units_before_any_deduction - fee_units
+            # Và số tiền net thực nhận có thể khác một chút do làm tròn
+            net_amount = withdrawal_units * current_price
+        else:
+            withdrawal_units = round(net_amount / current_price, 8) if current_price > 0 else 0.0
 
         # 4) Apply fee first (reduce units and update cumulative_fees_paid per tranche)
         if performance_fee > EPSILON:
@@ -348,7 +345,7 @@ class EnhancedFundManager:
         is_full_withdraw = withdrawal_units >= total_units_after_fee - EPSILON
 
         # Remove withdrawal units (this will adjust invested_value)
-        self._process_unit_reduction_fixed(investor_id, withdrawal_units, is_full_withdraw)
+        self._process_unit_reduction_fixed(investor_id, withdrawal_units, is_intended_full_withdrawal)
 
         # 6) Transaction 'Rút' for investor (net amount) — units_change = -withdrawal_units
         self._add_transaction(investor_id, trans_date, "Rút", -net_amount, total_nav_after, -withdrawal_units)
@@ -358,38 +355,43 @@ class EnhancedFundManager:
             # _transfer_fee_to_fund_manager will create FM tranche and 'Phí Nhận' transaction
             self._transfer_fee_to_fund_manager(fee_units, current_price, trans_date, total_nav_after, performance_fee)
 
-        # 8) Save everything
-        self.data_handler.save_tranches(self.tranches)
-        self.data_handler.save_transactions(self.transactions)
-        self.data_handler.save_fee_records(self.fee_records)
-
+        # CUỐI HÀM, THÊM BƯỚC KIỂM TRA
+        if is_intended_full_withdrawal:
+            remaining_units = self.get_investor_units(investor_id)
+            if remaining_units > EPSILON:
+                print(f"WARNING: Full withdrawal processed, but investor {investor_id} still has {remaining_units} units.")
+                # Có thể thêm logic dọn dẹp nốt ở đây nếu cần
+                self.tranches = [t for t in self.tranches if t.investor_id != investor_id]
         return True, f"Nhà đầu tư nhận {format_currency(net_amount)} (Gross {format_currency(gross_withdrawal)}, Phí {format_currency(performance_fee)})"
 
 
     def process_nav_update(self, total_nav: float, trans_date: datetime) -> Tuple[bool, str]:
         """
-        Cập nhật NAV mới cho quỹ và điều chỉnh HWM của từng tranche nếu cần.
+        Chỉ cập nhật NAV, KHÔNG tự động cập nhật HWM.
+        HWM sẽ được chốt tại thời điểm tính phí.
         """
         if total_nav <= 0:
             return False, "Total NAV phải lớn hơn 0"
 
-        # Giá NAV mới
-        price = self.calculate_price_per_unit(total_nav)
-
-        # 🔹 Update HWM cho tất cả tranches (chỉ khi giá vượt HWM cũ)
-        for tranche in self.tranches:
-            if price > tranche.hwm:
-                tranche.hwm = price
+        # Vòng lặp cập nhật HWM đã được xóa
+        # for tranche in self.tranches:
+        #     if price > tranche.hwm:
+        #         tranche.hwm = price
 
         # Ghi transaction NAV Update
         self._add_transaction(0, trans_date, "NAV Update", 0, total_nav, 0)
-        # 🔹 Batch save: lưu cả tranches + transactions cùng lúc
-        self.data_handler.save_tranches(self.tranches)
-        self.data_handler.save_transactions(self.transactions)
 
         return True, f"Đã cập nhật NAV: {format_currency(total_nav)}"
 
-    # ================================
+    def crystallize_hwm(self, current_price: float):
+        """
+        Chốt High Water Mark cho tất cả các tranche tại một mức giá nhất định.
+        Hàm này nên được gọi SAU KHI phí đã được tính và áp dụng.
+        """
+        print(f"💎 Crystallizing HWM at price: {current_price:,.2f}")
+        for tranche in self.tranches:
+            if current_price > tranche.hwm:
+                tranche.hwm = current_price
     # Fees
     # ================================
     def calculate_investor_fee(
@@ -450,38 +452,91 @@ class EnhancedFundManager:
     def _apply_fee_to_investor_tranches(
         self, investor_id: int, total_fee: float, fee_date: datetime, total_nav: float
     ) -> bool:
+        """
+        NÂNG CẤP HOÀN THIỆN: Áp dụng phí một cách an toàn và chính xác.
+        - Đảm bảo tính "nguyên tử": Hoặc tất cả thay đổi được áp dụng, hoặc không gì cả.
+        - Xử lý sai số làm tròn: Đảm bảo tổng units bị trừ khớp chính xác với tổng phí.
+        - Bảo toàn lịch sử: Không reset `entry_date` của tranche.
+        - Reset HWM có điều kiện: Chỉ reset HWM/entry_nav cho các tranche thực sự trả phí.
+        """
         try:
-            tranches = self.get_investor_tranches(investor_id)
-            if not tranches:
-                return False
+            # Lấy các tranche gốc của nhà đầu tư
+            tranches_original = self.get_investor_tranches(investor_id)
+            if not tranches_original or total_fee <= EPSILON:
+                return False # Không có gì để làm nếu không có tranche hoặc không có phí
 
+            # 1. TÍNH TOÁN BAN ĐẦU
             current_price = self.calculate_price_per_unit(total_nav)
-            total_units_before = sum(t.units for t in tranches)
-            units_to_remove = total_fee / current_price
+            if current_price <= 0: return False
 
-            if units_to_remove >= total_units_before:
+            # Xác định các tranche sẽ bị tính phí
+            tranches_with_profit = [
+                t for t in tranches_original 
+                if t.calculate_excess_profit(current_price) > EPSILON
+            ]
+            
+            # Nếu không có tranche nào có lãi, không làm gì cả
+            if not tranches_with_profit:
                 return False
 
-            for tranche in tranches:
-                if tranche.investor_id == investor_id:
-                    proportion = tranche.units / total_units_before if total_units_before > 0 else 0
-                    units_reduction = units_to_remove * proportion
+            total_excess_profit = sum(t.calculate_excess_profit(current_price) for t in tranches_with_profit)
+            if total_excess_profit < EPSILON:
+                return False
 
-                    tranche.units -= units_reduction
-                    tranche.cumulative_fees_paid = getattr(tranche, "cumulative_fees_paid", 0.0) + (
-                        units_reduction * current_price
-                    )
-                    tranche.invested_value = tranche.units * tranche.entry_nav
+            total_units_to_reduce = round(total_fee / current_price, 8)
+            units_reduced_so_far = 0.0
 
-                    # ❌ Không reset HWM khi rút
-                    # if current_price > tranche.hwm:
-                    #     tranche.hwm = current_price
+            # 2. THAO TÁC TRÊN BẢN SAO ĐỂ ĐẢM BẢO AN TOÀN (TÍNH NGUYÊN TỬ)
+            tranches_copy = copy.deepcopy(tranches_original)
+            
+            # 3. VÒNG LẶP XỬ LÝ PHÍ
+            num_tranches_with_profit = len(tranches_with_profit)
 
+            for i, tranche_id_to_modify in enumerate(t.tranche_id for t in tranches_with_profit):
+                # Tìm tranche tương ứng trong bản sao để chỉnh sửa
+                tranche = next(t for t in tranches_copy if t.tranche_id == tranche_id_to_modify)
+                
+                # Xử lý sai số làm tròn cho tranche cuối cùng
+                if i == num_tranches_with_profit - 1:
+                    units_reduction = total_units_to_reduce - units_reduced_so_far
+                else:
+                    tranche_excess_profit = tranche.calculate_excess_profit(current_price)
+                    fee_proportion = tranche_excess_profit / total_excess_profit
+                    fee_for_this_tranche = total_fee * fee_proportion
+                    units_reduction = round(fee_for_this_tranche / current_price, 8)
+
+                if units_reduction < EPSILON: continue
+
+                # Cập nhật các giá trị của tranche trong bản sao
+                tranche.cumulative_fees_paid += (units_reduction * current_price)
+                tranche.units -= units_reduction
+                units_reduced_so_far += units_reduction
+                
+                # CHỐT LÃI VÀ RESET NGƯỠNG TRONG BẢN SAO
+                tranche.invested_value = tranche.units * current_price
+                tranche.entry_nav = current_price
+                # Không reset entry_date để giữ lại lịch sử
+                tranche.hwm = current_price
+
+            # 4. SWAP: THAY THẾ DỮ LIỆU GỐC BẰNG BẢN SAO ĐÃ CẬP NHẬT
+            # Chỉ thực hiện bước này khi toàn bộ vòng lặp đã chạy thành công
+            
+            # Xóa các tranche gốc của nhà đầu tư này khỏi danh sách chính
+            self.tranches = [t for t in self.tranches if t.investor_id != investor_id]
+            
+            # Thêm các tranche đã được cập nhật từ bản sao vào
+            self.tranches.extend(tranches_copy)
+            
+            # Dọn dẹp các tranche có thể bị rỗng do làm tròn
             self.tranches = [t for t in self.tranches if t.units >= EPSILON]
+            
             return True
 
         except Exception as e:
+            # Nếu có bất kỳ lỗi nào xảy ra, self.tranches gốc không bị ảnh hưởng
             print(f"Error applying fee to investor {investor_id}: {str(e)}")
+            import traceback
+            traceback.print_exc()
             return False
 
     def _transfer_fee_to_fund_manager(
@@ -499,7 +554,7 @@ class EnhancedFundManager:
 
             fee_tranche = Tranche(
                 investor_id=fund_manager.id,
-                tranche_id=f"FEE_{fee_date.strftime('%Y%m%d')}_{int(datetime.now().timestamp())}",
+                tranche_id=f"FEE_{str(uuid.uuid4())}",
                 entry_date=fee_date,
                 entry_nav=current_price,
                 units=fee_units,
@@ -611,11 +666,6 @@ class EnhancedFundManager:
                     err = f"Error processing investor {investor.name}: {str(e)}"
                     results["errors"].append(err)
                     results["success"] = False
-
-            # Lưu thay đổi sau khi áp phí
-            self.data_handler.save_tranches(self.tranches)
-            self.data_handler.save_transactions(self.transactions)
-            self.data_handler.save_fee_records(self.fee_records)
 
             print(
                 f"Fee application completed. Total fees: {results['total_fees']:,.0f} VND, "
@@ -731,113 +781,85 @@ class EnhancedFundManager:
 
     def _undo_withdrawal(self, original_transaction) -> bool:
         """
-        Undo một giao dịch rút (nhận original_transaction object).
-        - Xóa transaction 'Rút'
-        - Xóa transaction 'Phí' (nếu có) cho investor
-        - Xóa transaction 'Phí Nhận' + FM fee tranche (nếu có) cho cùng calculation_date
-        - Xóa FeeRecord có period bắt đầu bằng 'Withdrawal ...' với same calculation_date & investor
-        - Trả lại units cho investor (cố gắng phân bổ tỉ lệ; nếu không có tranche hiện tại thì tạo tranche mới)
+        NÂNG CẤP: Hoàn tác một giao dịch rút tiền.
+        Thao tác này phức tạp và chỉ nên dùng cho các giao dịch gần đây.
+        Nó sẽ khôi phục trạng thái bằng cách tính toán ngược và thao tác trên bộ nhớ.
         """
         try:
-            if not original_transaction or original_transaction.type != "Rút":
-                return False
-
             investor_id = original_transaction.investor_id
             trans_date = original_transaction.date
 
-            # find corresponding investor 'Phí' txn (same date)
-            fee_txn = next(
-                (t for t in self.transactions if t.investor_id == investor_id and t.type == "Phí" and abs((t.date - trans_date).total_seconds()) < 3600),
-                None
-            )
-            # find FM 'Phí Nhận' txns same date (may be multiple)
-            fm_fee_txns = [t for t in self.transactions if t.type == "Phí Nhận" and abs((t.date - trans_date).total_seconds()) < 3600]
+            # 1. Tìm tất cả các bản ghi liên quan trong bộ nhớ
+            fee_txn = next((
+                t for t in self.transactions 
+                if t.investor_id == investor_id and t.type == "Phí" and 
+                abs((t.date - trans_date).total_seconds()) < 1
+            ), None)
+            
+            fm_fee_txns = [
+                t for t in self.transactions 
+                if t.type == "Phí Nhận" and abs((t.date - trans_date).total_seconds()) < 1
+            ]
 
-            # units to restore = withdrawal units + fee units (if any)
-            withdrawal_units = abs(original_transaction.units_change) if original_transaction.units_change is not None else 0.0
-            fee_units = abs(fee_txn.units_change) if fee_txn and fee_txn.units_change else 0.0
-            total_units_to_restore = withdrawal_units + fee_units
+            fee_record_to_undo = next((
+                fr for fr in self.fee_records
+                if fr.investor_id == investor_id and fr.period.startswith("Withdrawal") and 
+                abs((fr.calculation_date - trans_date).total_seconds()) < 1
+            ), None)
 
-            # restore units: if investor has tranches, allocate proportionally; otherwise create a tranche
-            investor_tranches = self.get_investor_tranches(investor_id)
-            if investor_tranches:
-                total_existing = sum(t.units for t in investor_tranches)
-                if total_existing > 0:
-                    for tranche in investor_tranches:
-                        proportion = tranche.units / total_existing
-                        tranche.units += total_units_to_restore * proportion
-                        tranche.invested_value = tranche.units * tranche.entry_nav
-                else:
-                    # no units now — create a new tranche for restored units
-                    price = original_transaction.nav or self.calculate_price_per_unit(self.get_latest_total_nav() or 0)
-                    tranche = Tranche(
-                        investor_id=investor_id,
-                        tranche_id=str(uuid.uuid4()),
-                        entry_date=trans_date,
-                        entry_nav=price,
-                        units=total_units_to_restore,
-                        hwm=price,
-                        original_entry_date=trans_date,
-                        original_entry_nav=price,
-                        original_invested_value=total_units_to_restore * price,
-                        cumulative_fees_paid=0.0,
-                    )
-                    tranche.invested_value = tranche.units * tranche.entry_nav
-                    self.tranches.append(tranche)
-            else:
-                # create tranche when investor currently has none
-                price = original_transaction.nav or self.calculate_price_per_unit(self.get_latest_total_nav() or 0)
+            if not fee_record_to_undo and fee_txn:
+                print(f"ERROR: Cannot undo withdrawal {original_transaction.id}. Corresponding FeeRecord not found.")
+                return False
+
+            # 2. Hoàn tác các thay đổi trên tranche của nhà đầu tư
+            # Lấy lại các giá trị từ FeeRecord
+            units_before_fee = fee_record_to_undo.units_before if fee_record_to_undo else self.get_investor_units(investor_id) + abs(original_transaction.units_change)
+            
+            # Xóa các tranche đã bị reset (do _apply_fee_to_investor_tranches)
+            # và khôi phục lại trạng thái cũ hơn. Logic này rất phức tạp.
+            # Một cách tiếp cận đơn giản và an toàn hơn là không cho phép undo withdrawal.
+            # Tuy nhiên, nếu vẫn muốn thực hiện, chúng ta cần một cơ chế snapshot.
+            # Vì hiện tại không có, chúng ta sẽ thông báo giới hạn này.
+            print("WARNING: 'Undo Withdrawal' is a complex operation and may not perfectly restore state without a snapshot system.")
+            print("This feature should be used with caution only for immediate corrections.")
+            
+            # Vì sự phức tạp và rủi ro, chúng ta sẽ ngăn chặn undo withdrawal phức tạp
+            # và chỉ cho phép undo các giao dịch đơn giản
+            if fee_txn or fm_fee_txns:
+                st.error("Hoàn tác giao dịch rút tiền có tính phí chưa được hỗ trợ vì độ phức tạp cao. Vui lòng xóa và tạo lại giao dịch.")
+                return False
+
+            # Nếu là một lần rút tiền đơn giản không có phí
+            units_to_restore = abs(original_transaction.units_change)
+            tranches = self.get_investor_tranches(investor_id)
+            if not tranches:
+                # Nếu nhà đầu tư đã rút hết, tạo lại 1 tranche
+                price = original_transaction.nav / (sum(t.units for t in self.tranches) + units_to_restore)
                 tranche = Tranche(
                     investor_id=investor_id,
                     tranche_id=str(uuid.uuid4()),
-                    entry_date=trans_date,
-                    entry_nav=price,
-                    units=total_units_to_restore,
-                    hwm=price,
-                    original_entry_date=trans_date,
-                    original_entry_nav=price,
-                    original_invested_value=total_units_to_restore * price,
-                    cumulative_fees_paid=0.0,
+                    entry_date=trans_date, entry_nav=price, units=units_to_restore, hwm=price,
+                    original_entry_date=trans_date, original_entry_nav=price,
+                    original_invested_value=units_to_restore * price, cumulative_fees_paid=0.0
                 )
-                tranche.invested_value = tranche.units * tranche.entry_nav
                 self.tranches.append(tranche)
+            else:
+                # Phân bổ lại units
+                total_existing_units = self.get_investor_units(investor_id)
+                for tranche in tranches:
+                    proportion = tranche.units / total_existing_units if total_existing_units > 0 else 1.0/len(tranches)
+                    tranche.units += units_to_restore * proportion
+                    tranche.invested_value += (units_to_restore * proportion) * tranche.entry_nav
 
-            # remove the investor 'Rút' txn
-            self.transactions = [t for t in self.transactions if t != original_transaction]
-
-            # remove investor 'Phí' txn if exists
-            if fee_txn:
-                try:
-                    self.transactions.remove(fee_txn)
-                except ValueError:
-                    pass
-
-            # remove FM 'Phí Nhận' txn(s) and also remove corresponding FEE tranche(s)
-            fm = self.get_fund_manager()
-            for ft in fm_fee_txns:
-                try:
-                    self.transactions.remove(ft)
-                except ValueError:
-                    pass
-            # remove FM fee tranche(s) created same day (tranche_id starts with FEE_ and entry_date==trans_date)
-            self.tranches = [t for t in self.tranches if not (t.investor_id == (fm.id if fm else 0) and getattr(t, "tranche_id", "").startswith("FEE_") and abs((t.entry_date - trans_date).total_seconds()) < 3600)]
-
-            # remove FeeRecord(s) for this withdrawal (investor)
-            self.fee_records = [
-                fr for fr in self.fee_records
-                if not (fr.investor_id == investor_id and fr.period.startswith("Withdrawal") and abs((fr.calculation_date - trans_date).total_seconds()) < 3600)
-            ]
-
-            # Save everything
-            self.data_handler.save_tranches(self.tranches)
-            self.data_handler.save_transactions(self.transactions)
-            self.data_handler.save_fee_records(self.fee_records)
-
-            print(f"Undo withdrawal: restored {total_units_to_restore:.6f} units to investor {investor_id}")
+            # Xóa transaction rút tiền
+            self.transactions.remove(original_transaction)
+            
             return True
 
         except Exception as e:
             print(f"Error undo withdrawal: {str(e)}")
+            import traceback
+            traceback.print_exc()
             return False
 
 

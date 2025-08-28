@@ -4,6 +4,7 @@ Simplified Supabase PostgreSQL Data Handler
 Removed deadlock retry logic for better performance
 """
 
+from pathlib import Path
 import pandas as pd
 import streamlit as st
 from sqlalchemy import create_engine, text
@@ -88,65 +89,172 @@ class SupabaseDataHandler:
             return {}
     
     def _create_tables(self):
-        try:
-            table_sql = [
-                """CREATE TABLE IF NOT EXISTS investors (id INTEGER PRIMARY KEY, name VARCHAR(255) NOT NULL, phone VARCHAR(50) DEFAULT '', address TEXT DEFAULT '', email VARCHAR(255) DEFAULT '', join_date DATE NOT NULL DEFAULT CURRENT_DATE, is_fund_manager BOOLEAN DEFAULT FALSE)""",
-                """CREATE TABLE IF NOT EXISTS tranches (id SERIAL PRIMARY KEY, investor_id INTEGER NOT NULL, tranche_id VARCHAR(255) UNIQUE NOT NULL, entry_date TIMESTAMP NOT NULL, entry_nav DECIMAL(18,4) NOT NULL, units DECIMAL(18,8) NOT NULL, hwm DECIMAL(18,4) NOT NULL, original_entry_date TIMESTAMP, original_entry_nav DECIMAL(18,4), cumulative_fees_paid DECIMAL(18,4) DEFAULT 0)""",
-                """CREATE TABLE IF NOT EXISTS transactions (id INTEGER PRIMARY KEY, investor_id INTEGER NOT NULL, date TIMESTAMP NOT NULL, type VARCHAR(100) NOT NULL, amount DECIMAL(18,4) NOT NULL, nav DECIMAL(18,4) NOT NULL, units_change DECIMAL(18,8) NOT NULL)""",
-                """CREATE TABLE IF NOT EXISTS fee_records (id INTEGER PRIMARY KEY, period VARCHAR(20) NOT NULL, investor_id INTEGER NOT NULL, fee_amount DECIMAL(18,4) NOT NULL, fee_units DECIMAL(18,8) NOT NULL, calculation_date TIMESTAMP NOT NULL, units_before DECIMAL(18,8) NOT NULL, units_after DECIMAL(18,8) NOT NULL, nav_per_unit DECIMAL(18,4) NOT NULL, description TEXT DEFAULT '')"""
-            ]
-            with self.engine.connect() as conn:
-                trans = conn.begin()
-                for sql in table_sql:
-                    conn.execute(text(sql))
-                trans.commit()
-        except Exception as e:
-            st.error(f"Lỗi khi tạo bảng: {str(e)}")
-
-    def save_all_data_enhanced(self, investors: List[Investor], tranches: List[Tranche], 
-                               transactions: List[Transaction], fee_records: List[FeeRecord]) -> bool:
-        start_time = time.time()
-        try:
-            investors_df = pd.DataFrame([vars(inv) for inv in investors])
-            tranches_df = pd.DataFrame([vars(t) for t in tranches])
-            transactions_df = pd.DataFrame([vars(t) for t in transactions])
-            fee_records_df = pd.DataFrame([vars(f) for f in fee_records])
-        except Exception as e:
-            st.error(f"Lỗi khi chuẩn bị dữ liệu để lưu: {e}")
-            return False
-
-        if not investors_df.empty:
-            investors_df = investors_df[['id', 'name', 'phone', 'address', 'email', 'join_date', 'is_fund_manager']]
-        if not tranches_df.empty:
-            tranches_df = tranches_df.drop(columns=['invested_value', 'original_invested_value'], errors='ignore')
-            tranches_df = tranches_df[['investor_id', 'tranche_id', 'entry_date', 'entry_nav', 'units', 'hwm', 'original_entry_date', 'original_entry_nav', 'cumulative_fees_paid']]
-        if not transactions_df.empty:
-            transactions_df = transactions_df[['id', 'investor_id', 'date', 'type', 'amount', 'nav', 'units_change']]
-        if not fee_records_df.empty:
-            fee_records_df = fee_records_df[['id', 'period', 'investor_id', 'fee_amount', 'fee_units', 'calculation_date', 'units_before', 'units_after', 'nav_per_unit', 'description']]
-
+        """
+        SỬA LẠI: Tạo các bảng với cấu trúc CHÍNH XÁC khớp với models.py
+        và thêm các ràng buộc khóa ngoại để đảm bảo toàn vẹn dữ liệu.
+        """
         try:
             with self.engine.begin() as conn:
-                conn.execute(text("DELETE FROM fee_records"))
-                conn.execute(text("DELETE FROM transactions"))
-                conn.execute(text("DELETE FROM tranches"))
-                conn.execute(text("DELETE FROM investors"))
+                # Bảng Investors
+                conn.execute(text("""
+                    CREATE TABLE IF NOT EXISTS investors (
+                        id INTEGER PRIMARY KEY,
+                        name TEXT NOT NULL,
+                        phone TEXT,
+                        address TEXT,
+                        email TEXT,
+                        join_date DATE,
+                        is_fund_manager BOOLEAN DEFAULT FALSE
+                    )
+                """))
 
-                if not investors_df.empty:
-                    investors_df.to_sql('investors', conn, if_exists='append', index=False, method='multi')
-                if not tranches_df.empty:
-                    tranches_df.to_sql('tranches', conn, if_exists='append', index=False, method='multi')
-                if not transactions_df.empty:
-                    transactions_df.to_sql('transactions', conn, if_exists='append', index=False, method='multi')
-                if not fee_records_df.empty:
-                    fee_records_df.to_sql('fee_records', conn, if_exists='append', index=False, method='multi')
-            
-            end_time = time.time()
-            st.sidebar.info(f"🚀 Lưu tối ưu hoàn tất trong {end_time - start_time:.2f}s.")
-            return True
+                # Bảng Tranches
+                conn.execute(text("""
+                    CREATE TABLE IF NOT EXISTS tranches (
+                        tranche_id VARCHAR(255) PRIMARY KEY, -- <--- Đặt làm khóa chính
+                        investor_id INTEGER NOT NULL REFERENCES investors(id) ON DELETE CASCADE,
+                        entry_date TIMESTAMP NOT NULL,
+                        entry_nav NUMERIC(18, 4) NOT NULL,
+                        units NUMERIC(18, 8) NOT NULL,
+                        hwm NUMERIC(18, 4),
+                        original_entry_date TIMESTAMP,
+                        original_entry_nav NUMERIC(18, 4),
+                        cumulative_fees_paid NUMERIC(18, 4) DEFAULT 0.0
+                    )
+                """))
+
+                # Bảng Transactions
+                conn.execute(text("""
+                    CREATE TABLE IF NOT EXISTS transactions (
+                        id INTEGER PRIMARY KEY,
+                        investor_id INTEGER NOT NULL,
+                        date TIMESTAMP NOT NULL,
+                        type TEXT NOT NULL,
+                        amount NUMERIC(18, 4) NOT NULL,
+                        nav NUMERIC(18, 4),
+                        units_change NUMERIC(18, 8)
+                    )
+                """))
+
+                # Bảng Fee Records
+                conn.execute(text("""
+                    CREATE TABLE IF NOT EXISTS fee_records (
+                        id INTEGER PRIMARY KEY,
+                        period TEXT NOT NULL,
+                        investor_id INTEGER NOT NULL REFERENCES investors(id) ON DELETE CASCADE,
+                        fee_amount NUMERIC(18, 4) NOT NULL,
+                        fee_units NUMERIC(18, 8) NOT NULL,
+                        calculation_date TIMESTAMP NOT NULL,
+                        units_before NUMERIC(18, 8),
+                        units_after NUMERIC(18, 8),
+                        nav_per_unit NUMERIC(18, 4),
+                        description TEXT
+                    )
+                """))
+            print("✅ Đã kiểm tra/tạo bảng thành công với cấu trúc đồng bộ.")
         except Exception as e:
-            st.error(f"Lỗi nghiêm trọng khi lưu hàng loạt: {e}")
+            # Quan trọng: Dùng print() thay vì st.error() để lỗi hiển thị trên terminal
+            import traceback
+            print(f"💥 Lỗi nghiêm trọng khi tạo bảng: {e}")
+            traceback.print_exc()
+
+    def save_all_data_enhanced(
+        self,
+        investors: List[Investor],
+        tranches: List[Tranche],
+        transactions: List[Transaction],
+        fee_records: List[FeeRecord]
+    ) -> bool:
+        """Lưu dữ liệu an toàn bằng cách tạo DataFrame tường minh."""
+        try:
+            # ++++++ PHẦN QUAN TRỌNG CẦN THAY THẾ ++++++
+            # Tạo dictionary tường minh, chỉ lấy các cột cần thiết, không dùng vars()
+            investors_data = [
+                {'id': i.id, 'name': i.name, 'phone': i.phone, 'address': i.address, 'email': i.email, 'join_date': i.join_date, 'is_fund_manager': i.is_fund_manager}
+                for i in investors
+            ]
+            tranches_data = [
+                {'tranche_id': t.tranche_id, 'investor_id': t.investor_id, 'entry_date': t.entry_date, 'entry_nav': t.entry_nav, 'units': t.units, 'hwm': t.hwm, 'original_entry_date': t.original_entry_date, 'original_entry_nav': t.original_entry_nav, 'cumulative_fees_paid': t.cumulative_fees_paid}
+                for t in tranches
+            ]
+            transactions_data = [
+                {'id': t.id, 'investor_id': t.investor_id, 'date': t.date, 'type': t.type, 'amount': t.amount, 'nav': t.nav, 'units_change': t.units_change}
+                for t in transactions
+            ]
+            fee_records_data = [
+                {'id': f.id, 'period': f.period, 'investor_id': f.investor_id, 'fee_amount': f.fee_amount, 'fee_units': f.fee_units, 'calculation_date': f.calculation_date, 'units_before': f.units_before, 'units_after': f.units_after, 'nav_per_unit': f.nav_per_unit, 'description': f.description}
+                for f in fee_records
+            ]
+
+            investors_df = pd.DataFrame(investors_data)
+            tranches_df = pd.DataFrame(tranches_data)
+            transactions_df = pd.DataFrame(transactions_data)
+            fee_records_df = pd.DataFrame(fee_records_data)
+            # ++++++ KẾT THÚC PHẦN THAY THẾ ++++++
+
+            with self.engine.connect() as conn:
+                trans = conn.begin()
+                try:
+                    # 1️⃣ DROP temp tables if they exist, then create new ones
+                    for table in ["investors", "tranches", "transactions", "fee_records"]:
+                        # Drop temp table if exists (ignore error if doesn't exist)
+                        try:
+                            conn.execute(text(f"DROP TABLE IF EXISTS {table}_temp"))
+                        except:
+                            pass  # Ignore errors if table doesn't exist
+                        
+                        # Create new temp table
+                        conn.execute(text(f"CREATE TEMP TABLE {table}_temp AS SELECT * FROM {table} WHERE 1=0"))
+
+                    # 2️⃣ Insert dữ liệu mới vào bảng tạm
+                    if not investors_df.empty:
+                        investors_df.to_sql("investors_temp", conn, if_exists="append", index=False, method="multi")
+                    if not tranches_df.empty:
+                        tranches_df.to_sql("tranches_temp", conn, if_exists="append", index=False, method="multi")
+                    if not transactions_df.empty:
+                        transactions_df.to_sql("transactions_temp", conn, if_exists="append", index=False, method="multi")
+                    if not fee_records_df.empty:
+                        fee_records_df.to_sql("fee_records_temp", conn, if_exists="append", index=False, method="multi")
+
+                    # 3️⃣ Validate dữ liệu
+                    counts = {}
+                    for table, df in [("investors", investors_df), ("tranches", tranches_df), ("transactions", transactions_df), ("fee_records", fee_records_df)]:
+                        result = conn.execute(text(f"SELECT COUNT(*) FROM {table}_temp"))
+                        temp_count = result.fetchone()[0]
+                        if temp_count != len(df):
+                            raise Exception(f"Mismatch {table}: expected {len(df)}, got {temp_count}")
+                        counts[table] = temp_count
+
+                    # 4️⃣ Thay thế bảng chính
+                    for table in ["fee_records", "transactions", "tranches", "investors"]: # Xóa theo thứ tự ngược để tránh lỗi khóa ngoại
+                        conn.execute(text(f"DELETE FROM {table}"))
+                    
+                    for table, df in [("investors", investors_df), ("tranches", tranches_df), ("transactions", transactions_df), ("fee_records", fee_records_df)]:
+                        if not df.empty:
+                            conn.execute(text(f"INSERT INTO {table} SELECT * FROM {table}_temp"))
+
+                    # 5️⃣ Clean up temp tables (optional, they'll be dropped automatically at session end)
+                    for table in ["investors", "tranches", "transactions", "fee_records"]:
+                        try:
+                            conn.execute(text(f"DROP TABLE IF EXISTS {table}_temp"))
+                        except:
+                            pass
+
+                    trans.commit()
+                    print(f"✅ Lưu an toàn thành công: {counts}") # Đổi sang print để thấy output
+                    return True
+                except Exception as e:
+                    trans.rollback()
+                    import traceback
+                    print(f"💥 Lỗi khi lưu an toàn: {e}") # Đổi sang print
+                    traceback.print_exc()
+                    return False
+        except Exception as e:
+            import traceback
+            print(f"💥 Lỗi tổng quát trong save_all_data_enhanced: {e}") # Đổi sang print
+            traceback.print_exc()
             return False
+
 
     def load_investors(self) -> List[Investor]:
         try:
@@ -224,170 +332,243 @@ class SupabaseDataHandler:
     # === INDIVIDUAL SAVE METHODS ===
     
     def save_investors(self, investors: List[Investor]) -> bool:
-        """Save investors"""
+        """Save investors an toàn bằng temp table"""
         try:
             if not self.connected:
                 return False
-                
+
+            investor_data = [{
+                'id': inv.id,
+                'name': inv.name,
+                'phone': inv.phone,
+                'address': inv.address,
+                'email': inv.email,
+                'join_date': inv.join_date,
+                'is_fund_manager': inv.is_fund_manager
+            } for inv in investors]
+
             with self.engine.connect() as conn:
                 trans = conn.begin()
                 try:
-                    conn.execute(text("DELETE FROM investors"))
-                    
-                    if investors:
-                        investor_data = [{
-                            'id': inv.id, 'name': inv.name, 'phone': inv.phone,
-                            'address': inv.address, 'email': inv.email, 
-                            'join_date': inv.join_date, 'is_fund_manager': inv.is_fund_manager
-                        } for inv in investors]
-                        
+                    conn.execute(text("CREATE TEMP TABLE investors_temp AS SELECT * FROM investors WHERE 1=0"))
+                    if investor_data:
                         conn.execute(text("""
-                            INSERT INTO investors (id, name, phone, address, email, join_date, is_fund_manager)
+                            INSERT INTO investors_temp (id, name, phone, address, email, join_date, is_fund_manager)
                             VALUES (:id, :name, :phone, :address, :email, :join_date, :is_fund_manager)
                         """), investor_data)
-                    
+
+                    # validate
+                    result = conn.execute(text("SELECT COUNT(*) FROM investors_temp"))
+                    temp_count = result.scalar()
+                    if temp_count != len(investor_data):
+                        raise Exception(f"Mismatch investors: expected {len(investor_data)}, got {temp_count}")
+
+                    conn.execute(text("DELETE FROM investors"))
+                    conn.execute(text("INSERT INTO investors SELECT * FROM investors_temp"))
                     trans.commit()
                     return True
-                    
                 except Exception as e:
                     trans.rollback()
-                    raise e
-                    
+                    st.error(f"❌ Lỗi save_investors: {e}")
+                    return False
         except Exception as e:
-            st.error(f"❌ Error saving investors: {str(e)}")
+            st.error(f"❌ Lỗi tổng quát save_investors: {e}")
             return False
-    
+
+
     def save_tranches(self, tranches: List[Tranche]) -> bool:
-        try:
-            if not self.connected:
-                print("DEBUG: Not connected to database")
-                return False
-                
-            with self.engine.connect() as conn:
-                trans = conn.begin()
-                try:
-                    print(f"DEBUG: Deleting existing tranches...")
-                    result = conn.execute(text("DELETE FROM tranches"))
-                    print(f"DEBUG: Deleted {result.rowcount} existing tranches")
-                    
-                    if tranches:
-                        print(f"DEBUG: Preparing to insert {len(tranches)} tranches")
-                        tranche_data = []
-                        for t in tranches:
-                            data = {
-                                'investor_id': t.investor_id, 
-                                'tranche_id': t.tranche_id,
-                                'entry_date': t.entry_date, 
-                                'entry_nav': t.entry_nav,
-                                'units': t.units, 
-                                'hwm': t.hwm,
-                                'original_entry_date': t.original_entry_date,
-                                'original_entry_nav': t.original_entry_nav,
-                                'cumulative_fees_paid': t.cumulative_fees_paid
-                            }
-                            tranche_data.append(data)
-                            print(f"DEBUG: Prepared tranche {t.tranche_id}")
-                        
-                        print("DEBUG: Executing INSERT...")
-                        result = conn.execute(text("""
-                            INSERT INTO tranches (
-                                investor_id, tranche_id, entry_date, entry_nav, units, hwm,
-                                original_entry_date, original_entry_nav, cumulative_fees_paid
-                            ) VALUES (
-                                :investor_id, :tranche_id, :entry_date, :entry_nav, :units, :hwm,
-                                :original_entry_date, :original_entry_nav, :cumulative_fees_paid
-                            )
-                        """), tranche_data)
-                        print(f"DEBUG: INSERT completed, {result.rowcount} rows affected")
-                    
-                    print("DEBUG: Committing transaction...")
-                    trans.commit()
-                    print("DEBUG: Transaction committed successfully")
-                    return True
-                    
-                except Exception as e:
-                    print(f"DEBUG: Error in transaction: {e}")
-                    trans.rollback()
-                    print("DEBUG: Transaction rolled back")
-                    raise e
-                    
-        except Exception as e:
-            print(f"DEBUG: Error in save_tranches: {str(e)}")
-            return False
-    
-    def save_transactions(self, transactions: List[Transaction]) -> bool:
-        """Save transactions"""
+        """Save tranches an toàn bằng temp table"""
         try:
             if not self.connected:
                 return False
-                
+
+            tranche_data = [{
+                'tranche_id': tr.tranche_id,
+                'entry_date': tr.entry_date,
+                'entry_nav': tr.entry_nav,
+                'units': tr.units,
+                'hwm': tr.hwm,
+                'investor_id': tr.investor_id
+            } for tr in tranches]
+
             with self.engine.connect() as conn:
                 trans = conn.begin()
                 try:
-                    conn.execute(text("DELETE FROM transactions"))
-                    
-                    if transactions:
-                        transaction_data = [{
-                            'id': t.id, 'investor_id': t.investor_id, 'date': t.date,
-                            'type': t.type, 'amount': t.amount, 'nav': t.nav,
-                            'units_change': t.units_change
-                        } for t in transactions]
-                        
+                    conn.execute(text("CREATE TEMP TABLE tranches_temp AS SELECT * FROM tranches WHERE 1=0"))
+                    if tranche_data:
                         conn.execute(text("""
-                            INSERT INTO transactions (id, investor_id, date, type, amount, nav, units_change)
-                            VALUES (:id, :investor_id, :date, :type, :amount, :nav, :units_change)
-                        """), transaction_data)
-                    
+                            INSERT INTO tranches_temp (tranche_id, entry_date, entry_nav, units, hwm, investor_id)
+                            VALUES (:tranche_id, :entry_date, :entry_nav, :units, :hwm, :investor_id)
+                        """), tranche_data)
+
+                    # validate
+                    result = conn.execute(text("SELECT COUNT(*) FROM tranches_temp"))
+                    temp_count = result.scalar()
+                    if temp_count != len(tranche_data):
+                        raise Exception(f"Mismatch tranches: expected {len(tranche_data)}, got {temp_count}")
+
+                    conn.execute(text("DELETE FROM tranches"))
+                    conn.execute(text("INSERT INTO tranches SELECT * FROM tranches_temp"))
                     trans.commit()
                     return True
-                    
                 except Exception as e:
                     trans.rollback()
-                    raise e
-                    
+                    st.error(f"❌ Lỗi save_tranches: {e}")
+                    return False
         except Exception as e:
-            st.error(f"❌ Error saving transactions: {str(e)}")
+            st.error(f"❌ Lỗi tổng quát save_tranches: {e}")
             return False
+
+        
+    def backup_database_to_local():
+        """Backup từ database xuống local files ngay lập tức"""
+        try:
+            from supabase_data_handler import SupabaseDataHandler
+            handler = SupabaseDataHandler()
+            
+            if not handler.connected:
+                print("Không kết nối được database")
+                return False
+            
+            print("Đang backup từ database...")
+            
+            # Load từ DB
+            tranches = handler.load_tranches()
+            transactions = handler.load_transactions() 
+            investors = handler.load_investors()
+            fee_records = handler.load_fee_records()
+            
+            # Save to local
+            Path("data").mkdir(exist_ok=True)
+            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+            
+            if tranches:
+                data = []
+                for t in tranches:
+                    data.append({
+                        'InvestorID': t.investor_id,
+                        'TrancheID': t.tranche_id,
+                        'EntryDate': t.entry_date,
+                        'EntryNAV': t.entry_nav,
+                        'Units': t.units,
+                        'HWM': t.hwm,
+                        'OriginalEntryDate': t.original_entry_date,
+                        'OriginalEntryNAV': t.original_entry_nav,
+                        'CumulativeFeesPaid': t.cumulative_fees_paid,
+                        'OriginalInvestedValue': t.original_invested_value,
+                        'InvestedValue': getattr(t, 'invested_value', t.units * t.entry_nav)
+                    })
+                pd.DataFrame(data).to_csv(f"data/tranches_{timestamp}.csv", index=False)
+                print(f"Backup {len(tranches)} tranches -> data/tranches_{timestamp}.csv")
+            
+            return True
+            
+        except Exception as e:
+            print(f"Lỗi backup database: {e}")
+            return False
+    def save_transactions(self, transactions: List[Transaction]) -> bool:
+        """Save transactions an toàn bằng temp table"""
+        try:
+            if not self.connected:
+                return False
+
+            tx_data = [{
+                'transaction_id': tx.transaction_id,
+                'investor_id': tx.investor_id,
+                'date': tx.date,
+                'amount': tx.amount,
+                'type': tx.type,
+                'units_change': tx.units_change,
+                'nav': tx.nav,
+                'hwm_before': tx.hwm_before,
+                'hwm_after': tx.hwm_after
+            } for tx in transactions]
+
+            with self.engine.connect() as conn:
+                trans = conn.begin()
+                try:
+                    conn.execute(text("CREATE TEMP TABLE transactions_temp AS SELECT * FROM transactions WHERE 1=0"))
+                    if tx_data:
+                        conn.execute(text("""
+                            INSERT INTO transactions_temp (
+                                transaction_id, investor_id, date, amount, type,
+                                units_change, nav, hwm_before, hwm_after
+                            ) VALUES (
+                                :transaction_id, :investor_id, :date, :amount, :type,
+                                :units_change, :nav, :hwm_before, :hwm_after
+                            )
+                        """), tx_data)
+
+                    # validate
+                    result = conn.execute(text("SELECT COUNT(*) FROM transactions_temp"))
+                    temp_count = result.scalar()
+                    if temp_count != len(tx_data):
+                        raise Exception(f"Mismatch transactions: expected {len(tx_data)}, got {temp_count}")
+
+                    conn.execute(text("DELETE FROM transactions"))
+                    conn.execute(text("INSERT INTO transactions SELECT * FROM transactions_temp"))
+                    trans.commit()
+                    return True
+                except Exception as e:
+                    trans.rollback()
+                    st.error(f"❌ Lỗi save_transactions: {e}")
+                    return False
+        except Exception as e:
+            st.error(f"❌ Lỗi tổng quát save_transactions: {e}")
+            return False
+
+
     
     def save_fee_records(self, fee_records: List[FeeRecord]) -> bool:
-        """Save fee records"""
+        """Save fee_records an toàn bằng temp table"""
         try:
             if not self.connected:
                 return False
-                
+
+            fee_data = [{
+                'fee_id': fr.fee_id,
+                'investor_id': fr.investor_id,
+                'period': fr.period,
+                'fee_amount': fr.fee_amount,
+                'fee_units': fr.fee_units,
+                'calculation_date': fr.calculation_date,
+                'units_before': fr.units_before,
+                'units_after': fr.units_after,
+                'nav_per_unit': fr.nav_per_unit,
+                'description': fr.description
+            } for fr in fee_records]
+
             with self.engine.connect() as conn:
                 trans = conn.begin()
                 try:
-                    conn.execute(text("DELETE FROM fee_records"))
-                    
-                    if fee_records:
-                        fee_data = [{
-                            'id': f.id, 'period': f.period, 'investor_id': f.investor_id,
-                            'fee_amount': f.fee_amount, 'fee_units': f.fee_units,
-                            'calculation_date': f.calculation_date, 'units_before': f.units_before,
-                            'units_after': f.units_after, 'nav_per_unit': f.nav_per_unit,
-                            'description': f.description
-                        } for f in fee_records]
-                        
+                    conn.execute(text("CREATE TEMP TABLE fee_records_temp AS SELECT * FROM fee_records WHERE 1=0"))
+                    if fee_data:
                         conn.execute(text("""
-                            INSERT INTO fee_records (
-                                id, period, investor_id, fee_amount, fee_units, calculation_date,
-                                units_before, units_after, nav_per_unit, description
+                            INSERT INTO fee_records_temp (
+                                fee_id, investor_id, period, fee_amount, fee_units,
+                                calculation_date, units_before, units_after, nav_per_unit, description
                             ) VALUES (
-                                :id, :period, :investor_id, :fee_amount, :fee_units, :calculation_date,
-                                :units_before, :units_after, :nav_per_unit, :description
+                                :fee_id, :investor_id, :period, :fee_amount, :fee_units,
+                                :calculation_date, :units_before, :units_after, :nav_per_unit, :description
                             )
                         """), fee_data)
-                    
+
+                    # validate
+                    result = conn.execute(text("SELECT COUNT(*) FROM fee_records_temp"))
+                    temp_count = result.scalar()
+                    if temp_count != len(fee_data):
+                        raise Exception(f"Mismatch fee_records: expected {len(fee_data)}, got {temp_count}")
+
+                    conn.execute(text("DELETE FROM fee_records"))
+                    conn.execute(text("INSERT INTO fee_records SELECT * FROM fee_records_temp"))
                     trans.commit()
                     return True
-                    
                 except Exception as e:
                     trans.rollback()
-                    raise e
-                    
+                    st.error(f"❌ Lỗi save_fee_records: {e}")
+                    return False
         except Exception as e:
-            st.error(f"❌ Error saving fee records: {str(e)}")
+            st.error(f"❌ Lỗi tổng quát save_fee_records: {e}")
             return False
     
     # === OTHER METHODS ===

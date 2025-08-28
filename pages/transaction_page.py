@@ -200,21 +200,9 @@ class EnhancedTransactionPage:
                     
                     if success:
                         st.success(message)
-                        st.session_state.data_changed = True
-
-                        # === LƯU NGAY LẬP TỨC ===
-                        with st.spinner("💾 Đang lưu NAV mới..."):
-                            save_success = self.fund_manager.save_data()
-                            if save_success:
-                                st.toast("NAV đã được lưu an toàn!", icon="✔️")
-                                st.session_state.data_changed = False # Reset cờ
-                                 # === DÒNG QUAN TRỌNG ĐƯỢC THÊM VÀO ===
-                                st.cache_data.clear() # Xóa cache để sidebar cập nhật
-                                # Tải lại dữ liệu để đảm bảo trạng thái nhất quán
-                                self.fund_manager.load_data()
-                                st.rerun() # Làm mới UI với dữ liệu mới nhất
-                            else:
-                                st.error("❌ Lỗi nghiêm trọng: Không thể lưu NAV vào cơ sở dữ liệu!")
+                        st.session_state.data_changed = True # Bật cờ
+                        st.cache_data.clear() # Vẫn nên xóa cache để UI cập nhật ngay
+                        st.rerun() # Yêu cầu làm mới
                     else:
                         st.error(message)
     
@@ -366,7 +354,7 @@ class EnhancedTransactionPage:
                 if success:
                     st.success(f"✅ Fund Manager đã rút {format_currency(withdrawal_amount)}")
                     st.session_state.data_changed = True
-                    # st.rerun()
+                    st.rerun()
     
     def render_transaction_management(self):
         """Render trang quản lý giao dịch"""
@@ -509,22 +497,12 @@ class EnhancedTransactionPage:
                                 
                                 if success:
                                     st.success("✅ Đã hoàn tác giao dịch thành công!")
-                                    st.session_state.data_changed = True
+                                    st.session_state.data_changed = True # Bật cờ
                                     
-                                    # Clear confirmation state
+                                    # Xóa state của dialog xác nhận
                                     st.session_state[f"show_undo_confirm_{trans.id}"] = False
                                     
-                                    # Save data immediately
-                                    with st.spinner("💾 Đang lưu thay đổi..."):
-                                        save_success = self.fund_manager.save_data()
-                                        if save_success:
-                                            st.toast("Đã lưu thành công!", icon="✅")
-                                            st.session_state.data_changed = False
-                                            # Reload data to ensure consistency
-                                            self.fund_manager.load_data()
-                                            st.rerun()
-                                        else:
-                                            st.error("❌ Lưu dữ liệu thất bại!")
+                                    st.rerun() # Yêu cầu làm mới
                                 else:
                                     st.error("❌ Không thể hoàn tác giao dịch này. Có thể giao dịch đã bị ảnh hưởng bởi các thao tác khác hoặc quá cũ.")
                         
@@ -626,7 +604,7 @@ class EnhancedTransactionPage:
             st.success("✅ Dữ liệu hợp lệ")
     
     def _process_validated_transaction(self, investor_id, trans_type, amount, total_nav, trans_date):
-        """Process transaction after validation AND SAVE IMMEDIATELY."""
+        """Chỉ xử lý logic nghiệp vụ, bật cờ và yêu cầu rerun."""
         trans_date_dt = datetime.combine(trans_date, datetime.now().time()) 
         
         if trans_type == "Nạp":
@@ -640,24 +618,13 @@ class EnhancedTransactionPage:
         
         if success:
             st.success(f"✅ {message}")
-            st.session_state.data_changed = True # Vẫn đặt cờ để các module khác biết
-
-            # === LƯU NGAY LẬP TỨC ===
-            with st.spinner("💾 Đang lưu dữ liệu giao dịch..."):
-                save_success = self.fund_manager.save_data()
-                if save_success:
-                    st.toast("Dữ liệu đã được lưu an toàn!", icon="✔️")
-                    st.session_state.data_changed = False # Reset cờ vì đã lưu xong
-                    # Tải lại dữ liệu để đảm bảo trạng thái nhất quán
-                    self.fund_manager.load_data()
-                    st.rerun() # Bây giờ mới là lúc an toàn để làm mới UI
-                else:
-                    st.error("❌ Lỗi nghiêm trọng: Không thể lưu giao dịch vào cơ sở dữ liệu!")
-            
-            return True
+            # Bật cờ báo hiệu cho app.py rằng có thay đổi cần lưu
+            st.session_state.data_changed = True 
+            # Yêu cầu làm mới giao diện ngay lập tức
+            st.rerun() 
+            # Không cần trả về giá trị vì rerun sẽ dừng thực thi
         else:
             st.error(f"❌ {message}")
-            return False
     
     def _confirm_undo_transaction(self, transaction):
         """Confirm undo transaction"""

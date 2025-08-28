@@ -353,38 +353,38 @@ class SafeFeePage:
             st.success("✅ Tất cả xác nhận hoàn thành")
             
             if st.button("🚀 ÁP DỤNG PHÍ CUỐI NĂM", type="primary", use_container_width=True):
-                # Create backup first
-                backup_success = self.fund_manager.backup_before_operation(f"Fee Application {year}")
+                # 1. Tạo backup trước khi thao tác
+                self.fund_manager.backup_before_operation(f"Fee Application {year}")
+                st.info("💾 Đã tạo backup trước khi áp dụng phí.")
+
+                # 2. Gọi hàm logic nghiệp vụ để áp dụng phí (chỉ thay đổi trong bộ nhớ)
+                # Lưu ý: Hàm này bây giờ trả về một dictionary
+                ending_date_dt = datetime.combine(ending_date, datetime.min.time())
+                results = self.fund_manager.apply_year_end_fees_enhanced(ending_date_dt, ending_nav)
                 
-                if backup_success:
-                    st.info("💾 Đã tạo backup trước khi áp dụng phí")
-                
-                # Apply fees
-                success, message = self.fund_manager.apply_year_end_fees_enhanced(year, ending_date, ending_nav)
-                
-                if success:
+                # 3. Kiểm tra kết quả và thực hiện các bước tiếp theo
+                if results.get('success'):
+                    # ✅✅✅ BƯỚC QUAN TRỌNG NHẤT ✅✅✅
+                    # Sau khi áp dụng phí thành công, chốt HWM mới cho toàn quỹ
+                    current_price = self.fund_manager.calculate_price_per_unit(ending_nav)
+                    self.fund_manager.crystallize_hwm(current_price)
+                    
+                    # 4. Thông báo, bật cờ và làm mới giao diện
                     st.balloons()
-                    st.success(f"✅ {message}")
+                    st.success(f"✅ Đã áp dụng phí thành công cho {results['investors_processed']} nhà đầu tư.")
+                    
+                    # Bật cờ để app.py biết cần phải lưu
                     st.session_state.data_changed = True
                     
-                    # Clear confirmation states
-                    for key in list(st.session_state.keys()):
-                        if key.startswith(('step1', 'step2', 'step3')):
+                    # Xóa các state của checkbox để lần sau phải xác nhận lại
+                    for key in ['step1', 'step2', 'step3']:
+                        if key in st.session_state:
                             del st.session_state[key]
                     
-                    # Save immediately after applying fees
-                    with st.spinner("💾 Đang lưu dữ liệu sau áp dụng phí..."):
-                        save_success = self.fund_manager.save_data()
-                        if save_success:
-                            st.success("💾 Đã lưu thành công!")
-                            st.session_state.data_changed = False
-                            # Reload data to ensure consistency
-                            self.fund_manager.load_data()
-                            st.rerun()
-                        else:
-                            st.error("❌ Lưu dữ liệu thất bại!")
+                    # Yêu cầu làm mới giao diện, app.py sẽ bắt cờ và lưu dữ liệu
+                    st.rerun()
                 else:
-                    st.error(f"❌ {message}")
+                    st.error(f"❌ Áp dụng phí thất bại: {results.get('errors')}")
         else:
             remaining_steps = []
             if not step1:
