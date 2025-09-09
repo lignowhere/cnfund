@@ -85,7 +85,8 @@ class Tranche:
     
     def days_held(self, current_date: datetime) -> int:
         """Số ngày đã hold tính đến một ngày cụ thể."""
-        return (current_date - self.entry_date).days
+        from datetime_utils import safe_days_between
+        return safe_days_between(current_date, self.entry_date)
 
     def years_held(self, current_date: datetime) -> float:
         """Số năm đã hold tính đến một ngày cụ thể."""

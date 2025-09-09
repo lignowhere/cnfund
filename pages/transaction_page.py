@@ -723,7 +723,10 @@ class EnhancedTransactionPage:
                 st.error("❌ Insufficient units for withdrawal")
                 return False
             
-            withdrawal_date_dt = datetime.combine(withdrawal_date, datetime.min.time())
+            # Create timezone-aware datetime using timezone manager
+            current_time = TimezoneManager.now().time()
+            withdrawal_date_dt = datetime.combine(withdrawal_date, current_time)
+            withdrawal_date_dt = TimezoneManager.to_app_timezone(withdrawal_date_dt)
             
             # Remove units proportionally from tranches
             removal_ratio = units_to_remove / total_fm_units

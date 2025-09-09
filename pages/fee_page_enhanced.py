@@ -550,7 +550,8 @@ class SafeFeePage:
             if tranches:
                 st.markdown("**Lý do không có phí:**")
                 for i, tranche in enumerate(tranches):
-                    time_delta_days = (calc_date_dt - tranche.entry_date).days
+                    from datetime_utils import safe_days_between
+                    time_delta_days = safe_days_between(calc_date_dt, tranche.entry_date)
                     if time_delta_days > 0:
                         time_delta_years = time_delta_days / 365.25
                         hurdle_price = tranche.entry_nav * ((1 + 0.06) ** time_delta_years)
@@ -569,7 +570,8 @@ class SafeFeePage:
             
             for tranche in tranches:
                 # Calculate fee for this specific tranche
-                time_delta_days = (calc_date_dt - tranche.entry_date).days
+                from datetime_utils import safe_days_between
+                time_delta_days = safe_days_between(calc_date_dt, tranche.entry_date)
                 time_delta_years = time_delta_days / 365.25 if time_delta_days > 0 else 0
                 
                 hurdle_multiplier = (1 + 0.06) ** time_delta_years  # 6% hurdle

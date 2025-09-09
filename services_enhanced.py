@@ -951,12 +951,12 @@ class EnhancedFundManager:
             fee_txn = next((
                 t for t in self.transactions 
                 if t.investor_id == investor_id and t.type == "Phí" and 
-                abs((t.date - trans_date).total_seconds()) < 1
+                abs(__import__('datetime_utils').safe_total_seconds_between(t.date, trans_date)) < 1
             ), None)
             
             fm_fee_txns = [
                 t for t in self.transactions 
-                if t.type == "Phí Nhận" and abs((t.date - trans_date).total_seconds()) < 1
+                if t.type == "Phí Nhận" and abs(__import__('datetime_utils').safe_total_seconds_between(t.date, trans_date)) < 1
             ]
 
             fee_record_to_undo = next((
@@ -1050,12 +1050,12 @@ class EnhancedFundManager:
             fee_txn = next((
                 t for t in self.transactions 
                 if t.investor_id == investor_id and t.type == "Phí" and 
-                abs((t.date - trans_date).total_seconds()) < 3600
+                abs(__import__('datetime_utils').safe_total_seconds_between(t.date, trans_date)) < 3600
             ), None)
             
             fm_fee_txns = [
                 t for t in self.transactions 
-                if t.type == "Phí Nhận" and abs((t.date - trans_date).total_seconds()) < 3600
+                if t.type == "Phí Nhận" and abs(__import__('datetime_utils').safe_total_seconds_between(t.date, trans_date)) < 3600
             ]
 
             fee_record_to_undo = next((
