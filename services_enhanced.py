@@ -99,32 +99,48 @@ class EnhancedFundManager:
     
     def _auto_backup_if_enabled(self, operation_type: str, description: str = None):
         """
-        OPTIMIZED: Async backup - don't block UI operations
+        ULTRA OPTIMIZED: Deferred backup - maximum UI responsiveness
         """
         if not self.backup_manager:
             return
         
-        # ULTRA FAST: Skip all backups for NAV_UPDATE to maximize speed
-        if operation_type in ['NAV_UPDATE']:
-            return  # Skip auto-backup entirely for NAV updates
+        # ULTRA FAST: Skip all auto-backup for immediate operations
+        if operation_type in ['NAV_UPDATE', 'DEPOSIT', 'PARTIAL_WITHDRAWAL', 'FULL_WITHDRAWAL']:
+            return  # Skip auto-backup entirely for frequent operations
         
-        # For other operations, run backup asynchronously
+        # For critical operations only, defer to background
         try:
-            import threading
-            def async_backup():
-                try:
-                    self.backup_manager.create_database_backup(
-                        fund_manager=self,
-                        backup_type="AUTO_" + operation_type
-                    )
-                except Exception:
-                    pass  # Don't let backup errors affect UI
+            from performance_optimizer import get_optimizer
+            optimizer = get_optimizer()
             
-            # Run backup in background thread
-            backup_thread = threading.Thread(target=async_backup, daemon=True)
-            backup_thread.start()
-        except Exception:
-            pass  # Don't let threading errors affect UI
+            def deferred_backup():
+                try:
+                    if hasattr(self.backup_manager, 'create_database_backup'):
+                        self.backup_manager.create_database_backup(
+                            fund_manager=self,
+                            backup_type="DEFERRED_" + operation_type
+                        )
+                except Exception as e:
+                    print(f"Deferred backup error: {e}")
+            
+            # Queue for background processing
+            optimizer.defer_task(deferred_backup)
+        except ImportError:
+            # Fallback to original async backup if optimizer not available
+            try:
+                import threading
+                def async_backup():
+                    try:
+                        self.backup_manager.create_database_backup(
+                            fund_manager=self,
+                            backup_type="AUTO_" + operation_type
+                        )
+                    except Exception:
+                        pass
+                backup_thread = threading.Thread(target=async_backup, daemon=True)
+                backup_thread.start()
+            except Exception:
+                pass
     
     def _should_skip_frequent_backup(self) -> bool:
         """Check if we should skip backup due to frequency limits"""

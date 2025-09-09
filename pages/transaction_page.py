@@ -670,8 +670,47 @@ class EnhancedTransactionPage:
             st.success("✅ Dữ liệu hợp lệ")
     
     def _process_validated_transaction(self, investor_id, trans_type, amount, total_nav, trans_date):
-        """Chỉ xử lý logic nghiệp vụ, bật cờ và yêu cầu rerun."""
-        # Create timezone-aware datetime using timezone manager
+        """OPTIMIZED: Fast transaction processing with deferred operations."""
+        try:
+            from performance_optimizer import create_fast_processor
+            
+            # Create fast processor if not exists
+            if not hasattr(self, '_fast_processor'):
+                self._fast_processor = create_fast_processor(self.fund_manager)
+            
+            # Create timezone-aware datetime using timezone manager
+            current_time = TimezoneManager.now().time()
+            trans_date_dt = datetime.combine(trans_date, current_time)
+            trans_date_dt = TimezoneManager.to_app_timezone(trans_date_dt) 
+            
+            # Choose appropriate transaction method
+            if trans_type == "Nạp":
+                transaction_func = self.fund_manager.process_deposit
+                args = (investor_id, amount, total_nav, trans_date_dt)
+            else:  # Rút
+                transaction_func = self.fund_manager.process_withdrawal  
+                args = (investor_id, amount, total_nav, trans_date_dt)
+            
+            # Process with fast processor (immediate UI feedback, deferred save/backup)
+            success, message = self._fast_processor.process_transaction_fast(
+                transaction_func, *args
+            )
+            
+            if success:
+                # Show balloons for positive feedback
+                st.balloons()
+                st.session_state.data_changed = True
+                st.rerun()
+            # Error already shown by fast processor
+            
+        except ImportError:
+            # Fallback to original processing if optimizer not available
+            self._process_transaction_original(investor_id, trans_type, amount, total_nav, trans_date)
+        except Exception as e:
+            st.error(f"❌ Transaction processing error: {str(e)}")
+    
+    def _process_transaction_original(self, investor_id, trans_type, amount, total_nav, trans_date):
+        """Original transaction processing (fallback)"""
         current_time = TimezoneManager.now().time()
         trans_date_dt = datetime.combine(trans_date, current_time)
         trans_date_dt = TimezoneManager.to_app_timezone(trans_date_dt) 
@@ -687,11 +726,8 @@ class EnhancedTransactionPage:
         
         if success:
             st.success(f"✅ {message}")
-            # Bật cờ báo hiệu cho app.py rằng có thay đổi cần lưu
             st.session_state.data_changed = True 
-            # Yêu cầu làm mới giao diện ngay lập tức
             st.rerun() 
-            # Không cần trả về giá trị vì rerun sẽ dừng thực thi
         else:
             st.error(f"❌ {message}")
     
