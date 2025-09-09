@@ -219,11 +219,7 @@ class EnhancedTransactionPage:
             
             if nav_input:
                 st.info(f"🔍 **NAV đã parse:** {format_currency(total_nav)}")
-                # Debug logging
-                print(f"🔍 NAV Input Debug:")
-                print(f"  - Raw input: '{nav_input}'")
-                print(f"  - Parsed value: {total_nav}")
-                print(f"  - Formatted back: {format_currency(total_nav)}")
+                # OPTIMIZED: Removed debug logging for faster UI response
             
             # === LOGIC HIỂN THỊ THAY ĐỔI (ĐÃ BỎ HOÀN TOÀN BƯỚC XÁC NHẬN) ===
             if latest_nav and total_nav > 0:
@@ -255,54 +251,24 @@ class EnhancedTransactionPage:
                     trans_date_dt = datetime.combine(trans_date, current_time)
                     trans_date_dt = TimezoneManager.to_app_timezone(trans_date_dt)
                     
-                    # Enhanced debug logging before sending to process_nav_update
-                    print(f"🚀 Sending NAV Update Request:")
-                    print(f"  - total_nav parameter: {total_nav}")
-                    print(f"  - total_nav type: {type(total_nav)}")
-                    print(f"  - trans_date_dt: {trans_date_dt}")
-                    
+                    # ULTRA FAST: Direct processing without debug logging
                     success, message = self.fund_manager.process_nav_update(total_nav, trans_date_dt)
                     
                     if success:
                         st.success(message)
-                        st.session_state.data_changed = True # Bật cờ
+                        st.session_state.data_changed = True  # Set refresh flag
                         
-                        # Force complete data refresh for cloud environment
+                        # ULTRA FAST: Immediate visual feedback
+                        st.balloons()  # Show success animation immediately
+                        
+                        # ULTRA FAST: Minimal background processing (non-blocking)
                         try:
-                            from app import cloud_optimized_refresh, is_cloud_environment
-                            from cloud_debug import CloudDebugger
-                            
-                            # Log NAV operation
-                            CloudDebugger.log_nav_operation("NAV_UPDATE_REQUEST", total_nav)
-                            
-                            # Use cloud-optimized refresh for better performance
-                            if is_cloud_environment():
-                                refresh_success = cloud_optimized_refresh()
-                                print(f"🌐 Cloud-optimized refresh: {'✅ Success' if refresh_success else '❌ Failed'}")
-                            else:
-                                from app import force_data_refresh
-                                refresh_success = force_data_refresh()
-                                print(f"💻 Local refresh: {'✅ Success' if refresh_success else '❌ Failed'}")
-                            
-                            if refresh_success:
-                                print("✅ Data refresh completed successfully")
-                                
-                                # Verify NAV sync
-                                sync_success = CloudDebugger.verify_nav_sync(total_nav, "NAV_UPDATE")
-                                
-                                latest_nav = self.fund_manager.get_latest_total_nav()
-                                st.info(f"🔄 Latest NAV after update: {format_currency(latest_nav) if latest_nav else 'None'}")
-                                
-                                if sync_success:
-                                    st.success("✅ NAV sync verified successfully")
-                                else:
-                                    st.warning("⚠️ NAV sync verification failed - check debug log")
-                                    
-                        except Exception as e:
-                            print(f"⚠️ Fallback cache clear: {str(e)}")
-                            st.cache_data.clear() # Fallback
+                            st.cache_data.clear()  # Quick cache clear only
+                        except Exception:
+                            pass  # Don't block on cache errors
                         
-                        st.rerun() # Yêu cầu làm mới
+                        # ULTRA FAST: Immediate rerun without waiting for post-processing
+                        st.rerun()
                     else:
                         st.error(message)
     

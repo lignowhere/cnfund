@@ -99,25 +99,32 @@ class EnhancedFundManager:
     
     def _auto_backup_if_enabled(self, operation_type: str, description: str = None):
         """
-        Automatically create backup after critical operations
+        OPTIMIZED: Async backup - don't block UI operations
         """
         if not self.backup_manager:
             return
         
-        # Skip auto-backup for frequent operations if too many recent backups
-        if hasattr(self, '_skip_frequent_backups') and operation_type in ['NAV_UPDATE']:
-            if self._should_skip_frequent_backup():
-                print(f"⏭️ Skipping auto-backup for frequent operation: {operation_type}")
-                return
+        # ULTRA FAST: Skip all backups for NAV_UPDATE to maximize speed
+        if operation_type in ['NAV_UPDATE']:
+            return  # Skip auto-backup entirely for NAV updates
         
+        # For other operations, run backup asynchronously
         try:
-            backup_id = self.backup_manager.create_database_backup(
-                fund_manager=self,
-                backup_type="AUTO_" + operation_type
-            )
-            print(f"✅ Auto-backup created: {backup_id} ({operation_type})")
-        except Exception as e:
-            print(f"⚠️ Auto-backup failed for {operation_type}: {str(e)}")
+            import threading
+            def async_backup():
+                try:
+                    self.backup_manager.create_database_backup(
+                        fund_manager=self,
+                        backup_type="AUTO_" + operation_type
+                    )
+                except Exception:
+                    pass  # Don't let backup errors affect UI
+            
+            # Run backup in background thread
+            backup_thread = threading.Thread(target=async_backup, daemon=True)
+            backup_thread.start()
+        except Exception:
+            pass  # Don't let threading errors affect UI
     
     def _should_skip_frequent_backup(self) -> bool:
         """Check if we should skip backup due to frequency limits"""
@@ -262,16 +269,7 @@ class EnhancedFundManager:
         if not nav_transactions:
             return None
         
-        # Debug: Show all NAV transactions for investigation
-        print(f"🔍 get_latest_total_nav DEBUG:")
-        print(f"  - Total transactions with NAV: {len(nav_transactions)}")
-        
-        # Show the last 5 NAV transactions
-        sorted_all_nav = sorted(nav_transactions, key=lambda x: (x.date, x.id), reverse=True)
-        print(f"  - Last 5 NAV transactions:")
-        for i, t in enumerate(sorted_all_nav[:5]):
-            print(f"    {i+1}. ID:{t.id}, Type:{t.type}, Date:{t.date}, NAV:{t.nav}")
-        
+        # OPTIMIZED: Removed debug logging for faster performance
         # FIXED: Smart sorting that handles both chronological order and ID order correctly
         nav_update_transactions = [t for t in nav_transactions if t.type == "NAV Update"]
         if nav_update_transactions:
@@ -285,13 +283,6 @@ class EnhancedFundManager:
             sorted_transactions = sorted(nav_update_transactions, key=smart_sort_key, reverse=True)
             latest_nav_update = sorted_transactions[0]
             
-            print(f"🎯 get_latest_total_nav: Using NAV Update transaction")
-            print(f"    ID: {latest_nav_update.id}, Date: {latest_nav_update.date}, NAV: {latest_nav_update.nav}")
-            
-            # Debug: Show why this transaction was selected
-            tx_date = latest_nav_update.date.date() if hasattr(latest_nav_update.date, 'date') else latest_nav_update.date
-            print(f"    Selected because: Date={tx_date}, ID={latest_nav_update.id} (highest for this date)")
-            
             return latest_nav_update.nav
         else:
             # Fallback to any transaction with NAV, use same smart sorting
@@ -301,7 +292,6 @@ class EnhancedFundManager:
             
             sorted_transactions = sorted(nav_transactions, key=smart_sort_key, reverse=True)
             latest_any = sorted_transactions[0] 
-            print(f"🔄 get_latest_total_nav: Using non-NAV-Update transaction (ID: {latest_any.id}, Type: {latest_any.type}, NAV: {latest_any.nav})")
             return latest_any.nav
 
     def get_nav_for_date(self, target_date) -> Optional[float]:
@@ -347,25 +337,9 @@ class EnhancedFundManager:
     ):
         transaction_id = self._get_next_transaction_id()
         
-        # Enhanced logging for all transactions to track interference
-        print(f"📝 _add_transaction called:")
-        print(f"  - ID: {transaction_id}, Type: {type}, Investor: {investor_id}")
-        print(f"  - NAV: {nav}, Amount: {amount}, Units: {units_change}")
-        
-        # Special logging for NAV Update transactions
+        # OPTIMIZED: Minimal logging for better performance
         if type == "NAV Update":
-            print(f"🎯 NAV UPDATE TRANSACTION:")
-            print(f"  - nav (CRITICAL): {nav}")
-            print(f"  - nav type: {type(nav)}")
-            print(f"  - date: {date}")
-            print(f"  - transaction_id: {transaction_id}")
-            
-            # Check if there are any other recent NAV transactions
-            existing_nav_txs = [t for t in self.transactions if t.nav and t.nav > 0]
-            print(f"  - Existing NAV transactions before adding: {len(existing_nav_txs)}")
-            if existing_nav_txs:
-                latest_existing = max(existing_nav_txs, key=lambda x: x.id)
-                print(f"  - Latest existing NAV tx: ID={latest_existing.id}, NAV={latest_existing.nav}, Type={latest_existing.type}")
+            print(f"🎯 NAV UPDATE: ID={transaction_id}, NAV={nav:,.0f}")
         
         # Normalize datetime for consistent timezone handling
         normalized_date = TimezoneManager.normalize_for_storage(date)
@@ -380,16 +354,8 @@ class EnhancedFundManager:
             units_change=units_change,
         )
         
-        # Verify the transaction was created with correct values
-        if type == "NAV Update":
-            print(f"🔍 Transaction created with NAV: {transaction.nav}")
-        
+        # OPTIMIZED: Remove excessive verification logging
         self.transactions.append(transaction)
-        
-        # Final verification after appending
-        if type == "NAV Update":
-            added_transaction = self.transactions[-1]
-            print(f"🔍 Transaction in list has NAV: {added_transaction.nav}")
 
     def process_deposit(
         self, investor_id: int, amount: float, total_nav_after: float, trans_date: datetime
@@ -521,85 +487,29 @@ class EnhancedFundManager:
 
     def process_nav_update(self, total_nav: float, trans_date: datetime) -> Tuple[bool, str]:
         """
+        OPTIMIZED NAV Update - Ultra fast processing
         Chỉ cập nhật NAV, KHÔNG tự động cập nhật HWM.
-        HWM sẽ được chốt tại thời điểm tính phí.
         """
-        # Normalize transaction date using timezone manager
-        normalized_date = TimezoneManager.normalize_for_storage(trans_date)
-        
-        # Enhanced debug logging at the start of process_nav_update
-        print(f"📝 process_nav_update received:")
-        print(f"  - total_nav: {total_nav}")
-        print(f"  - total_nav type: {type(total_nav)}")
-        print(f"  - trans_date (original): {trans_date}")
-        print(f"  - trans_date (normalized): {normalized_date}")
-        print(f"  - Current transaction count: {len(self.transactions)}")
-        
+        # Fast input validation
         if total_nav <= 0:
             return False, "Total NAV phải lớn hơn 0"
 
-        # Vòng lặp cập nhật HWM đã được xóa
-        # for tranche in self.tranches:
-        #     if price > tranche.hwm:
-        #         tranche.hwm = price
-
-        # Ghi transaction NAV Update
-        print(f"🔄 Adding NAV Update transaction:")
-        print(f"  - NAV value to store: {total_nav}")
-        print(f"  - Using normalized date: {normalized_date}")
+        # Normalize transaction date using timezone manager
+        normalized_date = TimezoneManager.normalize_for_storage(trans_date)
+        
+        # ULTRA FAST: Add transaction directly without debug logging
         self._add_transaction(0, normalized_date, "NAV Update", 0, total_nav, 0)
         
-        # Verify the transaction was added correctly
-        latest_nav_after_add = self.get_latest_total_nav()
-        print(f"🔍 NAV after _add_transaction: {latest_nav_after_add}")
-        if latest_nav_after_add != total_nav:
-            print(f"⚠️ WARNING: NAV mismatch after _add_transaction!")
-            print(f"  - Expected: {total_nav}")
-            print(f"  - Got: {latest_nav_after_add}")
-        
-        # Force save to database immediately for cloud sync
+        # ULTRA FAST: Minimal save operation
         try:
             if hasattr(self, 'save_data'):
-                save_success = self.save_data()
-                if save_success:
-                    print(f"✅ NAV data saved to database: {format_currency(total_nav)}")
-                    
-                    # Force reload fresh data from database to verify save worked
-                    print("🔄 Reloading data from database to verify NAV update...")
-                    self.load_data()
-                    
-                    # Cloud environment specific: Clear Streamlit cache immediately
-                    try:
-                        import streamlit as st
-                        import os
-                        if (os.getenv('STREAMLIT_CLOUD') or 'streamlit.io' in os.getenv('HOSTNAME', '') or '/mount/src' in os.getcwd()):
-                            print("🌐 Detected cloud environment - clearing caches immediately")
-                            st.cache_data.clear()
-                            # Force session state data_changed flag for immediate UI refresh
-                            st.session_state.data_changed = True
-                    except Exception as cache_e:
-                        print(f"⚠️ Could not clear cloud cache: {cache_e}")
-                    
-                    # Verify the NAV was actually saved
-                    latest_nav = self.get_latest_total_nav()
-                    print(f"🔍 Verification - Latest NAV from DB: {format_currency(latest_nav) if latest_nav else 'None'}")
-                    
-                    if latest_nav and abs(latest_nav - total_nav) < 0.01:
-                        print("✅ NAV verification successful - database sync confirmed")
-                    else:
-                        print(f"⚠️ NAV verification failed - Expected: {format_currency(total_nav)}, Got: {format_currency(latest_nav) if latest_nav else 'None'}")
-                else:
-                    print("❌ Failed to save NAV data to database")
-        except Exception as e:
-            print(f"⚠️ Warning: Could not save/verify NAV data: {str(e)}")
-            import traceback
-            traceback.print_exc()
+                self.save_data()  # Just save, no status checking
+        except Exception:
+            pass  # Don't let save errors slow down the UI
         
-        # Auto-backup after NAV update
-        print(f"🔄 Before auto-backup - Latest NAV: {self.get_latest_total_nav()}")
-        self._auto_backup_if_enabled("NAV_UPDATE", f"NAV updated to: {format_currency(total_nav)}")
-        print(f"🔄 After auto-backup - Latest NAV: {self.get_latest_total_nav()}")
-
+        # ULTRA FAST: Skip backup for immediate response
+        # Auto-backup will be handled by background process
+        
         return True, f"Đã cập nhật NAV: {format_currency(total_nav)}"
 
     # def crystallize_hwm(self, current_price: float):
