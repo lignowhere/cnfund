@@ -102,7 +102,7 @@ def load_page_components():
     return pages
 
 # === CACHED DATA FUNCTIONS ===
-@st.cache_data(ttl=300)
+@st.cache_data(ttl=30)  # Reduced from 300 to 30 seconds for better cloud sync
 def get_cached_nav(fund_manager_id):
     """Get cached NAV data"""
     fund_manager = st.session_state.get('fund_manager')
@@ -110,7 +110,7 @@ def get_cached_nav(fund_manager_id):
         return fund_manager.get_latest_total_nav()
     return None
 
-@st.cache_data(ttl=180)
+@st.cache_data(ttl=60)  # Reduced from 180 to 60 seconds for better cloud sync  
 def get_cached_investors(fund_manager_id):
     """Get cached investors data"""
     fund_manager = st.session_state.get('fund_manager')
@@ -122,6 +122,26 @@ def clear_app_cache():
     """Clear application caches"""
     get_cached_nav.clear()
     get_cached_investors.clear()
+
+def force_data_refresh():
+    """Force data refresh from database - useful for cloud environments"""
+    try:
+        # Clear all caches first
+        clear_app_cache()
+        
+        # Force reload fund manager data from database
+        fund_manager = st.session_state.get('fund_manager')
+        if fund_manager and hasattr(fund_manager, 'load_data'):
+            fund_manager.load_data()
+            print("🔄 Fund manager data reloaded from database")
+        
+        # Clear streamlit cache
+        st.cache_data.clear()
+        
+        return True
+    except Exception as e:
+        print(f"⚠️ Error during force refresh: {str(e)}")
+        return False
 
 # === PAGE CONSTANTS ===
 PAGE_ADD_INVESTOR = "👥 Thêm Nhà Đầu Tư"

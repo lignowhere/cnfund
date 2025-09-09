@@ -428,6 +428,14 @@ class EnhancedFundManager:
         # Ghi transaction NAV Update
         self._add_transaction(0, trans_date, "NAV Update", 0, total_nav, 0)
         
+        # Force save to database immediately for cloud sync
+        try:
+            if hasattr(self, 'save_data'):
+                self.save_data()
+                print(f"✅ NAV data saved to database: {format_currency(total_nav)}")
+        except Exception as e:
+            print(f"⚠️ Warning: Could not save NAV data: {str(e)}")
+        
         # Auto-backup after NAV update
         self._auto_backup_if_enabled("NAV_UPDATE", f"NAV updated to: {format_currency(total_nav)}")
 

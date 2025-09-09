@@ -201,7 +201,19 @@ class EnhancedTransactionPage:
                     if success:
                         st.success(message)
                         st.session_state.data_changed = True # Bật cờ
-                        st.cache_data.clear() # Vẫn nên xóa cache để UI cập nhật ngay
+                        
+                        # Force complete data refresh for cloud environment
+                        try:
+                            from app import force_data_refresh
+                            if force_data_refresh():
+                                print("✅ Data refresh completed successfully")
+                                # Show debug info for cloud troubleshooting
+                                latest_nav = self.fund_manager.get_latest_total_nav()
+                                st.info(f"🔄 Latest NAV after update: {format_currency(latest_nav) if latest_nav else 'None'}")
+                        except Exception as e:
+                            print(f"⚠️ Fallback cache clear: {str(e)}")
+                            st.cache_data.clear() # Fallback
+                        
                         st.rerun() # Yêu cầu làm mới
                     else:
                         st.error(message)
