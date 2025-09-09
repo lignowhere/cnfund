@@ -111,29 +111,32 @@ def load_page_components():
     return pages
 
 # === CACHED DATA FUNCTIONS ===
-@st.cache_data(ttl=10)  # Further reduced for cloud environment
 def get_cached_nav(fund_manager_id):
-    """Get cached NAV data with cloud optimization"""
+    """Get NAV data WITHOUT any caching - direct from database"""
     fund_manager = st.session_state.get('fund_manager')
     if fund_manager:
-        # Force fresh data load in cloud environment
-        if is_cloud_environment():
-            fund_manager.load_data()  # Always reload from database in cloud
-        return fund_manager.get_latest_total_nav()
+        # ALWAYS reload from database - no caching at all
+        print("🚫 NO CACHE: Force reloading data for NAV check")
+        fund_manager.load_data()
+        nav = fund_manager.get_latest_total_nav()
+        print(f"🚫 NO CACHE: Fresh NAV from DB: {nav}")
+        return nav
     return None
 
-@st.cache_data(ttl=60)  # Reduced from 180 to 60 seconds for better cloud sync  
 def get_cached_investors(fund_manager_id):
-    """Get cached investors data"""
+    """Get investors data WITHOUT any caching - direct from database"""
     fund_manager = st.session_state.get('fund_manager')
     if fund_manager:
+        # ALWAYS reload from database - no caching at all
+        print("🚫 NO CACHE: Force reloading data for investors check")
+        fund_manager.load_data()
         return fund_manager.get_regular_investors()
     return []
 
 def clear_app_cache():
-    """Clear application caches"""
-    get_cached_nav.clear()
-    get_cached_investors.clear()
+    """Clear application caches - NO OP since we removed caching"""
+    print("🚫 NO CACHE: clear_app_cache() called but no caches to clear")
+    pass
 
 def force_data_refresh():
     """Force data refresh from database - useful for cloud environments"""

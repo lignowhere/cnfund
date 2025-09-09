@@ -309,6 +309,13 @@ class EnhancedFundManager:
             print(f"  - nav type: {type(nav)}")
             print(f"  - date: {date}")
             print(f"  - transaction_id: {transaction_id}")
+            
+            # Check if there are any other recent NAV transactions
+            existing_nav_txs = [t for t in self.transactions if t.nav and t.nav > 0]
+            print(f"  - Existing NAV transactions before adding: {len(existing_nav_txs)}")
+            if existing_nav_txs:
+                latest_existing = max(existing_nav_txs, key=lambda x: x.id)
+                print(f"  - Latest existing NAV tx: ID={latest_existing.id}, NAV={latest_existing.nav}, Type={latest_existing.type}")
         
         transaction = Transaction(
             id=transaction_id,

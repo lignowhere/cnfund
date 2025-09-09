@@ -148,32 +148,43 @@ class EnhancedTransactionPage:
         # Add debug button for cloud troubleshooting
         col_debug, col_spacer = st.columns([1, 4])
         with col_debug:
-            if st.button("🔍 Debug NAV", help="Check current NAV from database"):
-                try:
-                    from cloud_debug import CloudDebugger
-                    
-                    current_nav = self.fund_manager.get_latest_total_nav()
-                    st.info(f"Current NAV from memory: {format_currency(current_nav) if current_nav else 'No NAV found'}")
-                    
-                    # Force reload and check again
-                    print("🔄 Debug: Force reloading data from database...")
-                    self.fund_manager.load_data()
-                    reloaded_nav = self.fund_manager.get_latest_total_nav()
-                    st.info(f"NAV after DB reload: {format_currency(reloaded_nav) if reloaded_nav else 'None'}")
-                    
-                    # Show transaction count
-                    transaction_count = len(self.fund_manager.transactions)
-                    st.info(f"Total transactions in memory: {transaction_count}")
-                    
-                    # Log debug operation
-                    CloudDebugger.log_nav_operation("DEBUG_NAV_CHECK", reloaded_nav or 0, {
-                        'memory_nav': current_nav,
-                        'reloaded_nav': reloaded_nav,
-                        'transaction_count': transaction_count
-                    })
+            col_debug1, col_debug2 = st.columns(2)
+            
+            with col_debug1:
+                if st.button("🔍 Debug NAV", help="Check current NAV from database"):
+                    try:
+                        from cloud_debug import CloudDebugger
+                        
+                        current_nav = self.fund_manager.get_latest_total_nav()
+                        st.info(f"Current NAV from memory: {format_currency(current_nav) if current_nav else 'No NAV found'}")
+                        
+                        # Force reload and check again
+                        print("🔄 Debug: Force reloading data from database...")
+                        self.fund_manager.load_data()
+                        reloaded_nav = self.fund_manager.get_latest_total_nav()
+                        st.info(f"NAV after DB reload: {format_currency(reloaded_nav) if reloaded_nav else 'None'}")
+                        
+                        # Show transaction count
+                        transaction_count = len(self.fund_manager.transactions)
+                        st.info(f"Total transactions in memory: {transaction_count}")
+                        
+                        # Log debug operation
+                        CloudDebugger.log_nav_operation("DEBUG_NAV_CHECK", reloaded_nav or 0, {
+                            'memory_nav': current_nav,
+                            'reloaded_nav': reloaded_nav,
+                            'transaction_count': transaction_count
+                        })
                     
                 except Exception as e:
                     st.error(f"Debug error: {str(e)}")
+            
+            with col_debug2:
+                if st.button("🔬 DB Analysis", help="Deep database analysis"):
+                    try:
+                        from debug_database import deep_database_analysis
+                        deep_database_analysis()
+                    except Exception as e:
+                        st.error(f"Could not run database analysis: {str(e)}")
         
         # Show debug panel
         try:
