@@ -59,8 +59,7 @@ def load_optimizations():
     """Load all optimizations and return what's available"""
     optimizations = {
         'save_optimization': None,
-        'database_optimization': None,
-        'realtime_sync': None
+        'database_optimization': None
     }
     
     try:
@@ -75,11 +74,7 @@ def load_optimizations():
     except ImportError:
         pass
         
-    try:
-        from realtime_sync_fix import TransactionHandler
-        optimizations['realtime_sync'] = TransactionHandler
-    except ImportError:
-        pass
+    # Realtime sync removed - not used in current implementation
     
     return optimizations
 
@@ -138,9 +133,10 @@ PAGE_MANAGE_TRANSACTIONS = "🔧 Quản Lý Giao Dịch"
 PAGE_CALCULATE_FEES = "🧮 Tính Toán Phí"
 PAGE_CALCULATE_INDIVIDUAL_FEE = "📋 Tính Phí Riêng"
 PAGE_REPORTS = "📊 Báo Cáo & Thống Kê"
+PAGE_BACKUP = "💾 Backup Dashboard"
 
 ALL_PAGES = [
-    PAGE_REPORTS, PAGE_ADD_INVESTOR, PAGE_EDIT_INVESTOR, 
+    PAGE_REPORTS, PAGE_BACKUP, PAGE_ADD_INVESTOR, PAGE_EDIT_INVESTOR, 
     PAGE_ADD_TRANSACTION, PAGE_ADD_NAV, PAGE_FM_WITHDRAWAL, 
     PAGE_MANAGE_TRANSACTIONS, PAGE_CALCULATE_FEES, 
     PAGE_CALCULATE_INDIVIDUAL_FEE
@@ -149,7 +145,7 @@ ALL_PAGES = [
 EDIT_PAGES = [
     PAGE_ADD_INVESTOR, PAGE_EDIT_INVESTOR, PAGE_ADD_TRANSACTION,
     PAGE_ADD_NAV, PAGE_FM_WITHDRAWAL, PAGE_MANAGE_TRANSACTIONS,
-    PAGE_CALCULATE_FEES
+    PAGE_CALCULATE_FEES, PAGE_BACKUP
 ]
 
 # === MAIN APPLICATION CLASS ===
@@ -301,9 +297,6 @@ class FundManagementApp:
         
         if optimizations['database_optimization']:
             self.fund_manager = optimizations['database_optimization'](self.fund_manager)
-        
-        if optimizations['realtime_sync']:
-            self.transaction_handler = optimizations['realtime_sync'](self.fund_manager)
     
     def save_to_session(self):
         """Save components to session state"""
@@ -424,6 +417,11 @@ class FundManagementApp:
                 
             elif page == PAGE_REPORTS and self.pages.get('report'):
                 self.pages['report'](self.fund_manager).render_reports()
+                
+            elif page == PAGE_BACKUP:
+                # Import and run backup dashboard
+                from pages.backup_page import main as backup_main
+                backup_main()
                 
             else:
                 st.warning(f"⚠️ Trang '{page}' đang được phát triển.")

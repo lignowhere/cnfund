@@ -178,12 +178,7 @@ class SidebarManager:
         else:
             st.sidebar.error("🔴 Supabase Disconnected")
 
-        # Hiển thị thông tin "Loaded" ở đây - theo code gốc
-        st.sidebar.info(
-            f"📊 Đã tải: {len(self.fund_manager.investors)} NĐT, "
-            f"{len(self.fund_manager.tranches)} Giao dịch, "
-            f"{len(self.fund_manager.fee_records)} Kỳ phí"
-        )
+        
 
     def render_footer(self):
         """Render thông tin cuối sidebar - theo style code gốc"""
@@ -310,7 +305,7 @@ class SidebarManager:
         
         # Debug info và footer - theo code gốc
         self.render_connection_status()  # Thông tin hệ thống (debug info)
-        self.render_footer()             # Thông tin
+        # self.render_footer()             # Thông tin
         
         return selected_page
 

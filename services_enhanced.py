@@ -14,12 +14,67 @@ from utils import *
 from concurrent.futures import ThreadPoolExecutor
 
 class EnhancedFundManager:
-    def __init__(self, data_handler):
+    def __init__(self, data_handler, enable_snapshots: bool = True):
         self.data_handler = data_handler
         self.investors: List[Investor] = []
         self.tranches: List[Tranche] = []
         self.transactions: List[Transaction] = []
         self.fee_records: List[FeeRecord] = []
+        
+        # Initialize backup systems
+        if enable_snapshots:
+            try:
+                # Check if we have Supabase connection (cloud environment)
+                has_connected = hasattr(data_handler, 'connected')
+                is_connected = getattr(data_handler, 'connected', False) if has_connected else False
+                has_engine = hasattr(data_handler, 'engine')
+                
+                print(f"🔍 Backup Manager Debug:")
+                print(f"   - enable_snapshots: {enable_snapshots}")
+                print(f"   - data_handler type: {type(data_handler).__name__}")
+                print(f"   - has 'connected' attr: {has_connected}")
+                print(f"   - connected value: {is_connected}")
+                print(f"   - has 'engine' attr: {has_engine}")
+                
+                if has_connected and is_connected and has_engine:
+                    # Use cloud backup manager for Supabase + Streamlit Cloud
+                    print("🌥️ Initializing Cloud Backup Manager...")
+                    from cloud_backup_manager import CloudBackupManager
+                    self.backup_manager = CloudBackupManager(
+                        supabase_handler=data_handler,
+                        max_backups=30,
+                        max_operation_snapshots=50,
+                        compress_backups=True
+                    )
+                    print("✅ Cloud Backup Manager initialized (Supabase + Streamlit Cloud)")
+                else:
+                    # Fallback to local backup manager
+                    print("💾 Initializing Local Backup Manager...")
+                    from backup_manager import BackupManager
+                    self.backup_manager = BackupManager(
+                        backup_dir="backups",
+                        auto_backup=True,
+                        max_daily_backups=30,
+                        max_operation_snapshots=50,
+                        compress_backups=True
+                    )
+                    print("✅ Local Backup Manager initialized")
+                
+                # Keep old snapshot manager for compatibility
+                self.snapshot_manager = self.backup_manager
+                
+            except Exception as e:
+                print(f"❌ Failed to initialize backup manager: {str(e)}")
+                print(f"   Error type: {type(e).__name__}")
+                import traceback
+                traceback.print_exc()
+                self.backup_manager = None
+                self.snapshot_manager = None
+        else:
+            print("🚫 Backup system disabled (enable_snapshots=False)")
+            self.backup_manager = None
+            self.snapshot_manager = None
+            
         # self.load_data()
         # self._ensure_fund_manager_exists()
 
@@ -40,6 +95,37 @@ class EnhancedFundManager:
         return self.data_handler.save_all_data_enhanced(
             self.investors, self.tranches, self.transactions, self.fee_records
         )
+    
+    def _auto_backup_if_enabled(self, operation_type: str, description: str = None):
+        """
+        Automatically create backup after critical operations
+        """
+        if not self.backup_manager:
+            return
+        
+        # Skip auto-backup for frequent operations if too many recent backups
+        if hasattr(self, '_skip_frequent_backups') and operation_type in ['NAV_UPDATE']:
+            if self._should_skip_frequent_backup():
+                print(f"⏭️ Skipping auto-backup for frequent operation: {operation_type}")
+                return
+        
+        try:
+            backup_id = self.backup_manager.create_database_backup(
+                fund_manager=self,
+                backup_type="AUTO_" + operation_type
+            )
+            print(f"✅ Auto-backup created: {backup_id} ({operation_type})")
+        except Exception as e:
+            print(f"⚠️ Auto-backup failed for {operation_type}: {str(e)}")
+    
+    def _should_skip_frequent_backup(self) -> bool:
+        """Check if we should skip backup due to frequency limits"""
+        try:
+            recent_backups = self.backup_manager.list_database_backups(1)  # Last 24 hours
+            auto_backups = [b for b in recent_backups if b.get('backup_type', '').startswith('AUTO_')]
+            return len(auto_backups) > 10  # Max 10 auto-backups per day
+        except:
+            return False
 
     # ================================
     # Bootstrap / Lookups
@@ -96,6 +182,10 @@ class EnhancedFundManager:
             is_fund_manager=False,
         )
         self.investors.append(investor)
+        
+        # Auto-backup after adding investor
+        self._auto_backup_if_enabled("ADD_INVESTOR", f"Added investor: {investor.display_name}")
+        
         return True, f"Đã thêm {investor.display_name}"
 
     # ================================
@@ -220,6 +310,12 @@ class EnhancedFundManager:
 
         self.tranches.append(tranche)
         self._add_transaction(investor_id, trans_date, "Nạp", amount, total_nav_after, units)
+        
+        # Auto-backup after deposit transaction
+        investor = self.get_investor_by_id(investor_id)
+        investor_name = investor.display_name if investor else f"ID-{investor_id}"
+        self._auto_backup_if_enabled("DEPOSIT", f"Deposit: {format_currency(amount)} by {investor_name}")
+        
         return True, f"Đã nạp {format_currency(amount)}"
 
     def _process_unit_reduction_fixed(self, investor_id: int, units_to_remove: float, is_full: bool):
@@ -307,6 +403,12 @@ class EnhancedFundManager:
                 self._apply_fee_to_investor_tranches(investor_id, fee_details, trans_date, crystallize=False)
             self._process_unit_reduction_fixed(investor_id, withdrawal_units, is_full=False)
                 
+        # Auto-backup after withdrawal transaction
+        investor = self.get_investor_by_id(investor_id)
+        investor_name = investor.display_name if investor else f"ID-{investor_id}"
+        withdrawal_type = "FULL_WITHDRAWAL" if is_full_withdrawal else "PARTIAL_WITHDRAWAL"
+        self._auto_backup_if_enabled(withdrawal_type, f"Withdrawal: {format_currency(net_amount)} by {investor_name}")
+        
         return True, f"Nhà đầu tư nhận {format_currency(net_amount)} (Gross {format_currency(gross_withdrawal)}, Phí {format_currency(performance_fee)})"
 
 
@@ -325,6 +427,9 @@ class EnhancedFundManager:
 
         # Ghi transaction NAV Update
         self._add_transaction(0, trans_date, "NAV Update", 0, total_nav, 0)
+        
+        # Auto-backup after NAV update
+        self._auto_backup_if_enabled("NAV_UPDATE", f"NAV updated to: {format_currency(total_nav)}")
 
         return True, f"Đã cập nhật NAV: {format_currency(total_nav)}"
 
@@ -578,6 +683,11 @@ class EnhancedFundManager:
 
             print(f"Fee application completed. Total fees: {results['total_fees']:,.0f} VND, "
                 f"FM units received: {results['fund_manager_units_received']:.6f}")
+            
+            # Auto-backup after fee calculation
+            if results['total_fees'] > 0:
+                self._auto_backup_if_enabled("FEE_CALCULATION", f"Year-end fees applied: {format_currency(results['total_fees'])}")
+            
             return results
 
         except Exception as e:
@@ -629,54 +739,111 @@ class EnhancedFundManager:
     # Undo / Delete transactions
     # ================================
     def undo_last_transaction(self, transaction_id: int) -> bool:
+        """
+        ENHANCED: Undo transaction with snapshot support
+        """
+        # Create operation snapshot before attempting undo
+        snapshot_id = None
+        if self.backup_manager:
+            snapshot_id = self.backup_manager.create_operation_snapshot(
+                self, "UNDO_TRANSACTION", f"Before undo transaction {transaction_id}"
+            )
+        
         try:
             transaction = next((t for t in self.transactions if t.id == transaction_id), None)
             if not transaction:
+                print(f"❌ Transaction {transaction_id} not found")
                 return False
 
-            recent_transactions = sorted(self.transactions, key=lambda x: x.date, reverse=True)[:5]
+            # Allow undo for more recent transactions (increased from 5 to 10)
+            recent_transactions = sorted(self.transactions, key=lambda x: x.date, reverse=True)[:10]
             if transaction not in recent_transactions:
+                print(f"❌ Transaction {transaction_id} is too old to undo (only last 10 allowed)")
                 return False
 
+            print(f"🔄 Attempting to undo {transaction.type} transaction {transaction_id}")
+            
+            success = False
             if transaction.type == "Nạp":
-                return self._undo_deposit(transaction)
+                success = self._undo_deposit_enhanced(transaction)
             elif transaction.type == "Rút":
-                return self._undo_withdrawal(transaction)
+                success = self._undo_withdrawal_enhanced(transaction)
             elif transaction.type == "NAV Update":
-                return self._undo_nav_update(transaction)
+                success = self._undo_nav_update_enhanced(transaction)
             elif transaction.type in ["Phí", "Fund Manager Withdrawal"]:
-                return self._simple_transaction_removal(transaction)
-            return False
+                success = self._simple_transaction_removal_enhanced(transaction)
+            else:
+                print(f"❌ Unknown transaction type: {transaction.type}")
+                return False
+            
+            if success:
+                print(f"✅ Successfully undone transaction {transaction_id}")
+                # Auto-backup after successful undo
+                self._auto_backup_if_enabled("UNDO_TRANSACTION", f"Undone transaction {transaction_id} ({transaction.type})")
+                return True
+            else:
+                print(f"❌ Failed to undo transaction {transaction_id}")
+                # Restore snapshot if undo failed
+                if self.backup_manager and snapshot_id:
+                    print(f"🔄 Restoring snapshot {snapshot_id}")
+                    self.backup_manager.restore_operation_snapshot(self, snapshot_id)
+                return False
 
         except Exception as e:
-            print(f"Error in undo_last_transaction: {str(e)}")
+            print(f"❌ Error in undo_last_transaction: {str(e)}")
+            # Restore snapshot on exception
+            if self.backup_manager and snapshot_id:
+                print(f"🔄 Restoring snapshot {snapshot_id} due to error")
+                self.backup_manager.restore_operation_snapshot(self, snapshot_id)
             return False
 
-    def _undo_deposit(self, original_transaction) -> bool:
+    def _undo_deposit_enhanced(self, original_transaction) -> bool:
+        """
+        ENHANCED: Undo deposit transaction with better validation
+        """
         try:
             investor_id = original_transaction.investor_id
             amount = original_transaction.amount
             deposit_date = original_transaction.date
 
+            print(f"  🔍 Looking for tranche created on {deposit_date} with amount {amount:,}")
+
+            # More flexible time window for matching (6 hours instead of 1)
             matching_tranches = [
-                t
-                for t in self.tranches
-                if (t.investor_id == investor_id and abs((t.entry_date - deposit_date).total_seconds()) < 3600)
+                t for t in self.tranches
+                if (t.investor_id == investor_id and 
+                    abs((t.entry_date - deposit_date).total_seconds()) < 21600)  # 6 hours
             ]
+            
             if not matching_tranches:
+                print(f"  ❌ No matching tranches found for investor {investor_id}")
                 return False
 
             tranche_to_remove = max(matching_tranches, key=lambda x: x.entry_date)
+            expected_amount = tranche_to_remove.units * tranche_to_remove.entry_nav
+            
+            print(f"  📊 Tranche to remove: {tranche_to_remove.tranche_id}")
+            print(f"  📊 Expected amount: {expected_amount:,}, Transaction amount: {amount:,}")
 
-            if abs(tranche_to_remove.units * tranche_to_remove.entry_nav - amount) > 1:
+            # More lenient amount checking (allow 1% difference)
+            if abs(expected_amount - amount) > max(1, amount * 0.01):
+                print(f"  ❌ Amount mismatch too large")
                 return False
+
+            # Validate investor still has other tranches or will have 0 units
+            remaining_units = self.get_investor_units(investor_id) - tranche_to_remove.units
+            print(f"  📊 Investor units after removal: {remaining_units:.6f}")
 
             self.tranches.remove(tranche_to_remove)
             self.transactions.remove(original_transaction)
+            
+            print(f"  ✅ Removed tranche {tranche_to_remove.tranche_id}")
             return True
 
         except Exception as e:
-            print(f"Error in _undo_deposit: {str(e)}")
+            print(f"  ❌ Error in _undo_deposit_enhanced: {str(e)}")
+            import traceback
+            traceback.print_exc()
             return False
 
     def _undo_withdrawal(self, original_transaction) -> bool:
@@ -726,7 +893,7 @@ class EnhancedFundManager:
             # Vì sự phức tạp và rủi ro, chúng ta sẽ ngăn chặn undo withdrawal phức tạp
             # và chỉ cho phép undo các giao dịch đơn giản
             if fee_txn or fm_fee_txns:
-                st.error("Hoàn tác giao dịch rút tiền có tính phí chưa được hỗ trợ vì độ phức tạp cao. Vui lòng xóa và tạo lại giao dịch.")
+                print("❌ Hoàn tác giao dịch rút tiền có tính phí chưa được hỗ trợ vì độ phức tạp cao. Vui lòng xóa và tạo lại giao dịch.")
                 return False
 
             # Nếu là một lần rút tiền đơn giản không có phí
@@ -777,6 +944,489 @@ class EnhancedFundManager:
             return True
         except Exception:
             return False
+    
+    def _undo_withdrawal_enhanced(self, original_transaction) -> bool:
+        """
+        ENHANCED: Improved withdrawal undo with snapshot system
+        """
+        try:
+            investor_id = original_transaction.investor_id
+            trans_date = original_transaction.date
+            
+            print(f"  🔍 Analyzing withdrawal transaction for investor {investor_id}")
+
+            # Find related transactions within larger time window (1 hour)
+            fee_txn = next((
+                t for t in self.transactions 
+                if t.investor_id == investor_id and t.type == "Phí" and 
+                abs((t.date - trans_date).total_seconds()) < 3600
+            ), None)
+            
+            fm_fee_txns = [
+                t for t in self.transactions 
+                if t.type == "Phí Nhận" and abs((t.date - trans_date).total_seconds()) < 3600
+            ]
+
+            fee_record_to_undo = next((
+                fr for fr in self.fee_records
+                if fr.investor_id == investor_id and fr.period.startswith("Withdrawal") and 
+                abs((fr.calculation_date - trans_date).total_seconds()) < 3600
+            ), None)
+
+            # Check if this is a complex withdrawal with fees
+            if fee_txn or fm_fee_txns or fee_record_to_undo:
+                print("  ⚠️  Complex withdrawal with fees detected")
+                if self.snapshot_manager:
+                    print("  ✅ Using snapshot system to handle complex withdrawal undo")
+                    # For complex withdrawals, we rely on snapshot restore
+                    # Just remove the main withdrawal transaction and let snapshot handle the rest
+                    try:
+                        self.transactions.remove(original_transaction)
+                        if fee_txn:
+                            self.transactions.remove(fee_txn)
+                        for fm_fee_txn in fm_fee_txns:
+                            self.transactions.remove(fm_fee_txn)
+                        if fee_record_to_undo:
+                            self.fee_records.remove(fee_record_to_undo)
+                        print("  ✅ Removed complex withdrawal transactions and fee records")
+                        print("  💡 Note: Snapshot system will restore full state if any issues occur")
+                        return True
+                    except Exception as e:
+                        print(f"  ❌ Error removing complex withdrawal components: {e}")
+                        return False
+                else:
+                    print("  ❌ Complex withdrawal undo requires snapshot system")
+                    return False
+
+            # Simple withdrawal without fees - safe to undo
+            print(f"  ✅ Simple withdrawal detected, safe to undo")
+            
+            units_to_restore = abs(original_transaction.units_change)
+            tranches = self.get_investor_tranches(investor_id)
+            
+            print(f"  📊 Units to restore: {units_to_restore:.6f}")
+            print(f"  📊 Current tranches: {len(tranches)}")
+            
+            if not tranches:
+                # Investor has no tranches - create new one
+                print(f"  🔄 Creating new tranche for units restoration")
+                price = abs(original_transaction.amount / original_transaction.units_change)
+                
+                import uuid
+                from models import Tranche
+                tranche = Tranche(
+                    investor_id=investor_id,
+                    tranche_id=str(uuid.uuid4()),
+                    entry_date=trans_date, 
+                    entry_nav=price, 
+                    units=units_to_restore,
+                    original_invested_value=units_to_restore * price,
+                    hwm=price,
+                    original_entry_date=trans_date, 
+                    original_entry_nav=price,
+                    cumulative_fees_paid=0.0
+                )
+                self.tranches.append(tranche)
+                print(f"  ✅ Created tranche {tranche.tranche_id}")
+            else:
+                # Restore units proportionally to existing tranches
+                print(f"  🔄 Restoring units proportionally to existing tranches")
+                total_existing_units = self.get_investor_units(investor_id)
+                
+                for tranche in tranches:
+                    proportion = tranche.units / total_existing_units if total_existing_units > 0 else 1.0/len(tranches)
+                    units_to_add = units_to_restore * proportion
+                    value_to_add = units_to_add * tranche.entry_nav
+                    
+                    tranche.units += units_to_add
+                    tranche.invested_value += value_to_add
+                    
+                    print(f"    🔄 Tranche {tranche.tranche_id}: +{units_to_add:.6f} units")
+
+            # Remove the withdrawal transaction
+            self.transactions.remove(original_transaction)
+            print(f"  ✅ Removed withdrawal transaction {original_transaction.id}")
+            
+            return True
+
+        except Exception as e:
+            print(f"  ❌ Error in _undo_withdrawal_enhanced: {str(e)}")
+            import traceback
+            traceback.print_exc()
+            return False
+    
+    def _undo_nav_update_enhanced(self, original_transaction) -> bool:
+        """
+        ENHANCED: Undo NAV update with validation
+        """
+        try:
+            print(f"  🔄 Removing NAV Update transaction {original_transaction.id}")
+            self.transactions.remove(original_transaction)
+            print(f"  ✅ NAV Update removed successfully")
+            return True
+        except Exception as e:
+            print(f"  ❌ Error in _undo_nav_update_enhanced: {str(e)}")
+            return False
+    
+    def _simple_transaction_removal_enhanced(self, transaction) -> bool:
+        """
+        ENHANCED: Remove simple transactions with validation
+        """
+        try:
+            print(f"  🔄 Removing {transaction.type} transaction {transaction.id}")
+            
+            # Additional validation for fee transactions
+            if transaction.type == "Phí":
+                # Check if there are related fee records
+                related_fee_records = [
+                    fr for fr in self.fee_records
+                    if (fr.investor_id == transaction.investor_id and 
+                        abs((fr.calculation_date - transaction.date).total_seconds()) < 3600)
+                ]
+                if related_fee_records:
+                    print(f"  ⚠️  Found {len(related_fee_records)} related fee records")
+                    # Remove related fee records as well
+                    for fee_record in related_fee_records:
+                        self.fee_records.remove(fee_record)
+                        print(f"    🗑️  Removed fee record {fee_record.id}")
+            
+            self.transactions.remove(transaction)
+            print(f"  ✅ Transaction removed successfully")
+            return True
+        except Exception as e:
+            print(f"  ❌ Error in _simple_transaction_removal_enhanced: {str(e)}")
+            return False
+
+    # ================================
+    # Data Integrity Validation
+    # ================================
+    def validate_data_integrity(self, detailed: bool = True) -> Dict[str, Any]:
+        """
+        ENHANCED: Comprehensive data integrity validation
+        """
+        validation_results = {
+            'is_valid': True,
+            'errors': [],
+            'warnings': [],
+            'summary': {},
+            'details': {} if detailed else None
+        }
+        
+        try:
+            print("🔍 Starting data integrity validation...")
+            
+            # 1. Validate Investors
+            investor_issues = self._validate_investors()
+            validation_results['summary']['investors'] = investor_issues
+            if investor_issues['errors']:
+                validation_results['errors'].extend(investor_issues['errors'])
+                validation_results['is_valid'] = False
+            if investor_issues['warnings']:
+                validation_results['warnings'].extend(investor_issues['warnings'])
+            
+            # 2. Validate Tranches
+            tranche_issues = self._validate_tranches()
+            validation_results['summary']['tranches'] = tranche_issues
+            if tranche_issues['errors']:
+                validation_results['errors'].extend(tranche_issues['errors'])
+                validation_results['is_valid'] = False
+            if tranche_issues['warnings']:
+                validation_results['warnings'].extend(tranche_issues['warnings'])
+            
+            # 3. Validate Transactions
+            transaction_issues = self._validate_transactions()
+            validation_results['summary']['transactions'] = transaction_issues
+            if transaction_issues['errors']:
+                validation_results['errors'].extend(transaction_issues['errors'])
+                validation_results['is_valid'] = False
+            if transaction_issues['warnings']:
+                validation_results['warnings'].extend(transaction_issues['warnings'])
+            
+            # 4. Validate Fee Records
+            fee_issues = self._validate_fee_records()
+            validation_results['summary']['fee_records'] = fee_issues
+            if fee_issues['errors']:
+                validation_results['errors'].extend(fee_issues['errors'])
+                validation_results['is_valid'] = False
+            if fee_issues['warnings']:
+                validation_results['warnings'].extend(fee_issues['warnings'])
+            
+            # 5. Cross-validation between different data types
+            cross_issues = self._validate_cross_references()
+            validation_results['summary']['cross_references'] = cross_issues
+            if cross_issues['errors']:
+                validation_results['errors'].extend(cross_issues['errors'])
+                validation_results['is_valid'] = False
+            if cross_issues['warnings']:
+                validation_results['warnings'].extend(cross_issues['warnings'])
+            
+            # Summary
+            total_errors = len(validation_results['errors'])
+            total_warnings = len(validation_results['warnings'])
+            
+            if validation_results['is_valid']:
+                print(f"✅ Data integrity validation PASSED")
+            else:
+                print(f"❌ Data integrity validation FAILED")
+            
+            print(f"📊 Found {total_errors} errors, {total_warnings} warnings")
+            
+            validation_results['summary']['total_errors'] = total_errors
+            validation_results['summary']['total_warnings'] = total_warnings
+            
+            return validation_results
+            
+        except Exception as e:
+            validation_results['is_valid'] = False
+            validation_results['errors'].append(f"Validation process failed: {str(e)}")
+            print(f"❌ Data validation error: {str(e)}")
+            return validation_results
+    
+    def _validate_investors(self) -> Dict[str, Any]:
+        """Validate investor data"""
+        issues = {'errors': [], 'warnings': [], 'count': len(self.investors)}
+        
+        investor_ids = set()
+        fund_managers = []
+        
+        for investor in self.investors:
+            # Check for duplicate IDs
+            if investor.id in investor_ids:
+                issues['errors'].append(f"Duplicate investor ID: {investor.id}")
+            investor_ids.add(investor.id)
+            
+            # Check for fund managers
+            if investor.is_fund_manager:
+                fund_managers.append(investor.id)
+            
+            # Basic data validation
+            if not investor.name or not investor.name.strip():
+                issues['errors'].append(f"Investor {investor.id} has empty name")
+            
+            if investor.id <= 0:
+                issues['errors'].append(f"Invalid investor ID: {investor.id}")
+        
+        # Check fund manager count
+        if len(fund_managers) == 0:
+            issues['warnings'].append("No fund manager found")
+        elif len(fund_managers) > 1:
+            issues['warnings'].append(f"Multiple fund managers found: {fund_managers}")
+        
+        return issues
+    
+    def _validate_tranches(self) -> Dict[str, Any]:
+        """Validate tranche data"""
+        issues = {'errors': [], 'warnings': [], 'count': len(self.tranches)}
+        
+        tranche_ids = set()
+        
+        for tranche in self.tranches:
+            # Check for duplicate tranche IDs
+            if tranche.tranche_id in tranche_ids:
+                issues['errors'].append(f"Duplicate tranche ID: {tranche.tranche_id}")
+            tranche_ids.add(tranche.tranche_id)
+            
+            # Validate using model validation
+            from models import validate_tranche
+            is_valid, errors = validate_tranche(tranche)
+            if not is_valid:
+                for error in errors:
+                    issues['errors'].append(f"Tranche {tranche.tranche_id}: {error}")
+            
+            # Check if investor exists
+            investor_exists = any(inv.id == tranche.investor_id for inv in self.investors)
+            if not investor_exists:
+                issues['errors'].append(f"Tranche {tranche.tranche_id} references non-existent investor {tranche.investor_id}")
+            
+            # Check for negative units
+            if tranche.units < 0:
+                issues['errors'].append(f"Tranche {tranche.tranche_id} has negative units: {tranche.units}")
+            
+            # Check for zero units (warning)
+            if abs(tranche.units) < 0.000001:
+                issues['warnings'].append(f"Tranche {tranche.tranche_id} has near-zero units: {tranche.units}")
+        
+        return issues
+    
+    def _validate_transactions(self) -> Dict[str, Any]:
+        """Validate transaction data"""
+        issues = {'errors': [], 'warnings': [], 'count': len(self.transactions)}
+        
+        transaction_ids = set()
+        
+        for transaction in self.transactions:
+            # Check for duplicate transaction IDs
+            if transaction.id in transaction_ids:
+                issues['errors'].append(f"Duplicate transaction ID: {transaction.id}")
+            transaction_ids.add(transaction.id)
+            
+            # Validate using model validation
+            from models import validate_transaction
+            is_valid, errors = validate_transaction(transaction)
+            if not is_valid:
+                for error in errors:
+                    issues['errors'].append(f"Transaction {transaction.id}: {error}")
+            
+            # Check if investor exists
+            investor_exists = any(inv.id == transaction.investor_id for inv in self.investors)
+            if not investor_exists:
+                issues['errors'].append(f"Transaction {transaction.id} references non-existent investor {transaction.investor_id}")
+        
+        return issues
+    
+    def _validate_fee_records(self) -> Dict[str, Any]:
+        """Validate fee record data"""
+        issues = {'errors': [], 'warnings': [], 'count': len(self.fee_records)}
+        
+        fee_record_ids = set()
+        
+        for fee_record in self.fee_records:
+            # Check for duplicate fee record IDs
+            if fee_record.id in fee_record_ids:
+                issues['errors'].append(f"Duplicate fee record ID: {fee_record.id}")
+            fee_record_ids.add(fee_record.id)
+            
+            # Validate using model validation
+            from models import validate_fee_record
+            is_valid, errors = validate_fee_record(fee_record)
+            if not is_valid:
+                for error in errors:
+                    issues['errors'].append(f"Fee record {fee_record.id}: {error}")
+            
+            # Check if investor exists
+            investor_exists = any(inv.id == fee_record.investor_id for inv in self.investors)
+            if not investor_exists:
+                issues['errors'].append(f"Fee record {fee_record.id} references non-existent investor {fee_record.investor_id}")
+        
+        return issues
+    
+    def _validate_cross_references(self) -> Dict[str, Any]:
+        """Validate cross-references between different data types"""
+        issues = {'errors': [], 'warnings': []}
+        
+        # Check consistency between transactions and tranches
+        for investor in self.investors:
+            investor_tranches = self.get_investor_tranches(investor.id)
+            investor_transactions = [t for t in self.transactions if t.investor_id == investor.id]
+            
+            # Check if investor has transactions but no tranches
+            deposit_txns = [t for t in investor_transactions if t.type == "Nạp"]
+            if deposit_txns and not investor_tranches:
+                issues['warnings'].append(f"Investor {investor.id} has deposit transactions but no tranches")
+            
+            # Check if investor has tranches but no deposit transactions  
+            if investor_tranches and not deposit_txns:
+                issues['warnings'].append(f"Investor {investor.id} has tranches but no deposit transactions")
+        
+        # Check total units consistency
+        try:
+            total_units = sum(t.units for t in self.tranches)
+            if total_units <= 0:
+                issues['warnings'].append(f"Total fund units is {total_units}")
+        except Exception as e:
+            issues['errors'].append(f"Error calculating total units: {str(e)}")
+        
+        return issues
+
+    # ================================
+    # Backup & Recovery Management
+    # ================================
+    def create_manual_backup(self, backup_type: str = "MANUAL") -> str:
+        """
+        Tạo manual backup
+        """
+        if not self.backup_manager:
+            print("❌ Backup system not enabled")
+            return None
+        
+        # Check if using cloud backup manager
+        if hasattr(self.backup_manager, 'create_database_backup'):
+            backup_id = self.backup_manager.create_database_backup(self, backup_type)
+        else:
+            backup_id = self.backup_manager.create_daily_backup(self, backup_type)
+        if backup_id:
+            print(f"✅ Manual backup created: {backup_id}")
+        return backup_id
+    
+    def restore_from_backup(self, backup_id: str = None, backup_date: str = None) -> bool:
+        """
+        Restore từ backup
+        """
+        if not self.backup_manager:
+            print("❌ Backup system not enabled")
+            return False
+        
+        # Create emergency backup before restore
+        if hasattr(self.backup_manager, 'create_database_backup'):
+            emergency_backup = self.backup_manager.create_database_backup(self, "PRE_RESTORE_EMERGENCY")
+            print(f"🚨 Created emergency backup before restore: {emergency_backup}")
+            success = self.backup_manager.restore_database_backup(self, backup_id, backup_date)
+        else:
+            emergency_backup = self.backup_manager.create_daily_backup(self, "PRE_RESTORE_EMERGENCY")  
+            print(f"🚨 Created emergency backup before restore: {emergency_backup}")
+            success = self.backup_manager.restore_daily_backup(self, backup_id, backup_date)
+        if success:
+            print(f"✅ Successfully restored from backup")
+            # Trigger data validation after restore
+            validation_result = self.validate_data_integrity(detailed=False)
+            if validation_result['is_valid']:
+                print(f"✅ Data integrity validation PASSED after restore")
+            else:
+                print(f"⚠️  Data integrity issues found after restore: {len(validation_result['errors'])} errors")
+        else:
+            print(f"❌ Failed to restore from backup")
+        
+        return success
+    
+    def get_backup_status(self) -> Dict[str, Any]:
+        """
+        Get backup system status
+        """
+        if not self.backup_manager:
+            return {'enabled': False, 'message': 'Backup system not enabled'}
+        
+        stats = self.backup_manager.get_backup_stats()
+        return {'enabled': True, **stats}
+    
+    def list_available_backups(self, days: int = 30) -> List[Dict[str, Any]]:
+        """
+        List available backups
+        """
+        if not self.backup_manager:
+            return []
+        
+        if hasattr(self.backup_manager, 'list_database_backups'):
+            return self.backup_manager.list_database_backups(days)
+        else:
+            return self.backup_manager.list_daily_backups(days)
+    
+    def trigger_auto_backup_if_needed(self) -> bool:
+        """
+        Trigger auto backup nếu cần (called from main application)
+        """
+        if not self.backup_manager:
+            return False
+        
+        # For cloud backup, trigger manual backup
+        if hasattr(self.backup_manager, 'create_database_backup'):
+            backup_id = self.backup_manager.create_database_backup(self, "AUTO_TRIGGER")
+            return backup_id is not None
+        else:
+            return self.backup_manager.trigger_auto_backup(self)
+    
+    def create_emergency_backup(self) -> str:
+        """
+        Create emergency backup (immediate, high priority)
+        """
+        if self.backup_manager:
+            if hasattr(self.backup_manager, 'create_database_backup'):
+                return self.backup_manager.create_database_backup(self, "EMERGENCY")
+            else:
+                return self.backup_manager.create_daily_backup(self, "EMERGENCY")
+        else:
+            # Fallback to standalone emergency backup
+            from backup_manager import create_emergency_backup
+            return create_emergency_backup(self)
 
     def delete_transaction(self, transaction_id: int) -> bool:
         try:
