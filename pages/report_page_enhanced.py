@@ -14,6 +14,8 @@ class EnhancedReportPage:
     
     def render_reports(self):
         """Render enhanced reports với professional features"""
+        # Chart rendering using safe_altair_chart for compatibility
+        
         st.title("📊 Báo Cáo & Thống Kê")
         
         regular_investors = self.fund_manager.get_regular_investors()
