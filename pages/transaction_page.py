@@ -145,6 +145,43 @@ class EnhancedTransactionPage:
         """Enhanced NAV update với validation, không cần xác nhận."""
         st.title("📈 Cập Nhật Total NAV")
         
+        # Add debug button for cloud troubleshooting
+        col_debug, col_spacer = st.columns([1, 4])
+        with col_debug:
+            if st.button("🔍 Debug NAV", help="Check current NAV from database"):
+                try:
+                    from cloud_debug import CloudDebugger
+                    
+                    current_nav = self.fund_manager.get_latest_total_nav()
+                    st.info(f"Current NAV from memory: {format_currency(current_nav) if current_nav else 'No NAV found'}")
+                    
+                    # Force reload and check again
+                    print("🔄 Debug: Force reloading data from database...")
+                    self.fund_manager.load_data()
+                    reloaded_nav = self.fund_manager.get_latest_total_nav()
+                    st.info(f"NAV after DB reload: {format_currency(reloaded_nav) if reloaded_nav else 'None'}")
+                    
+                    # Show transaction count
+                    transaction_count = len(self.fund_manager.transactions)
+                    st.info(f"Total transactions in memory: {transaction_count}")
+                    
+                    # Log debug operation
+                    CloudDebugger.log_nav_operation("DEBUG_NAV_CHECK", reloaded_nav or 0, {
+                        'memory_nav': current_nav,
+                        'reloaded_nav': reloaded_nav,
+                        'transaction_count': transaction_count
+                    })
+                    
+                except Exception as e:
+                    st.error(f"Debug error: {str(e)}")
+        
+        # Show debug panel
+        try:
+            from cloud_debug import CloudDebugger
+            CloudDebugger.show_debug_panel()
+        except:
+            pass
+        
         latest_nav = self.fund_manager.get_latest_total_nav()
         
         if latest_nav:
@@ -205,11 +242,25 @@ class EnhancedTransactionPage:
                         # Force complete data refresh for cloud environment
                         try:
                             from app import force_data_refresh
+                            from cloud_debug import CloudDebugger
+                            
+                            # Log NAV operation
+                            CloudDebugger.log_nav_operation("NAV_UPDATE_REQUEST", total_nav)
+                            
                             if force_data_refresh():
                                 print("✅ Data refresh completed successfully")
-                                # Show debug info for cloud troubleshooting
+                                
+                                # Verify NAV sync
+                                sync_success = CloudDebugger.verify_nav_sync(total_nav, "NAV_UPDATE")
+                                
                                 latest_nav = self.fund_manager.get_latest_total_nav()
                                 st.info(f"🔄 Latest NAV after update: {format_currency(latest_nav) if latest_nav else 'None'}")
+                                
+                                if sync_success:
+                                    st.success("✅ NAV sync verified successfully")
+                                else:
+                                    st.warning("⚠️ NAV sync verification failed - check debug log")
+                                    
                         except Exception as e:
                             print(f"⚠️ Fallback cache clear: {str(e)}")
                             st.cache_data.clear() # Fallback

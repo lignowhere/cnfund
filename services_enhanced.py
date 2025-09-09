@@ -431,10 +431,28 @@ class EnhancedFundManager:
         # Force save to database immediately for cloud sync
         try:
             if hasattr(self, 'save_data'):
-                self.save_data()
-                print(f"✅ NAV data saved to database: {format_currency(total_nav)}")
+                save_success = self.save_data()
+                if save_success:
+                    print(f"✅ NAV data saved to database: {format_currency(total_nav)}")
+                    
+                    # Force reload fresh data from database to verify save worked
+                    print("🔄 Reloading data from database to verify NAV update...")
+                    self.load_data()
+                    
+                    # Verify the NAV was actually saved
+                    latest_nav = self.get_latest_total_nav()
+                    print(f"🔍 Verification - Latest NAV from DB: {format_currency(latest_nav) if latest_nav else 'None'}")
+                    
+                    if latest_nav and abs(latest_nav - total_nav) < 0.01:
+                        print("✅ NAV verification successful - database sync confirmed")
+                    else:
+                        print(f"⚠️ NAV verification failed - Expected: {format_currency(total_nav)}, Got: {format_currency(latest_nav) if latest_nav else 'None'}")
+                else:
+                    print("❌ Failed to save NAV data to database")
         except Exception as e:
-            print(f"⚠️ Warning: Could not save NAV data: {str(e)}")
+            print(f"⚠️ Warning: Could not save/verify NAV data: {str(e)}")
+            import traceback
+            traceback.print_exc()
         
         # Auto-backup after NAV update
         self._auto_backup_if_enabled("NAV_UPDATE", f"NAV updated to: {format_currency(total_nav)}")

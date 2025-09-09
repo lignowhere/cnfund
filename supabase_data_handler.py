@@ -241,7 +241,12 @@ class SupabaseDataHandler:
                             pass
 
                     trans.commit()
-                    print(f"✅ Lưu an toàn thành công: {counts}") # Đổi sang print để thấy output
+                    
+                    # Force connection to flush any buffers
+                    conn.execute(text("SELECT 1"))
+                    
+                    print(f"✅ Database save successful with transaction commit: {counts}")
+                    print("🔄 Database connection flushed and verified")
                     return True
                 except Exception as e:
                     trans.rollback()
