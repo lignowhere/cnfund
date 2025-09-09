@@ -253,13 +253,22 @@ class EnhancedTransactionPage:
                         
                         # Force complete data refresh for cloud environment
                         try:
-                            from app import force_data_refresh
+                            from app import cloud_optimized_refresh, is_cloud_environment
                             from cloud_debug import CloudDebugger
                             
                             # Log NAV operation
                             CloudDebugger.log_nav_operation("NAV_UPDATE_REQUEST", total_nav)
                             
-                            if force_data_refresh():
+                            # Use cloud-optimized refresh for better performance
+                            if is_cloud_environment():
+                                refresh_success = cloud_optimized_refresh()
+                                print(f"🌐 Cloud-optimized refresh: {'✅ Success' if refresh_success else '❌ Failed'}")
+                            else:
+                                from app import force_data_refresh
+                                refresh_success = force_data_refresh()
+                                print(f"💻 Local refresh: {'✅ Success' if refresh_success else '❌ Failed'}")
+                            
+                            if refresh_success:
                                 print("✅ Data refresh completed successfully")
                                 
                                 # Verify NAV sync

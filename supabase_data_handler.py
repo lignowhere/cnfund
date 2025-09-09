@@ -29,6 +29,15 @@ class SupabaseDataHandler:
         
         # ✅ Gọi kết nối nhẹ ngay để app.py không báo lỗi
         self._connect()
+    
+    def reconnect(self):
+        """Reconnect to database - useful for cloud environments"""
+        print("🔌 Reconnecting to Supabase database...")
+        self.connected = False
+        self.engine = None
+        self._init_engine()
+        self._connect()
+        return self.connected
 
     def _init_engine(self):
         """Khởi tạo SQLAlchemy engine nhưng không ép connect ngay"""

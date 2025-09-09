@@ -285,17 +285,41 @@ class EnhancedFundManager:
     def _add_transaction(
         self, investor_id: int, date: datetime, type: str, amount: float, nav: float, units_change: float
     ):
-        self.transactions.append(
-            Transaction(
-                id=self._get_next_transaction_id(),
-                investor_id=investor_id,
-                date=date,
-                type=type,
-                amount=amount,
-                nav=nav,
-                units_change=units_change,
-            )
+        transaction_id = self._get_next_transaction_id()
+        
+        # Enhanced logging for all transactions to track interference
+        print(f"📝 _add_transaction called:")
+        print(f"  - ID: {transaction_id}, Type: {type}, Investor: {investor_id}")
+        print(f"  - NAV: {nav}, Amount: {amount}, Units: {units_change}")
+        
+        # Special logging for NAV Update transactions
+        if type == "NAV Update":
+            print(f"🎯 NAV UPDATE TRANSACTION:")
+            print(f"  - nav (CRITICAL): {nav}")
+            print(f"  - nav type: {type(nav)}")
+            print(f"  - date: {date}")
+            print(f"  - transaction_id: {transaction_id}")
+        
+        transaction = Transaction(
+            id=transaction_id,
+            investor_id=investor_id,
+            date=date,
+            type=type,
+            amount=amount,
+            nav=nav,
+            units_change=units_change,
         )
+        
+        # Verify the transaction was created with correct values
+        if type == "NAV Update":
+            print(f"🔍 Transaction created with NAV: {transaction.nav}")
+        
+        self.transactions.append(transaction)
+        
+        # Final verification after appending
+        if type == "NAV Update":
+            added_transaction = self.transactions[-1]
+            print(f"🔍 Transaction in list has NAV: {added_transaction.nav}")
 
     def process_deposit(
         self, investor_id: int, amount: float, total_nav_after: float, trans_date: datetime
@@ -435,6 +459,7 @@ class EnhancedFundManager:
         print(f"  - total_nav: {total_nav}")
         print(f"  - total_nav type: {type(total_nav)}")
         print(f"  - trans_date: {trans_date}")
+        print(f"  - Current transaction count: {len(self.transactions)}")
         
         if total_nav <= 0:
             return False, "Total NAV phải lớn hơn 0"
@@ -468,6 +493,18 @@ class EnhancedFundManager:
                     print("🔄 Reloading data from database to verify NAV update...")
                     self.load_data()
                     
+                    # Cloud environment specific: Clear Streamlit cache immediately
+                    try:
+                        import streamlit as st
+                        import os
+                        if (os.getenv('STREAMLIT_CLOUD') or 'streamlit.io' in os.getenv('HOSTNAME', '') or '/mount/src' in os.getcwd()):
+                            print("🌐 Detected cloud environment - clearing caches immediately")
+                            st.cache_data.clear()
+                            # Force session state data_changed flag for immediate UI refresh
+                            st.session_state.data_changed = True
+                    except Exception as cache_e:
+                        print(f"⚠️ Could not clear cloud cache: {cache_e}")
+                    
                     # Verify the NAV was actually saved
                     latest_nav = self.get_latest_total_nav()
                     print(f"🔍 Verification - Latest NAV from DB: {format_currency(latest_nav) if latest_nav else 'None'}")
@@ -484,7 +521,9 @@ class EnhancedFundManager:
             traceback.print_exc()
         
         # Auto-backup after NAV update
+        print(f"🔄 Before auto-backup - Latest NAV: {self.get_latest_total_nav()}")
         self._auto_backup_if_enabled("NAV_UPDATE", f"NAV updated to: {format_currency(total_nav)}")
+        print(f"🔄 After auto-backup - Latest NAV: {self.get_latest_total_nav()}")
 
         return True, f"Đã cập nhật NAV: {format_currency(total_nav)}"
 

@@ -9,6 +9,15 @@ from datetime import datetime, date
 
 
 
+# === ENVIRONMENT DETECTION ===
+def is_cloud_environment():
+    """Detect if running on Streamlit Cloud"""
+    return (
+        os.getenv('STREAMLIT_CLOUD') or 
+        'streamlit.io' in os.getenv('HOSTNAME', '') or
+        '/mount/src' in os.getcwd()
+    )
+
 # === PURE LAZY LOADING - NO BLOAT ===
 @st.cache_resource
 def load_config():
@@ -102,11 +111,14 @@ def load_page_components():
     return pages
 
 # === CACHED DATA FUNCTIONS ===
-@st.cache_data(ttl=30)  # Reduced from 300 to 30 seconds for better cloud sync
+@st.cache_data(ttl=10)  # Further reduced for cloud environment
 def get_cached_nav(fund_manager_id):
-    """Get cached NAV data"""
+    """Get cached NAV data with cloud optimization"""
     fund_manager = st.session_state.get('fund_manager')
     if fund_manager:
+        # Force fresh data load in cloud environment
+        if is_cloud_environment():
+            fund_manager.load_data()  # Always reload from database in cloud
         return fund_manager.get_latest_total_nav()
     return None
 
@@ -142,6 +154,49 @@ def force_data_refresh():
     except Exception as e:
         print(f"⚠️ Error during force refresh: {str(e)}")
         return False
+
+def cloud_optimized_refresh():
+    """Cloud-specific data refresh with aggressive cache clearing"""
+    if not is_cloud_environment():
+        return force_data_refresh()
+    
+    try:
+        print("🌐 Performing cloud-optimized refresh...")
+        
+        # 1. Clear ALL Streamlit caches aggressively  
+        st.cache_data.clear()
+        st.cache_resource.clear()
+        clear_app_cache()
+        
+        # 2. Force reload fund manager from session
+        fund_manager = st.session_state.get('fund_manager')
+        if fund_manager:
+            # Force reconnect data handler if possible
+            if hasattr(fund_manager, 'data_handler') and hasattr(fund_manager.data_handler, 'reconnect'):
+                fund_manager.data_handler.reconnect()
+                print("🔌 Data handler reconnected")
+            
+            # Multiple reload attempts for cloud reliability
+            for attempt in range(3):
+                try:
+                    fund_manager.load_data()
+                    print(f"✅ Cloud data reload attempt {attempt + 1} successful")
+                    break
+                except Exception as e:
+                    print(f"⚠️ Cloud reload attempt {attempt + 1} failed: {e}")
+                    time.sleep(0.1)  # Brief delay between attempts
+        
+        # 3. Clear session state cache keys
+        cache_keys = [k for k in st.session_state.keys() if k.startswith('cached_') or k.endswith('_cache')]
+        for key in cache_keys:
+            del st.session_state[key]
+        
+        print("🌐 Cloud-optimized refresh completed")
+        return True
+        
+    except Exception as e:
+        print(f"❌ Error in cloud_optimized_refresh: {str(e)}")
+        return force_data_refresh()  # Fallback
 
 # === PAGE CONSTANTS ===
 PAGE_ADD_INVESTOR = "👥 Thêm Nhà Đầu Tư"
