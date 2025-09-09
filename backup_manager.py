@@ -13,6 +13,7 @@ from datetime import datetime, date, timedelta
 from typing import Dict, Any, List, Optional, Tuple
 from dataclasses import asdict
 import copy
+from timezone_manager import TimezoneManager
 import threading
 import schedule
 import time
@@ -85,7 +86,7 @@ class BackupManager:
         """
         Tạo snapshot cho operations (in-memory, quick access)
         """
-        snapshot_id = f"{operation_type}_{datetime.now().strftime('%Y%m%d_%H%M%S_%f')}"
+        snapshot_id = f"{operation_type}_{TimezoneManager.now().strftime('%Y%m%d_%H%M%S_%f')}"
         
         try:
             # Deep copy data
@@ -94,7 +95,7 @@ class BackupManager:
                 'tranches': [asdict(tr) for tr in fund_manager.tranches],
                 'transactions': [asdict(txn) for txn in fund_manager.transactions],
                 'fee_records': [asdict(fr) for fr in fund_manager.fee_records],
-                'timestamp': datetime.now().isoformat(),
+                'timestamp': TimezoneManager.now().isoformat(),
                 'operation_type': operation_type,
                 'description': description
             }
@@ -104,7 +105,7 @@ class BackupManager:
             
             # Store metadata
             self.snapshot_metadata[snapshot_id] = {
-                'timestamp': datetime.now().isoformat(),
+                'timestamp': TimezoneManager.now().isoformat(),
                 'operation_type': operation_type,
                 'description': description,
                 'investors_count': len(fund_manager.investors),
@@ -181,7 +182,7 @@ class BackupManager:
         """
         Tạo daily backup với persistent storage
         """
-        timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
+        timestamp = TimezoneManager.now().strftime('%Y%m%d_%H%M%S')
         backup_id = f"{backup_type}_{timestamp}"
         
         try:
@@ -189,7 +190,7 @@ class BackupManager:
             backup_data = {
                 'backup_id': backup_id,
                 'backup_type': backup_type,
-                'timestamp': datetime.now().isoformat(),
+                'timestamp': TimezoneManager.now().isoformat(),
                 'date': date.today().isoformat(),
                 'data': {
                     'investors': [asdict(inv) for inv in fund_manager.investors],
@@ -221,7 +222,7 @@ class BackupManager:
             backup_info = {
                 'backup_id': backup_id,
                 'backup_type': backup_type,
-                'timestamp': datetime.now().isoformat(),
+                'timestamp': TimezoneManager.now().isoformat(),
                 'date': date.today().isoformat(),
                 'file_path': str(backup_file),
                 'file_size_mb': backup_file.stat().st_size / (1024 * 1024),
@@ -329,7 +330,8 @@ class BackupManager:
         cutoff_date = date.today() - timedelta(days=days)
         recent_backups = [
             b for b in self.backup_history 
-            if datetime.fromisoformat(b['date']).date() >= cutoff_date
+            if TimezoneManager.normalize_for_display(
+                datetime.fromisoformat(b['date'])).date() >= cutoff_date
         ]
         
         return sorted(recent_backups, key=lambda x: x['timestamp'], reverse=True)
@@ -351,13 +353,15 @@ class BackupManager:
         """
         Get backup system statistics
         """
-        now = datetime.now()
+        # Use timezone-aware datetime to avoid comparison issues
+        now = TimezoneManager.now()
         today = date.today()
         
         # Daily backup stats
         daily_backups = len(self.backup_history)
         recent_daily_backups = len([b for b in self.backup_history 
-                                   if (now - datetime.fromisoformat(b['timestamp'])).days <= 7])
+                                   if (now - TimezoneManager.normalize_for_display(
+                                       datetime.fromisoformat(b['timestamp']))).days <= 7])
         
         total_backup_size = sum(b.get('file_size_mb', 0) for b in self.backup_history)
         
@@ -530,7 +534,7 @@ class BackupManager:
         try:
             info = {
                 'last_daily_backup': self.last_daily_backup.isoformat() if self.last_daily_backup else None,
-                'updated_at': datetime.now().isoformat()
+                'updated_at': TimezoneManager.now().isoformat()
             }
             with open(info_file, 'w') as f:
                 json.dump(info, f, indent=2)
@@ -544,12 +548,12 @@ def create_emergency_backup(fund_manager, backup_dir: str = "emergency_backups")
     """
     os.makedirs(backup_dir, exist_ok=True)
     
-    timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
+    timestamp = TimezoneManager.now().strftime('%Y%m%d_%H%M%S')
     backup_file = os.path.join(backup_dir, f"EMERGENCY_{timestamp}.pkl.gz")
     
     backup_data = {
         'backup_type': 'EMERGENCY',
-        'timestamp': datetime.now().isoformat(),
+        'timestamp': TimezoneManager.now().isoformat(),
         'data': {
             'investors': [asdict(inv) for inv in fund_manager.investors],
             'tranches': [asdict(tr) for tr in fund_manager.tranches],

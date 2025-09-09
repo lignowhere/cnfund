@@ -13,6 +13,7 @@ from datetime import datetime, date, timedelta
 from typing import Dict, Any, List, Optional, Tuple
 from dataclasses import asdict
 import copy
+from timezone_manager import TimezoneManager
 import logging
 import io
 import streamlit as st
@@ -407,17 +408,13 @@ class CloudBackupManager:
             # Database backups stats
             database_backups = self.list_database_backups(30)
             
-            # Handle timezone-aware vs timezone-naive datetime comparison
-            now = datetime.now()
+            # Use TimezoneManager for proper timezone-aware datetime comparison
+            now = TimezoneManager.now()
             recent_database_backups = 0
             for b in database_backups:
                 try:
-                    backup_time = datetime.fromisoformat(b['timestamp'])
-                    # Make both datetime objects timezone-naive for comparison
-                    if backup_time.tzinfo is not None:
-                        backup_time = backup_time.replace(tzinfo=None)
-                    if now.tzinfo is not None:
-                        now = now.replace(tzinfo=None)
+                    backup_time = TimezoneManager.normalize_for_display(
+                        datetime.fromisoformat(b['timestamp']))
                     
                     if (now - backup_time).days <= 7:
                         recent_database_backups += 1
