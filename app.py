@@ -7,6 +7,10 @@ import time
 from pathlib import Path
 from datetime import datetime, date
 
+# Initialize timezone management early
+from timezone_manager import TimezoneManager
+TimezoneManager.setup_environment_timezone()
+
 
 
 # === ENVIRONMENT DETECTION ===

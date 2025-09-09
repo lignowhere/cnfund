@@ -7,6 +7,8 @@ try:
     from utils import format_currency, parse_currency, format_percentage, EPSILON
 except ImportError:
     from data_utils import format_currency_safe as format_currency
+
+from timezone_manager import TimezoneManager
     
     def parse_currency(text):
         """Enhanced currency parsing with better error handling"""
@@ -248,7 +250,10 @@ class EnhancedTransactionPage:
                 if total_nav <= 0:
                     st.error("❌ Total NAV phải lớn hơn 0")
                 else:
-                    trans_date_dt = datetime.combine(trans_date, datetime.now().time())
+                    # Create timezone-aware datetime using timezone manager
+                    current_time = TimezoneManager.now().time()
+                    trans_date_dt = datetime.combine(trans_date, current_time)
+                    trans_date_dt = TimezoneManager.to_app_timezone(trans_date_dt)
                     
                     # Enhanced debug logging before sending to process_nav_update
                     print(f"🚀 Sending NAV Update Request:")
@@ -700,7 +705,10 @@ class EnhancedTransactionPage:
     
     def _process_validated_transaction(self, investor_id, trans_type, amount, total_nav, trans_date):
         """Chỉ xử lý logic nghiệp vụ, bật cờ và yêu cầu rerun."""
-        trans_date_dt = datetime.combine(trans_date, datetime.now().time()) 
+        # Create timezone-aware datetime using timezone manager
+        current_time = TimezoneManager.now().time()
+        trans_date_dt = datetime.combine(trans_date, current_time)
+        trans_date_dt = TimezoneManager.to_app_timezone(trans_date_dt) 
         
         if trans_type == "Nạp":
             success, message = self.fund_manager.process_deposit(

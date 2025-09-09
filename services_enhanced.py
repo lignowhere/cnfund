@@ -12,6 +12,7 @@ logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(
 
 from utils import *
 from concurrent.futures import ThreadPoolExecutor
+from timezone_manager import TimezoneManager
 
 class EnhancedFundManager:
     def __init__(self, data_handler, enable_snapshots: bool = True):
@@ -271,20 +272,69 @@ class EnhancedFundManager:
         for i, t in enumerate(sorted_all_nav[:5]):
             print(f"    {i+1}. ID:{t.id}, Type:{t.type}, Date:{t.date}, NAV:{t.nav}")
         
-        # Prioritize "NAV Update" transactions over other types
+        # FIXED: Smart sorting that handles both chronological order and ID order correctly
         nav_update_transactions = [t for t in nav_transactions if t.type == "NAV Update"]
         if nav_update_transactions:
-            # If there are NAV Update transactions, use the latest one
-            sorted_transactions = sorted(nav_update_transactions, key=lambda x: (x.date, x.id), reverse=True)
+            # Smart sorting: First by date (converted to date only), then by ID
+            # This handles timezone issues while respecting user's date selection
+            def smart_sort_key(tx):
+                # Convert datetime to date to avoid timezone confusion
+                tx_date = tx.date.date() if hasattr(tx.date, 'date') else tx.date
+                return (tx_date, tx.id)
+            
+            sorted_transactions = sorted(nav_update_transactions, key=smart_sort_key, reverse=True)
             latest_nav_update = sorted_transactions[0]
-            print(f"🎯 get_latest_total_nav: Using NAV Update transaction (ID: {latest_nav_update.id}, NAV: {latest_nav_update.nav})")
+            
+            print(f"🎯 get_latest_total_nav: Using NAV Update transaction")
+            print(f"    ID: {latest_nav_update.id}, Date: {latest_nav_update.date}, NAV: {latest_nav_update.nav}")
+            
+            # Debug: Show why this transaction was selected
+            tx_date = latest_nav_update.date.date() if hasattr(latest_nav_update.date, 'date') else latest_nav_update.date
+            print(f"    Selected because: Date={tx_date}, ID={latest_nav_update.id} (highest for this date)")
+            
             return latest_nav_update.nav
         else:
-            # Fallback to any transaction with NAV
-            sorted_transactions = sorted(nav_transactions, key=lambda x: (x.date, x.id), reverse=True)
+            # Fallback to any transaction with NAV, use same smart sorting
+            def smart_sort_key(tx):
+                tx_date = tx.date.date() if hasattr(tx.date, 'date') else tx.date
+                return (tx_date, tx.id)
+            
+            sorted_transactions = sorted(nav_transactions, key=smart_sort_key, reverse=True)
             latest_any = sorted_transactions[0] 
             print(f"🔄 get_latest_total_nav: Using non-NAV-Update transaction (ID: {latest_any.id}, Type: {latest_any.type}, NAV: {latest_any.nav})")
             return latest_any.nav
+
+    def get_nav_for_date(self, target_date) -> Optional[float]:
+        """Get NAV for a specific date (most recent NAV on or before that date)"""
+        if not self.transactions:
+            return None
+        
+        # Convert target_date to date if it's datetime
+        if hasattr(target_date, 'date'):
+            target_date = target_date.date()
+        
+        # Filter transactions with NAV that are on or before target date
+        nav_transactions = [t for t in self.transactions if (t.nav is not None and t.nav > 0)]
+        relevant_transactions = []
+        
+        for t in nav_transactions:
+            tx_date = t.date.date() if hasattr(t.date, 'date') else t.date
+            if tx_date <= target_date:
+                relevant_transactions.append(t)
+        
+        if not relevant_transactions:
+            return None
+        
+        # Sort by date then ID, get the most recent one
+        def sort_key(tx):
+            tx_date = tx.date.date() if hasattr(tx.date, 'date') else tx.date
+            return (tx_date, tx.id)
+        
+        sorted_transactions = sorted(relevant_transactions, key=sort_key, reverse=True)
+        selected = sorted_transactions[0]
+        
+        print(f"🎯 get_nav_for_date({target_date}): Using transaction ID:{selected.id}, Date:{selected.date}, NAV:{selected.nav}")
+        return selected.nav
 
     # ================================
     # Transactions
@@ -317,10 +367,13 @@ class EnhancedFundManager:
                 latest_existing = max(existing_nav_txs, key=lambda x: x.id)
                 print(f"  - Latest existing NAV tx: ID={latest_existing.id}, NAV={latest_existing.nav}, Type={latest_existing.type}")
         
+        # Normalize datetime for consistent timezone handling
+        normalized_date = TimezoneManager.normalize_for_storage(date)
+        
         transaction = Transaction(
             id=transaction_id,
             investor_id=investor_id,
-            date=date,
+            date=normalized_date,
             type=type,
             amount=amount,
             nav=nav,
@@ -471,11 +524,15 @@ class EnhancedFundManager:
         Chỉ cập nhật NAV, KHÔNG tự động cập nhật HWM.
         HWM sẽ được chốt tại thời điểm tính phí.
         """
+        # Normalize transaction date using timezone manager
+        normalized_date = TimezoneManager.normalize_for_storage(trans_date)
+        
         # Enhanced debug logging at the start of process_nav_update
         print(f"📝 process_nav_update received:")
         print(f"  - total_nav: {total_nav}")
         print(f"  - total_nav type: {type(total_nav)}")
-        print(f"  - trans_date: {trans_date}")
+        print(f"  - trans_date (original): {trans_date}")
+        print(f"  - trans_date (normalized): {normalized_date}")
         print(f"  - Current transaction count: {len(self.transactions)}")
         
         if total_nav <= 0:
@@ -489,7 +546,8 @@ class EnhancedFundManager:
         # Ghi transaction NAV Update
         print(f"🔄 Adding NAV Update transaction:")
         print(f"  - NAV value to store: {total_nav}")
-        self._add_transaction(0, trans_date, "NAV Update", 0, total_nav, 0)
+        print(f"  - Using normalized date: {normalized_date}")
+        self._add_transaction(0, normalized_date, "NAV Update", 0, total_nav, 0)
         
         # Verify the transaction was added correctly
         latest_nav_after_add = self.get_latest_total_nav()

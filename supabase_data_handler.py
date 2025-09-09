@@ -14,6 +14,7 @@ import os
 import time
 
 from models import Investor, Tranche, Transaction, FeeRecord
+from timezone_manager import TimezoneManager
 
 class SupabaseDataHandler:
     """Optimized Supabase PostgreSQL data handler with robust initialization."""
@@ -328,7 +329,29 @@ class SupabaseDataHandler:
                 result = conn.execute(text("SELECT id, investor_id, date, type, amount, nav, units_change FROM transactions ORDER BY date ASC, id ASC"))
                 rows = result.fetchall()
             
-            transactions = [Transaction(id=r[0], investor_id=r[1], date=r[2], type=r[3], amount=float(r[4]), nav=float(r[5]), units_change=float(r[6])) for r in rows]
+            # Normalize all datetime fields when loading from database
+            transactions = []
+            for r in rows:
+                # Handle both timezone-aware and naive timestamps from database
+                raw_date = r[2]
+                if hasattr(raw_date, 'tzinfo') and raw_date.tzinfo is not None:
+                    # Already timezone-aware - convert to display timezone
+                    normalized_date = TimezoneManager.normalize_for_display(raw_date)
+                else:
+                    # Naive timestamp - assume it's in Vietnam timezone (legacy data)
+                    vietnam_tz = TimezoneManager.get_app_timezone()
+                    normalized_date = vietnam_tz.localize(raw_date)
+                
+                transaction = Transaction(
+                    id=r[0], 
+                    investor_id=r[1], 
+                    date=normalized_date, 
+                    type=r[3], 
+                    amount=float(r[4]), 
+                    nav=float(r[5]), 
+                    units_change=float(r[6])
+                )
+                transactions.append(transaction)
             
             # Debug logging for transaction loading
             nav_transactions = [t for t in transactions if t.nav and t.nav > 0]
