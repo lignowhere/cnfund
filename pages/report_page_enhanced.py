@@ -245,7 +245,7 @@ class EnhancedReportPage:
                     title="Portfolio Distribution",
                     height=300
                 )
-                st.altair_chart(pie_chart, width="stretch")
+                st.altair_chart(pie_chart, use_container_width=True)
                 
                 # Table
                 display_df = df_composition.copy()
@@ -291,7 +291,7 @@ class EnhancedReportPage:
                 height=300
             )
             
-            st.altair_chart(bar_chart, width="stretch")
+            st.altair_chart(bar_chart, use_container_width=True)
             
             # Summary table
             display_df = df_performance.copy()
@@ -342,7 +342,7 @@ class EnhancedReportPage:
                     title="Fund NAV Growth Over Time",
                     height=400
                 )
-                st.altair_chart(line_chart, width="stretch")
+                st.altair_chart(line_chart, use_container_width=True)
                 
                 # Growth statistics
                 if len(timeline_data) > 1:
@@ -776,7 +776,7 @@ class EnhancedReportPage:
                         color='Nhà Đầu Tư:N',
                         tooltip=['Nhà Đầu Tư', 'Giá Trị Hiện Tại']
                     )
-                    st.altair_chart(pie_chart, width="stretch")
+                    st.altair_chart(pie_chart, use_container_width=True)
                 
                 with col_chart2:
                     st.subheader("📊 Gross vs Net Return")
@@ -794,7 +794,7 @@ class EnhancedReportPage:
                         color='Return Type:N',
                         tooltip=['Nhà Đầu Tư', 'Return Type', 'Return']
                     )
-                    st.altair_chart(bar_chart, width="stretch")
+                    st.altair_chart(bar_chart, use_container_width=True)
                 
                 # Fee impact analysis
                 st.subheader("💰 Phân Tích Tác Động Phí")
@@ -806,7 +806,7 @@ class EnhancedReportPage:
                     color=alt.value('orange'),
                     tooltip=['Nhà Đầu Tư', 'Tổng Phí Đã Trả']
                 )
-                st.altair_chart(fee_chart, width="stretch")
+                st.altair_chart(fee_chart, use_container_width=True)
         
         else:
             st.info("📄 Chưa có dữ liệu performance.")
@@ -918,7 +918,7 @@ class EnhancedReportPage:
                     tooltip=['Kỳ', 'Tổng Phí']
                 ).properties(title="Phí Performance Theo Kỳ")
                 
-                st.altair_chart(chart, width="stretch")
+                st.altair_chart(chart, use_container_width=True)
         
         else:
             st.info("📄 Không có dữ liệu phí với bộ lọc hiện tại.")
@@ -1044,7 +1044,7 @@ class EnhancedReportPage:
                 tooltip=['Date', 'Fee Amount', 'Cumulative Fee']
             ).properties(title="Cumulative Fee Income")
             
-            st.altair_chart(chart, width="stretch")
+            st.altair_chart(chart, use_container_width=True)
             
             total_fee_income = sum(t.amount for t in fee_transactions)
             st.success(f"💰 **Tổng Fee Income:** {format_currency(total_fee_income)}")

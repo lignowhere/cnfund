@@ -260,8 +260,21 @@ class EnhancedFundManager:
         nav_transactions = [t for t in self.transactions if (t.nav is not None and t.nav > 0)]
         if not nav_transactions:
             return None
-        sorted_transactions = sorted(nav_transactions, key=lambda x: (x.date, x.id), reverse=True)
-        return sorted_transactions[0].nav
+        
+        # Prioritize "NAV Update" transactions over other types
+        nav_update_transactions = [t for t in nav_transactions if t.type == "NAV Update"]
+        if nav_update_transactions:
+            # If there are NAV Update transactions, use the latest one
+            sorted_transactions = sorted(nav_update_transactions, key=lambda x: (x.date, x.id), reverse=True)
+            latest_nav_update = sorted_transactions[0]
+            print(f"🎯 get_latest_total_nav: Using NAV Update transaction (ID: {latest_nav_update.id}, NAV: {latest_nav_update.nav})")
+            return latest_nav_update.nav
+        else:
+            # Fallback to any transaction with NAV
+            sorted_transactions = sorted(nav_transactions, key=lambda x: (x.date, x.id), reverse=True)
+            latest_any = sorted_transactions[0] 
+            print(f"🔄 get_latest_total_nav: Using non-NAV-Update transaction (ID: {latest_any.id}, Type: {latest_any.type}, NAV: {latest_any.nav})")
+            return latest_any.nav
 
     # ================================
     # Transactions
@@ -417,6 +430,12 @@ class EnhancedFundManager:
         Chỉ cập nhật NAV, KHÔNG tự động cập nhật HWM.
         HWM sẽ được chốt tại thời điểm tính phí.
         """
+        # Enhanced debug logging at the start of process_nav_update
+        print(f"📝 process_nav_update received:")
+        print(f"  - total_nav: {total_nav}")
+        print(f"  - total_nav type: {type(total_nav)}")
+        print(f"  - trans_date: {trans_date}")
+        
         if total_nav <= 0:
             return False, "Total NAV phải lớn hơn 0"
 
@@ -426,7 +445,17 @@ class EnhancedFundManager:
         #         tranche.hwm = price
 
         # Ghi transaction NAV Update
+        print(f"🔄 Adding NAV Update transaction:")
+        print(f"  - NAV value to store: {total_nav}")
         self._add_transaction(0, trans_date, "NAV Update", 0, total_nav, 0)
+        
+        # Verify the transaction was added correctly
+        latest_nav_after_add = self.get_latest_total_nav()
+        print(f"🔍 NAV after _add_transaction: {latest_nav_after_add}")
+        if latest_nav_after_add != total_nav:
+            print(f"⚠️ WARNING: NAV mismatch after _add_transaction!")
+            print(f"  - Expected: {total_nav}")
+            print(f"  - Got: {latest_nav_after_add}")
         
         # Force save to database immediately for cloud sync
         try:

@@ -339,7 +339,7 @@ def show_backup_charts(fund_manager):
             labels={'count': 'Number of Backups', 'date': 'Date'}
         )
         fig_freq.update_layout(height=300)
-        st.plotly_chart(fig_freq, width="stretch")
+        st.plotly_chart(fig_freq, use_container_width=True)
     
     with col2:
         # Backup size over time
@@ -352,7 +352,7 @@ def show_backup_charts(fund_manager):
             labels={'file_size_mb': 'Size (MB)', 'timestamp': 'Time'}
         )
         fig_size.update_layout(height=300)
-        st.plotly_chart(fig_size, width="stretch")
+        st.plotly_chart(fig_size, use_container_width=True)
     
     # Backup type distribution
     type_counts = df['backup_type'].value_counts()
@@ -363,7 +363,7 @@ def show_backup_charts(fund_manager):
         title='Backup Types Distribution'
     )
     fig_pie.update_layout(height=300)
-    st.plotly_chart(fig_pie, width="stretch")
+    st.plotly_chart(fig_pie, use_container_width=True)
 
 def show_backup_settings(fund_manager):
     """Display backup settings panel"""

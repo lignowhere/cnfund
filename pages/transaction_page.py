@@ -206,6 +206,11 @@ class EnhancedTransactionPage:
             
             if nav_input:
                 st.info(f"🔍 **NAV đã parse:** {format_currency(total_nav)}")
+                # Debug logging
+                print(f"🔍 NAV Input Debug:")
+                print(f"  - Raw input: '{nav_input}'")
+                print(f"  - Parsed value: {total_nav}")
+                print(f"  - Formatted back: {format_currency(total_nav)}")
             
             # === LOGIC HIỂN THỊ THAY ĐỔI (ĐÃ BỎ HOÀN TOÀN BƯỚC XÁC NHẬN) ===
             if latest_nav and total_nav > 0:
@@ -233,6 +238,13 @@ class EnhancedTransactionPage:
                     st.error("❌ Total NAV phải lớn hơn 0")
                 else:
                     trans_date_dt = datetime.combine(trans_date, datetime.now().time())
+                    
+                    # Enhanced debug logging before sending to process_nav_update
+                    print(f"🚀 Sending NAV Update Request:")
+                    print(f"  - total_nav parameter: {total_nav}")
+                    print(f"  - total_nav type: {type(total_nav)}")
+                    print(f"  - trans_date_dt: {trans_date_dt}")
+                    
                     success, message = self.fund_manager.process_nav_update(total_nav, trans_date_dt)
                     
                     if success:
