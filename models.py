@@ -1,6 +1,7 @@
 from datetime import date, datetime
 from typing import Optional
 from dataclasses import dataclass
+from timezone_manager import TimezoneManager
 
 @dataclass
 class Investor:
@@ -261,10 +262,16 @@ def validate_tranche(tranche: Tranche) -> tuple[bool, list[str]]:
     if tranche.cumulative_fees_paid < 0:
         errors.append("Cumulative fees không thể âm")
     
-    if tranche.entry_date > datetime.now():
+    # Use timezone-aware comparison to avoid offset-naive vs offset-aware error
+    current_time = TimezoneManager.now()
+    entry_time = TimezoneManager.normalize_for_display(tranche.entry_date)
+    
+    if entry_time > current_time:
         errors.append("Entry date không thể ở tương lai")
     
-    if tranche.original_entry_date > tranche.entry_date:
+    # Compare normalized dates for consistency
+    original_entry_time = TimezoneManager.normalize_for_display(tranche.original_entry_date)
+    if original_entry_time > entry_time:
         errors.append("Original entry date không thể sau entry date")
     
     return len(errors) == 0, errors
@@ -275,7 +282,11 @@ def validate_transaction(transaction: Transaction) -> tuple[bool, list[str]]:
     """
     errors = []
     
-    if transaction.date > datetime.now():
+    # Use timezone-aware comparison to avoid offset-naive vs offset-aware error
+    current_time = TimezoneManager.now()
+    transaction_time = TimezoneManager.normalize_for_display(transaction.date)
+    
+    if transaction_time > current_time:
         errors.append("Transaction date không thể ở tương lai")
     
     # Validate based on transaction type
