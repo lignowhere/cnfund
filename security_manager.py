@@ -5,6 +5,7 @@ Quản lý bảo mật và authentication
 
 import streamlit as st
 import os
+from timezone_manager import TimezoneManager
 
 
 class SecurityManager:
@@ -222,8 +223,7 @@ class AuditLogger:
     def log_action(self, user_role, action, details=None):
         """Log user action"""
         try:
-            import datetime
-            timestamp = datetime.datetime.now().isoformat()
+            timestamp = TimezoneManager.now().isoformat()
             log_entry = {
                 'timestamp': timestamp,
                 'user_role': user_role,

@@ -15,6 +15,9 @@ class Investor:
     is_fund_manager: bool = False
     
     def __post_init__(self):
+        # Type safety: ensure ID is always an integer
+        from type_safety_fixes import safe_int_conversion
+        self.id = safe_int_conversion(self.id)
         if self.join_date is None:
             self.join_date = date.today()
     
@@ -43,6 +46,13 @@ class Tranche:
     cumulative_fees_paid: float = 0.0  # Tổng phí đã trả
     
     def __post_init__(self):
+        # Type safety: ensure investor_id is always an integer
+        from type_safety_fixes import safe_int_conversion, safe_float_conversion
+        self.investor_id = safe_int_conversion(self.investor_id)
+        self.units = safe_float_conversion(self.units)
+        self.entry_nav = safe_float_conversion(self.entry_nav)
+        self.original_invested_value = safe_float_conversion(self.original_invested_value)
+        
         # Set defaults if not provided
         if self.hwm is None:
             self.hwm = self.entry_nav
@@ -122,7 +132,7 @@ class Tranche:
 
 @dataclass
 class Transaction:
-    """Transaction model (không thay đổi)"""
+    """Transaction model with type safety"""
     id: int
     investor_id: int
     date: datetime
@@ -130,6 +140,15 @@ class Transaction:
     amount: float
     nav: float
     units_change: float
+    
+    def __post_init__(self):
+        # Type safety: ensure numeric fields are proper types
+        from type_safety_fixes import safe_int_conversion, safe_float_conversion
+        self.id = safe_int_conversion(self.id)
+        self.investor_id = safe_int_conversion(self.investor_id)
+        self.amount = safe_float_conversion(self.amount)
+        self.nav = safe_float_conversion(self.nav)
+        self.units_change = safe_float_conversion(self.units_change)
 
 @dataclass
 class FeeRecord:
@@ -144,6 +163,17 @@ class FeeRecord:
     units_after: float
     nav_per_unit: float
     description: str = ""
+    
+    def __post_init__(self):
+        # Type safety: ensure numeric fields are proper types
+        from type_safety_fixes import safe_int_conversion, safe_float_conversion
+        self.id = safe_int_conversion(self.id)
+        self.investor_id = safe_int_conversion(self.investor_id)
+        self.fee_amount = safe_float_conversion(self.fee_amount)
+        self.fee_units = safe_float_conversion(self.fee_units)
+        self.units_before = safe_float_conversion(self.units_before)
+        self.units_after = safe_float_conversion(self.units_after)
+        self.nav_per_unit = safe_float_conversion(self.nav_per_unit)
     
     @property
     def fee_date(self) -> datetime:
@@ -319,7 +349,7 @@ def validate_fee_record(fee_record: FeeRecord) -> tuple[bool, list[str]]:
     if fee_record.nav_per_unit <= 0:
         errors.append("NAV per unit phải lớn hơn 0")
     
-    if fee_record.calculation_date > datetime.now():
+    if TimezoneManager.normalize_for_display(fee_record.calculation_date) > TimezoneManager.now():
         errors.append("Calculation date không thể ở tương lai")
     
     # Check consistency
@@ -341,7 +371,7 @@ def create_sample_tranche(investor_id: int, amount: float, nav_price: float,
     Tạo sample tranche cho testing
     """
     if entry_date is None:
-        entry_date = datetime.now()
+        entry_date = TimezoneManager.now()
     
     units = amount / nav_price
     

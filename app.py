@@ -11,6 +11,18 @@ from datetime import datetime, date
 from timezone_manager import TimezoneManager
 TimezoneManager.setup_environment_timezone()
 
+# Initialize universal integer safety fixes early
+try:
+    from streamlit_widget_safety import apply_streamlit_widget_fixes
+    apply_streamlit_widget_fixes()
+    from type_safety_fixes import apply_type_safety_fixes
+    apply_type_safety_fixes()
+    # Import error tracker to apply monkey patches for integer conversion safety
+    import error_tracker  # This applies monkey patches automatically
+    print("🔧 Universal integer safety fixes applied")
+except Exception as e:
+    print(f"⚠️ Warning: Could not apply universal integer safety fixes: {e}")
+
 
 
 # === ENVIRONMENT DETECTION ===

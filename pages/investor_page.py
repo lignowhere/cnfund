@@ -70,13 +70,13 @@ class InvestorPage:
         edited_df = st.data_editor(
             df_display,
             column_config=column_config,
-            width="stretch",
+            use_container_width=True,
             key="investor_editor"
         )
         
         col1, col2 = st.columns([1, 4])
         
-        if col1.button("💾 Lưu Thay Đổi", width="stretch"):
+        if col1.button("💾 Lưu Thay Đổi", use_container_width=True):
             # Cập nhật fund_manager
             self.fund_manager.investors.clear()
             
@@ -114,7 +114,12 @@ class InvestorPage:
         if not selected_display:
             return
         
-        investor_id = options[selected_display]
+        # Type safety: ensure investor_id is always an integer using safe selectbox handling
+        from streamlit_widget_safety import safe_investor_id_from_selectbox
+        investor_id = safe_investor_id_from_selectbox(self.fund_manager, selected_display)
+        if investor_id is None:
+            st.error("❌ Could not get valid investor ID from selection")
+            return
         
         # Input Total NAV
         latest_nav = self.fund_manager.get_latest_total_nav()
@@ -155,6 +160,6 @@ class InvestorPage:
                                 'HWM': format_currency(t.hwm)
                             })
                         
-                        st.dataframe(pd.DataFrame(tranche_data), width="stretch")
+                        st.dataframe(pd.DataFrame(tranche_data), use_container_width=True)
             else:
                 st.info("📝 Nhà đầu tư chưa có giao dịch nào.")

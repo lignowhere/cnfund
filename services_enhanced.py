@@ -152,7 +152,19 @@ class EnhancedFundManager:
         return [inv for inv in self.investors if not inv.is_fund_manager]
 
     def get_investor_options(self) -> Dict[str, int]:
-        return {inv.display_name: inv.id for inv in self.get_regular_investors()}
+        """Get investor options with type safety guarantees"""
+        from type_safety_fixes import safe_int_conversion
+        options = {}
+        for inv in self.get_regular_investors():
+            try:
+                # Ensure investor ID is always an integer
+                investor_id = safe_int_conversion(inv.id)
+                if investor_id >= 0:  # Valid ID
+                    options[inv.display_name] = investor_id
+            except Exception as e:
+                print(f"Warning: Skipping investor {getattr(inv, 'name', 'unknown')} due to ID conversion error: {e}")
+                continue
+        return options
 
     def get_investor_by_id(self, investor_id: int) -> Optional[Investor]:
         return next((inv for inv in self.investors if inv.id == investor_id), None)
@@ -1678,7 +1690,7 @@ class EnhancedFundManager:
                     results["valid"] = False
                 if trans.nav <= 0 and trans.type not in ["Phí Nhận"]:
                     results["warnings"].append(f"Transaction {trans.id} has non-positive NAV: {trans.nav}")
-                if trans.date > datetime.now():
+                if TimezoneManager.normalize_for_display(trans.date) > TimezoneManager.now():
                     results["warnings"].append(f"Transaction {trans.id} has future date: {trans.date}")
 
             for fee_record in self.fee_records:
@@ -1721,7 +1733,7 @@ class EnhancedFundManager:
     def backup_before_operation(self, operation_name: str) -> bool:
         try:
             backup_data = {
-                "timestamp": datetime.now().isoformat(),
+                "timestamp": TimezoneManager.now().isoformat(),
                 "operation": operation_name,
                 "investors_count": len(self.investors),
                 "tranches_count": len(self.tranches),
@@ -1775,7 +1787,7 @@ class EnhancedFundManager:
                     "tranches": [],
                     "transactions": [t for t in self.transactions if t.investor_id == investor_id],
                     "fee_history": [f for f in self.fee_records if f.investor_id == investor_id],
-                    "report_date": datetime.now(),
+                    "report_date": TimezoneManager.now(),
                     "current_nav": current_nav,
                     "current_price": self.calculate_price_per_unit(current_nav),
                 }
@@ -1793,7 +1805,7 @@ class EnhancedFundManager:
                 lifetime_perf = self._empty_performance_stats()
 
             try:
-                fee_details = self.calculate_investor_fee(investor_id, datetime.now(), current_nav)
+                fee_details = self.calculate_investor_fee(investor_id, TimezoneManager.now(), current_nav)
             except Exception as e:
                 print(f"Error calculating fee details for investor {investor_id}: {e}")
                 fee_details = self._empty_fee_details()
@@ -1811,7 +1823,7 @@ class EnhancedFundManager:
                 "tranches": tranches,
                 "transactions": investor_transactions,
                 "fee_history": investor_fees,
-                "report_date": datetime.now(),
+                "report_date": TimezoneManager.now(),
                 "current_nav": current_nav,
                 "current_price": self.calculate_price_per_unit(current_nav),
             }

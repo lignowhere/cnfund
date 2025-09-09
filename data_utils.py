@@ -7,6 +7,7 @@ from typing import List, Dict, Any, Optional, Union
 from functools import lru_cache, wraps
 from datetime import datetime, date
 import pandas as pd
+from timezone_manager import TimezoneManager
 
 # === PERFORMANCE-OPTIMIZED FORMATTING FUNCTIONS ===
 
@@ -192,7 +193,7 @@ class OptimizedErrorHandler:
                 st.session_state.error_log = []
             
             st.session_state.error_log.append({
-                'timestamp': datetime.now(),
+                'timestamp': TimezoneManager.now(),
                 'operation': self.operation,
                 'error': str(exc_val),
                 'execution_time': execution_time
@@ -361,5 +362,5 @@ def get_cached_stats(data_list: List) -> Dict[str, Any]:
     return {
         'count': len(data_list),
         'is_empty': False,
-        'last_updated': datetime.now().isoformat()
+        'last_updated': TimezoneManager.now().isoformat()
     }

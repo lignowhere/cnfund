@@ -17,66 +17,36 @@ def safe_altair_chart(chart: alt.Chart, **kwargs) -> None:
         chart: Altair chart object
         **kwargs: Parameters to pass to st.altair_chart
     """
-    # Clear any potential cached parameters from session state
-    if hasattr(st, 'session_state'):
-        chart_cache_keys = [k for k in st.session_state.keys() if 'chart' in k.lower() and 'width' in k.lower()]
-        for key in chart_cache_keys:
-            del st.session_state[key]
+    # Simple parameter filtering - remove problematic parameters
+    safe_params = {}
     
-    # Valid parameters for st.altair_chart (Streamlit 1.49.1)
-    valid_params = {
-        'use_container_width': kwargs.get('use_container_width', True),
-        'theme': kwargs.get('theme', 'streamlit'),
-        'key': kwargs.get('key'),
-        'on_select': kwargs.get('on_select', 'ignore'),
-        'selection_mode': kwargs.get('selection_mode')
-    }
-    
-    # Remove None values and invalid parameters
-    filtered_params = {k: v for k, v in valid_params.items() if v is not None}
-    
-    # Comprehensive parameter validation - remove any invalid parameters
-    invalid_params = []
-    for param in ['width', 'height', 'config', 'container_width', 'full_width']:
-        if param in kwargs:
-            invalid_params.append(param)
-    
-    if invalid_params:
-        print(f"⚠️ WARNING: Removed invalid parameters from altair_chart call: {invalid_params}")
-        st.warning(f"⚠️ Filtered out invalid chart parameters: {invalid_params}")
-    
-    # Extra safety: validate parameters against function signature
-    import inspect
-    try:
-        sig = inspect.signature(st.altair_chart)
-        # This will raise TypeError if any parameter is invalid
-        bound_args = sig.bind_partial(chart, **filtered_params)
-        bound_args.apply_defaults()
-    except TypeError as e:
-        st.error(f"❌ Parameter validation failed: {str(e)}")
-        print(f"Parameter validation error: {str(e)}")
-        print(f"Attempted parameters: {filtered_params}")
-        # Fallback to minimal parameters
-        filtered_params = {'use_container_width': True}
-    
-    try:
-        st.altair_chart(chart, **filtered_params)
-    except Exception as e:
-        st.error(f"❌ Chart rendering failed: {str(e)}")
-        print(f"Chart error details: {str(e)}")
-        print(f"Chart type: {type(chart)}")
-        print(f"Parameters used: {filtered_params}")
+    # Only include known safe parameters
+    if 'use_container_width' in kwargs:
+        safe_params['use_container_width'] = kwargs['use_container_width']
+    else:
+        safe_params['use_container_width'] = True
         
-        # Attempt fallback rendering with minimal parameters
+    if 'theme' in kwargs:
+        safe_params['theme'] = kwargs['theme']
+        
+    if 'key' in kwargs:
+        safe_params['key'] = kwargs['key']
+    
+    # Warn about filtered parameters
+    filtered_out = [k for k in kwargs.keys() if k not in safe_params and k not in ['use_container_width', 'theme', 'key']]
+    if filtered_out:
+        print(f"⚠️ WARNING: Filtered out chart parameters: {filtered_out}")
+    
+    try:
+        st.altair_chart(chart, **safe_params)
+    except Exception as e:
+        print(f"Chart error: {str(e)}")
+        # Simple fallback
         try:
-            st.write("Attempting fallback chart rendering...")
             st.altair_chart(chart, use_container_width=True)
         except Exception as e2:
-            st.error(f"❌ Fallback rendering also failed: {str(e2)}")
-            # Last resort: display chart data as table
-            if hasattr(chart, 'data') and chart.data is not None:
-                st.write("Chart data (fallback):")
-                st.dataframe(chart.data)
+            print(f"Fallback chart error: {str(e2)}")
+            st.error("❌ Unable to render chart")
 
 def safe_plotly_chart(figure: go.Figure, **kwargs) -> None:
     """

@@ -12,6 +12,7 @@ from typing import List, Optional, Dict, Any
 from datetime import datetime, date
 import os
 import time
+from timezone_manager import TimezoneManager
 
 from models import Investor, Tranche, Transaction, FeeRecord
 from timezone_manager import TimezoneManager
@@ -277,7 +278,24 @@ class SupabaseDataHandler:
             with self.engine.connect() as conn:
                 result = conn.execute(text("SELECT id, name, phone, address, email, join_date, is_fund_manager FROM investors ORDER BY CASE WHEN is_fund_manager THEN 0 ELSE 1 END, id"))
                 rows = result.fetchall()
-            return [Investor(id=r[0], name=r[1], phone=r[2] or "", address=r[3] or "", email=r[4] or "", join_date=r[5], is_fund_manager=r[6] or False) for r in rows]
+            from type_safety_fixes import safe_int_conversion
+            investors = []
+            for r in rows:
+                try:
+                    investor = Investor(
+                        id=safe_int_conversion(r[0]), 
+                        name=str(r[1] or ""), 
+                        phone=str(r[2] or ""), 
+                        address=str(r[3] or ""), 
+                        email=str(r[4] or ""), 
+                        join_date=r[5], 
+                        is_fund_manager=bool(r[6] or False)
+                    )
+                    investors.append(investor)
+                except Exception as e:
+                    print(f"Warning: Skipping investor row due to type conversion error: {e}")
+                    continue
+            return investors
         except Exception as e:
             st.error(f"Lỗi tải nhà đầu tư: {str(e)}")
             return []
@@ -294,26 +312,34 @@ class SupabaseDataHandler:
                 """))
                 rows = result.fetchall()
             
+            from type_safety_fixes import safe_int_conversion, safe_float_conversion
             tranches = []
             for row in rows:
                 try:
-                    # Tính original_invested_value từ units * original_entry_nav
-                    original_invested = float(row[4]) * float(row[7] or row[3])
+                    # Safely convert all numeric values
+                    investor_id = safe_int_conversion(row[0])
+                    units = safe_float_conversion(row[4])
+                    entry_nav = safe_float_conversion(row[3])
+                    original_entry_nav = safe_float_conversion(row[7] or row[3])
+                    
+                    # Calculate original invested value safely
+                    original_invested = units * original_entry_nav
                     
                     tranche = Tranche(
-                        investor_id=row[0], 
-                        tranche_id=row[1], 
+                        investor_id=investor_id,
+                        tranche_id=str(row[1]), 
                         entry_date=row[2], 
-                        entry_nav=float(row[3]), 
-                        units=float(row[4]), 
-                        hwm=float(row[5]), 
+                        entry_nav=entry_nav, 
+                        units=units, 
+                        hwm=safe_float_conversion(row[5]), 
                         original_entry_date=row[6] or row[2], 
-                        original_entry_nav=float(row[7] or row[3]), 
-                        cumulative_fees_paid=float(row[8] or 0.0),
-                        original_invested_value=original_invested  # Tính từ units * nav
+                        original_entry_nav=original_entry_nav, 
+                        cumulative_fees_paid=safe_float_conversion(row[8] or 0.0),
+                        original_invested_value=original_invested
                     )
                     tranches.append(tranche)
                 except Exception as e:
+                    print(f"Warning: Skipping tranche due to type conversion error: {e}")
                     continue
             
             return tranches
@@ -330,28 +356,33 @@ class SupabaseDataHandler:
                 rows = result.fetchall()
             
             # Normalize all datetime fields when loading from database
+            from type_safety_fixes import safe_int_conversion, safe_float_conversion
             transactions = []
             for r in rows:
-                # Handle both timezone-aware and naive timestamps from database
-                raw_date = r[2]
-                if hasattr(raw_date, 'tzinfo') and raw_date.tzinfo is not None:
-                    # Already timezone-aware - convert to display timezone
-                    normalized_date = TimezoneManager.normalize_for_display(raw_date)
-                else:
-                    # Naive timestamp - assume it's in Vietnam timezone (legacy data)
-                    vietnam_tz = TimezoneManager.get_app_timezone()
-                    normalized_date = vietnam_tz.localize(raw_date)
-                
-                transaction = Transaction(
-                    id=r[0], 
-                    investor_id=r[1], 
-                    date=normalized_date, 
-                    type=r[3], 
-                    amount=float(r[4]), 
-                    nav=float(r[5]), 
-                    units_change=float(r[6])
-                )
-                transactions.append(transaction)
+                try:
+                    # Handle both timezone-aware and naive timestamps from database
+                    raw_date = r[2]
+                    if hasattr(raw_date, 'tzinfo') and raw_date.tzinfo is not None:
+                        # Already timezone-aware - convert to display timezone
+                        normalized_date = TimezoneManager.normalize_for_display(raw_date)
+                    else:
+                        # Naive timestamp - assume it's in Vietnam timezone (legacy data)
+                        vietnam_tz = TimezoneManager.get_app_timezone()
+                        normalized_date = vietnam_tz.localize(raw_date)
+                    
+                    transaction = Transaction(
+                        id=safe_int_conversion(r[0]), 
+                        investor_id=safe_int_conversion(r[1]), 
+                        date=normalized_date, 
+                        type=str(r[3]), 
+                        amount=safe_float_conversion(r[4]), 
+                        nav=safe_float_conversion(r[5]), 
+                        units_change=safe_float_conversion(r[6])
+                    )
+                    transactions.append(transaction)
+                except Exception as e:
+                    print(f"Warning: Skipping transaction due to type conversion error: {e}")
+                    continue
             
             # Debug logging for transaction loading
             nav_transactions = [t for t in transactions if t.nav and t.nav > 0]
@@ -376,7 +407,27 @@ class SupabaseDataHandler:
             with self.engine.connect() as conn:
                 result = conn.execute(text("SELECT id, period, investor_id, fee_amount, fee_units, calculation_date, units_before, units_after, nav_per_unit, description FROM fee_records ORDER BY calculation_date ASC, id ASC"))
                 rows = result.fetchall()
-            return [FeeRecord(id=r[0], period=r[1], investor_id=r[2], fee_amount=float(r[3]), fee_units=float(r[4]), calculation_date=r[5], units_before=float(r[6]), units_after=float(r[7]), nav_per_unit=float(r[8]), description=r[9] or "") for r in rows]
+            from type_safety_fixes import safe_int_conversion, safe_float_conversion
+            fee_records = []
+            for r in rows:
+                try:
+                    fee_record = FeeRecord(
+                        id=safe_int_conversion(r[0]), 
+                        period=str(r[1]), 
+                        investor_id=safe_int_conversion(r[2]), 
+                        fee_amount=safe_float_conversion(r[3]), 
+                        fee_units=safe_float_conversion(r[4]), 
+                        calculation_date=r[5], 
+                        units_before=safe_float_conversion(r[6]), 
+                        units_after=safe_float_conversion(r[7]), 
+                        nav_per_unit=safe_float_conversion(r[8]), 
+                        description=str(r[9] or "")
+                    )
+                    fee_records.append(fee_record)
+                except Exception as e:
+                    print(f"Warning: Skipping fee record due to type conversion error: {e}")
+                    continue
+            return fee_records
         except Exception as e:
             st.error(f"Lỗi tải lịch sử phí: {str(e)}")
             return []
@@ -492,7 +543,7 @@ class SupabaseDataHandler:
             
             # Save to local
             Path("data").mkdir(exist_ok=True)
-            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+            timestamp = TimezoneManager.now().strftime("%Y%m%d_%H%M%S")
             
             if tranches:
                 data = []
@@ -643,7 +694,7 @@ class SupabaseDataHandler:
             if not self.connected:
                 return None
             
-            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+            timestamp = TimezoneManager.now().strftime("%Y%m%d_%H%M%S")
             
             with self.engine.connect() as conn:
                 # Get table counts for backup verification
@@ -716,9 +767,9 @@ class SupabaseDataHandler:
             
             with self.engine.connect() as conn:
                 # Basic connectivity
-                start_time = datetime.now()
+                start_time = TimezoneManager.now()
                 conn.execute(text("SELECT 1"))
-                response_time = (datetime.now() - start_time).total_seconds()
+                response_time = (TimezoneManager.now() - start_time).total_seconds()
                 
                 checks.append({
                     'name': 'Basic Connectivity',
@@ -775,7 +826,7 @@ class SupabaseDataHandler:
             
             return {
                 'status': overall_status,
-                'timestamp': datetime.now().isoformat(),
+                'timestamp': TimezoneManager.now().isoformat(),
                 'checks': checks,
                 'summary': f'{len(checks) - len(failed_checks)}/{len(checks)} checks passed'
             }
@@ -784,5 +835,5 @@ class SupabaseDataHandler:
             return {
                 'status': 'error',
                 'error': str(e),
-                'timestamp': datetime.now().isoformat()
+                'timestamp': TimezoneManager.now().isoformat()
             }

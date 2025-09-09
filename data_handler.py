@@ -6,6 +6,7 @@ import streamlit as st
 
 from config import *
 from models import Investor, Tranche, Transaction, FeeRecord, validate_tranche, validate_transaction, validate_fee_record
+from timezone_manager import TimezoneManager
 
 class EnhancedDataHandler:
     """
@@ -30,7 +31,7 @@ class EnhancedDataHandler:
     def create_backup() -> Optional[str]:
         """Tạo backup với enhanced error handling"""
         try:
-            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+            timestamp = TimezoneManager.now().strftime("%Y%m%d_%H%M%S")
             backup_count = 0
             
             for file_path in [INVESTORS_FILE, TRANCHES_FILE, TRANSACTIONS_FILE]:
@@ -83,8 +84,9 @@ class EnhancedDataHandler:
                     if pd.notna(row['JoinDate']):
                         join_date = row['JoinDate'].date()
                     
+                    from type_safety_fixes import safe_int_conversion
                     investor = Investor(
-                        id=int(row['ID']),
+                        id=safe_int_conversion(row['ID']),
                         name=str(row['Name']).strip(),
                         phone=str(row.get('Phone', '')).strip(),
                         address=str(row.get('Address', '')).strip(),
@@ -198,17 +200,18 @@ class EnhancedDataHandler:
                         print(f"Skipping invalid tranche: {row['TrancheID']}")
                         continue
                     
+                    from type_safety_fixes import safe_int_conversion, safe_float_conversion
                     tranche = Tranche(
-                        investor_id=int(row['InvestorID']),
+                        investor_id=safe_int_conversion(row['InvestorID']),
                         tranche_id=str(row['TrancheID']),
                         entry_date=row['EntryDate'],
-                        entry_nav=float(row['EntryNAV']),
-                        units=float(row['Units']),
-                        original_invested_value=float(row.get('OriginalInvestedValue', row['Units'] * row['EntryNAV'])),
-                        hwm=float(row.get('HWM', row['EntryNAV'])),
+                        entry_nav=safe_float_conversion(row['EntryNAV']),
+                        units=safe_float_conversion(row['Units']),
+                        original_invested_value=safe_float_conversion(row.get('OriginalInvestedValue', safe_float_conversion(row['Units']) * safe_float_conversion(row['EntryNAV']))),
+                        hwm=safe_float_conversion(row.get('HWM', row['EntryNAV'])),
                         original_entry_date=row['OriginalEntryDate'],
-                        original_entry_nav=float(row.get('OriginalEntryNAV', row['EntryNAV'])),
-                        cumulative_fees_paid=float(row.get('CumulativeFeesPaid', 0.0))
+                        original_entry_nav=safe_float_conversion(row.get('OriginalEntryNAV', row['EntryNAV'])),
+                        cumulative_fees_paid=safe_float_conversion(row.get('CumulativeFeesPaid', 0.0))
                     )
                     
                     # Set invested_value nếu file có cột này
@@ -297,14 +300,15 @@ class EnhancedDataHandler:
                         print(f"Skipping transaction with invalid date: {row['ID']}")
                         continue
                     
+                    from type_safety_fixes import safe_int_conversion, safe_float_conversion
                     transaction = Transaction(
-                        id=int(row['ID']),
-                        investor_id=int(row['InvestorID']),
+                        id=safe_int_conversion(row['ID']),
+                        investor_id=safe_int_conversion(row['InvestorID']),
                         date=row['Date'],
                         type=str(row['Type']),
-                        amount=float(row['Amount']),
-                        nav=float(row['NAV']),
-                        units_change=float(row['UnitsChange'])
+                        amount=safe_float_conversion(row['Amount']),
+                        nav=safe_float_conversion(row['NAV']),
+                        units_change=safe_float_conversion(row['UnitsChange'])
                     )
                     
                     # Validate transaction
@@ -387,16 +391,17 @@ class EnhancedDataHandler:
                         print(f"Skipping invalid fee record: {row['ID']}")
                         continue
                     
+                    from type_safety_fixes import safe_int_conversion, safe_float_conversion
                     record = FeeRecord(
-                        id=int(row['ID']),
+                        id=safe_int_conversion(row['ID']),
                         period=str(row['Period']),
-                        investor_id=int(row['InvestorID']),
-                        fee_amount=float(row['FeeAmount']),
-                        fee_units=float(row['FeeUnits']),
+                        investor_id=safe_int_conversion(row['InvestorID']),
+                        fee_amount=safe_float_conversion(row['FeeAmount']),
+                        fee_units=safe_float_conversion(row['FeeUnits']),
                         calculation_date=row['CalculationDate'],
-                        units_before=float(row['UnitsBefore']),
-                        units_after=float(row['UnitsAfter']),
-                        nav_per_unit=float(row['NAVPerUnit']),
+                        units_before=safe_float_conversion(row['UnitsBefore']),
+                        units_after=safe_float_conversion(row['UnitsAfter']),
+                        nav_per_unit=safe_float_conversion(row['NAVPerUnit']),
                         description=str(row.get('Description', ''))
                     )
                     
@@ -497,7 +502,7 @@ class EnhancedDataHandler:
             )
             
             if success:
-                print(f"Successfully saved all data at {datetime.now()}")
+                print(f"Successfully saved all data at {TimezoneManager.now()}")
             else:
                 st.error("Lưu dữ liệu thất bại!")
             
@@ -665,7 +670,7 @@ class EnhancedDataHandler:
             if not BACKUP_DIR.exists():
                 return 0
             
-            cutoff_date = datetime.now() - timedelta(days=days_to_keep)
+            cutoff_date = TimezoneManager.now() - timedelta(days=days_to_keep)
             cleanup_count = 0
             
             for backup_file in BACKUP_DIR.glob("*.csv"):

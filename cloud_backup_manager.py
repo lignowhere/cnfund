@@ -14,6 +14,7 @@ from typing import Dict, Any, List, Optional, Tuple
 from dataclasses import asdict
 import copy
 from timezone_manager import TimezoneManager
+from timezone_manager import TimezoneManager
 import logging
 import io
 import streamlit as st
@@ -105,7 +106,7 @@ class CloudBackupManager:
         """
         Create lightweight operation snapshot (in-memory only)
         """
-        snapshot_id = f"{operation_type}_{datetime.now().strftime('%Y%m%d_%H%M%S_%f')}"
+        snapshot_id = f"{operation_type}_{TimezoneManager.now().strftime('%Y%m%d_%H%M%S_%f')}"
         
         try:
             # Create minimal snapshot data
@@ -114,7 +115,7 @@ class CloudBackupManager:
                 'tranches': [asdict(tr) for tr in fund_manager.tranches],
                 'transactions': [asdict(txn) for txn in fund_manager.transactions],
                 'fee_records': [asdict(fr) for fr in fund_manager.fee_records],
-                'timestamp': datetime.now().isoformat(),
+                'timestamp': TimezoneManager.now().isoformat(),
                 'operation_type': operation_type,
                 'description': description
             }
@@ -124,7 +125,7 @@ class CloudBackupManager:
             
             # Store metadata
             self.snapshot_metadata[snapshot_id] = {
-                'timestamp': datetime.now().isoformat(),
+                'timestamp': TimezoneManager.now().isoformat(),
                 'operation_type': operation_type,
                 'description': description,
                 'investors_count': len(fund_manager.investors),
@@ -179,7 +180,7 @@ class CloudBackupManager:
         """
         Create database backup stored in Supabase
         """
-        timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
+        timestamp = TimezoneManager.now().strftime('%Y%m%d_%H%M%S')
         backup_id = f"{backup_type}_{timestamp}"
         
         if not self.supabase_handler or not self.supabase_handler.connected:
@@ -191,7 +192,7 @@ class CloudBackupManager:
             backup_data = {
                 'backup_id': backup_id,
                 'backup_type': backup_type,
-                'timestamp': datetime.now().isoformat(),
+                'timestamp': TimezoneManager.now().isoformat(),
                 'date': date.today().isoformat(),
                 'data': {
                     'investors': [asdict(inv) for inv in fund_manager.investors],
@@ -535,7 +536,7 @@ class CloudBackupManager:
         try:
             backup_data = {
                 'backup_type': 'DOWNLOAD',
-                'timestamp': datetime.now().isoformat(),
+                'timestamp': TimezoneManager.now().isoformat(),
                 'date': date.today().isoformat(),
                 'data': {
                     'investors': [asdict(inv) for inv in fund_manager.investors],

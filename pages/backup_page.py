@@ -221,7 +221,7 @@ def show_backup_history(fund_manager):
     # Display table with selection
     st.dataframe(
         df,
-        width="stretch",
+        use_container_width=True,
         hide_index=True,
         column_config={
             'ID': st.column_config.TextColumn('Backup ID', width="large"),
@@ -452,7 +452,7 @@ def show_operation_snapshots(fund_manager):
         })
     
     df = pd.DataFrame(snapshot_data)
-    st.dataframe(df, width="stretch", hide_index=True)
+    st.dataframe(df, use_container_width=True, hide_index=True)
     
     if len(snapshots) > 20:
         st.info(f"Showing latest 20 of {len(snapshots)} operation snapshots")

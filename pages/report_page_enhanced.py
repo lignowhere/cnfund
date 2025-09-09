@@ -5,6 +5,7 @@ import io
 from datetime import datetime, date
 from utils import format_currency, format_percentage, parse_currency, highlight_profit_loss
 from chart_utils import safe_altair_chart
+from timezone_manager import TimezoneManager
 
 class EnhancedReportPage:
     """Enhanced Report Page với individual export và professional reports"""
@@ -100,7 +101,12 @@ class EnhancedReportPage:
         if not selected_display:
             return
         
-        investor_id = options[selected_display]
+        # Type safety: ensure investor_id is always an integer using safe selectbox handling
+        from streamlit_widget_safety import safe_investor_id_from_selectbox
+        investor_id = safe_investor_id_from_selectbox(self.fund_manager, selected_display)
+        if investor_id is None:
+            st.error("❌ Could not get valid investor ID from selection")
+            return
         
         # NAV input for calculations
         latest_nav = self.fund_manager.get_latest_total_nav()
@@ -254,7 +260,7 @@ class EnhancedReportPage:
                 display_df = df_composition.copy()
                 display_df['Value'] = display_df['Value'].apply(format_currency)
                 display_df['Percentage'] = display_df['Percentage'].apply(lambda x: f"{x:.1f}%")
-                st.dataframe(display_df, width="stretch", hide_index=True)
+                st.dataframe(display_df, use_container_width=True, hide_index=True)
             else:
                 st.info("ℹ️ Không có dữ liệu để hiển thị biểu đồ phân bổ danh mục.")
     
@@ -301,7 +307,7 @@ class EnhancedReportPage:
             display_df['Gross Return'] = display_df['Gross Return'].apply(format_percentage)
             display_df['Net Return'] = display_df['Net Return'].apply(format_percentage)
             display_df['Total Fees'] = display_df['Total Fees'].apply(format_currency)
-            st.dataframe(display_df, width="stretch", hide_index=True)
+            st.dataframe(display_df, use_container_width=True, hide_index=True)
     
     def _render_fund_growth_timeline(self):
         """Render fund growth over time"""
@@ -437,7 +443,7 @@ class EnhancedReportPage:
                 })
             
             df_tranches = pd.DataFrame(tranche_data)
-            st.dataframe(df_tranches, width="stretch", hide_index=True)
+            st.dataframe(df_tranches, use_container_width=True, hide_index=True)
         
         # Transaction history for this investor
         if report_data['transactions']:
@@ -454,7 +460,7 @@ class EnhancedReportPage:
                 })
             
             df_transactions = pd.DataFrame(trans_data)
-            st.dataframe(df_transactions, width="stretch", hide_index=True)
+            st.dataframe(df_transactions, use_container_width=True, hide_index=True)
         
         # Fee history
         if report_data['fee_history']:
@@ -471,7 +477,7 @@ class EnhancedReportPage:
                 })
             
             df_fees = pd.DataFrame(fee_data)
-            st.dataframe(df_fees, width="stretch", hide_index=True)
+            st.dataframe(df_fees, use_container_width=True, hide_index=True)
         
         # Investment insights
         st.markdown("#### 💡 Investment Insights")
@@ -480,10 +486,25 @@ class EnhancedReportPage:
         
         # Time in fund
         if report_data['tranches']:
-            oldest_tranche = min(report_data['tranches'], key=lambda t: t.original_entry_date)
-            days_invested = (datetime.now() - oldest_tranche.original_entry_date).days
-            years_invested = days_invested / 365.25
-            insights.append(f"📅 Đã đầu tư: {years_invested:.1f} năm ({days_invested} ngày)")
+            # Filter valid tranches with proper datetime objects
+            valid_tranches = [
+                t for t in report_data['tranches'] 
+                if t.original_entry_date is not None 
+                and isinstance(t.original_entry_date, datetime)
+            ]
+            
+            if valid_tranches:
+                try:
+                    oldest_tranche = min(valid_tranches, key=lambda t: t.original_entry_date)
+                    current_time = TimezoneManager.now()
+                    normalized_entry_date = TimezoneManager.normalize_for_display(oldest_tranche.original_entry_date)
+                    
+                    days_invested = (current_time - normalized_entry_date).days
+                    years_invested = days_invested / 365.25
+                    insights.append(f"📅 Đã đầu tư: {years_invested:.1f} năm ({days_invested} ngày)")
+                except Exception as e:
+                    # Fallback: show basic info without time calculation
+                    insights.append("📅 Thời gian đầu tư: Đang tính toán...")
         
         # Fee impact
         original_invested = report_data['lifetime_performance']['original_invested']
@@ -612,7 +633,7 @@ class EnhancedReportPage:
             buffer.seek(0)
             
             # Generate filename
-            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+            timestamp = TimezoneManager.now().strftime("%Y%m%d_%H%M%S")
             filename = f"Individual_Report_{investor_name.replace(' ', '_')}_{timestamp}.xlsx"
             
             # Offer download
@@ -621,7 +642,7 @@ class EnhancedReportPage:
                 data=buffer,
                 file_name=filename,
                 mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-                width="stretch"
+                use_container_width=True
             )
             
             st.success(f"✅ Individual report ready for download: {filename}")
@@ -666,7 +687,7 @@ class EnhancedReportPage:
                         'Total Transactions'
                     ],
                     'Value': [
-                        datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+                        TimezoneManager.now().strftime("%Y-%m-%d %H:%M:%S"),
                         format_currency(current_nav),
                         format_currency(total_original),
                         format_currency(total_current),
@@ -685,7 +706,7 @@ class EnhancedReportPage:
             buffer.seek(0)
             
             # Generate filename
-            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+            timestamp = TimezoneManager.now().strftime("%Y%m%d_%H%M%S")
             filename = f"Executive_Summary_{timestamp}.xlsx"
             
             # Offer download
@@ -694,7 +715,7 @@ class EnhancedReportPage:
                 data=buffer,
                 file_name=filename,
                 mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-                width="stretch"
+                use_container_width=True
             )
             
             st.success(f"✅ Executive summary ready for download: {filename}")
@@ -764,7 +785,7 @@ class EnhancedReportPage:
             display_df['Return Net'] = display_df['Return Net'].apply(format_percentage)
             display_df['Units Hiện Tại'] = display_df['Units Hiện Tại'].apply(lambda x: f"{x:.6f}")
             
-            st.dataframe(display_df, width="stretch")
+            st.dataframe(display_df, use_container_width=True)
             
             # Charts
             if len(performance_data) > 1:
@@ -843,7 +864,16 @@ class EnhancedReportPage:
         if selected_periods:
             filtered_records = [r for r in filtered_records if r.period in selected_periods]
         if selected_investors:
-            selected_ids = [investor_options[name] for name in selected_investors]
+            # Type safety: ensure all selected IDs are integers using safe conversion
+            from streamlit_widget_safety import safe_selectbox_int_value
+            selected_ids = []
+            for name in selected_investors:
+                try:
+                    investor_id = safe_selectbox_int_value(investor_options, name)
+                    if investor_id is not None and investor_id >= 0:
+                        selected_ids.append(investor_id)
+                except Exception as e:
+                    print(f"Warning: Skipping invalid investor ID for {name}: {e}")
             filtered_records = [r for r in filtered_records if r.investor_id in selected_ids]
         
         if filtered_records:
@@ -872,7 +902,7 @@ class EnhancedReportPage:
             display_df['Phí (VND)'] = display_df['Phí (VND)'].apply(format_currency)
             display_df['NAV/Unit'] = display_df['NAV/Unit'].apply(format_currency)
             
-            st.dataframe(display_df, width="stretch")
+            st.dataframe(display_df, use_container_width=True)
             
             # Summary metrics
             col1, col2, col3 = st.columns(3)
@@ -905,7 +935,7 @@ class EnhancedReportPage:
                     'Số Lần Tính': data['count']
                 })
             
-            st.dataframe(pd.DataFrame(summary_data), width="stretch")
+            st.dataframe(pd.DataFrame(summary_data), use_container_width=True)
             
             # Chart: Fee by period
             if len(fee_by_period) > 1:
@@ -951,7 +981,7 @@ class EnhancedReportPage:
             })
         
         df_trans = pd.DataFrame(data)
-        st.dataframe(df_trans, width="stretch")
+        st.dataframe(df_trans, use_container_width=True)
         
         # Summary statistics
         col1, col2, col3, col4 = st.columns(4)
@@ -1020,7 +1050,7 @@ class EnhancedReportPage:
             })
         
         df_fm = pd.DataFrame(fm_data)
-        st.dataframe(df_fm, width="stretch")
+        st.dataframe(df_fm, use_container_width=True)
         
         # Fund Manager fee income over time
         fee_transactions = [t for t in self.fund_manager.transactions if t.investor_id == fund_manager.id and t.type == 'Phí Nhận']

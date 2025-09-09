@@ -12,6 +12,7 @@ from pathlib import Path
 import streamlit as st
 import traceback
 import json
+from timezone_manager import TimezoneManager
 
 # Google Drive API imports
 try:
@@ -41,7 +42,7 @@ class GoogleDriveManager:
 
     def _log_error(self, message: str, error: Exception = None):
         """Log error with details"""
-        error_msg = f"{datetime.now().strftime('%H:%M:%S')}: {message}"
+        error_msg = f"{TimezoneManager.now().strftime('%H:%M:%S')}: {message}"
         if error:
             error_msg += f" - {str(error)}"
         self.error_log.append(error_msg)
@@ -290,7 +291,7 @@ class GoogleDriveManager:
         total_fees = sum(record.fee_amount for record in self.fund_manager.fee_records)
 
         summary_data['Value'] = [
-            datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+            TimezoneManager.now().strftime("%Y-%m-%d %H:%M:%S"),
             format_currency(latest_nav),
             format_currency(current_price),
             len(self.fund_manager.investors),
@@ -457,7 +458,7 @@ class GoogleDriveManager:
                 perf = self.fund_manager.get_investor_lifetime_performance(investor.id, latest_nav)
                 fee_details = self.fund_manager.calculate_investor_fee(
                     investor.id, 
-                    datetime.now(), 
+                    TimezoneManager.now(), 
                     latest_nav
                 )
 
@@ -611,7 +612,7 @@ class GoogleDriveManager:
         """Auto export to Excel and upload to Google Drive"""
         try:
             # Generate filename
-            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+            timestamp = TimezoneManager.now().strftime("%Y%m%d_%H%M%S")
             filename = f"Fund_Export_{timestamp}_{trigger}.xlsx"
 
             # Export to buffer

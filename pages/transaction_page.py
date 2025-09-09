@@ -2,6 +2,7 @@ import streamlit as st
 import pandas as pd
 from datetime import date, datetime, timedelta
 import re
+from timezone_manager import TimezoneManager
 
 try:
     from utils import format_currency, parse_currency, format_percentage, EPSILON
@@ -9,35 +10,35 @@ except ImportError:
     from data_utils import format_currency_safe as format_currency
 
 from timezone_manager import TimezoneManager
+
+def parse_currency(text):
+    """Enhanced currency parsing with better error handling"""
+    if not text:
+        return 0.0
     
-    def parse_currency(text):
-        """Enhanced currency parsing with better error handling"""
-        if not text:
-            return 0.0
-        
-        # Convert to string and clean
-        clean_text = str(text).strip()
-        if not clean_text:
-            return 0.0
-        
-        # Remove currency symbols, commas, spaces
-        clean_text = re.sub(r'[đĐ,\s]', '', clean_text)
-        
-        # Handle empty after cleaning
-        if not clean_text:
-            return 0.0
-        
-        try:
-            # Try to convert to float
-            value = float(clean_text)
-            return max(0.0, value)  # Ensure non-negative
-        except (ValueError, TypeError):
-            return 0.0
+    # Convert to string and clean
+    clean_text = str(text).strip()
+    if not clean_text:
+        return 0.0
     
-    def format_percentage(value):
-        return f"{float(value) * 100:.2f}%" if value else "0%"
+    # Remove currency symbols, commas, spaces
+    clean_text = re.sub(r'[đĐ,\s]', '', clean_text)
     
-    EPSILON = 1e-6
+    # Handle empty after cleaning
+    if not clean_text:
+        return 0.0
+    
+    try:
+        # Try to convert to float
+        value = float(clean_text)
+        return max(0.0, value)  # Ensure non-negative
+    except (ValueError, TypeError):
+        return 0.0
+
+def format_percentage(value):
+    return f"{float(value) * 100:.2f}%" if value else "0%"
+
+EPSILON = 1e-6
 
 class EnhancedTransactionPage:
     """Enhanced Transaction Page với validation & undo features"""
@@ -101,7 +102,7 @@ class EnhancedTransactionPage:
             # Nút submit là điểm chốt để lấy dữ liệu
             submitted = st.form_submit_button(
                 "✅ Thực hiện giao dịch", 
-                width="stretch"
+                use_container_width=True
             )
             
             # === TOÀN BỘ LOGIC VALIDATION VÀ XỬ LÝ ĐƯỢC DI CHUYỂN VÀO ĐÂY ===
@@ -176,9 +177,8 @@ class EnhancedTransactionPage:
                             'reloaded_nav': reloaded_nav,
                             'transaction_count': transaction_count
                         })
-                    
-                except Exception as e:
-                    st.error(f"Debug error: {str(e)}")
+                    except Exception as e:
+                        st.error(f"Debug error: {str(e)}")
             
             with col_debug2:
                 if st.button("🔬 DB Analysis", help="Deep database analysis"):
@@ -239,7 +239,7 @@ class EnhancedTransactionPage:
             # Nút submit bây giờ sẽ luôn hoạt động, không có 'disabled'
             submitted = st.form_submit_button(
                 "✅ Cập nhật NAV", 
-                width="stretch"
+                use_container_width=True
             )
             
             if submitted:
@@ -317,7 +317,7 @@ class EnhancedTransactionPage:
                         'Units Nhận': f"{trans.units_change:.6f}"
                     })
                 
-                st.dataframe(pd.DataFrame(fee_data), width="stretch")
+                st.dataframe(pd.DataFrame(fee_data), use_container_width=True)
                 
                 total_fee_income = sum(t.amount for t in fee_transactions)
                 st.success(f"💰 **Tổng Fee Income:** {format_currency(total_fee_income)}")
@@ -408,7 +408,7 @@ class EnhancedTransactionPage:
             
             submitted = st.form_submit_button(
                 "💸 Xác Nhận Fund Manager Withdrawal", 
-                width="stretch",
+                use_container_width=True,
                 disabled=not confirmed or withdrawal_amount <= 0
             )
             
@@ -450,7 +450,7 @@ class EnhancedTransactionPage:
         
         if transactions_data:
             df = pd.DataFrame(transactions_data)
-            st.dataframe(df, width="stretch")
+            st.dataframe(df, use_container_width=True)
             
             # Export to Excel
             if st.button("📊 Xuất Excel"):
@@ -466,7 +466,7 @@ class EnhancedTransactionPage:
                     st.download_button(
                         label="💾 Tải File Excel",
                         data=buffer,
-                        file_name=f"transactions_{datetime.now().strftime('%Y%m%d')}.xlsx",
+                        file_name=f"transactions_{TimezoneManager.now().strftime('%Y%m%d')}.xlsx",
                         mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
                     )
                 except Exception as e:

@@ -3,6 +3,25 @@ import pandas as pd
 from datetime import date, datetime
 from utils import format_currency, parse_currency, format_percentage, highlight_profit_loss
 
+# Add comprehensive error handling for integer conversion issues
+def safe_operation(operation_name, func, *args, **kwargs):
+    """Safely execute operations that might have integer conversion issues"""
+    try:
+        return func(*args, **kwargs)
+    except TypeError as e:
+        if "'str' object cannot be interpreted as an integer" in str(e):
+            st.error(f"🚨 Integer conversion error in {operation_name}")
+            st.error(f"Error details: {str(e)}")
+            # Log debug info
+            st.write("**Debug info:**")
+            for i, arg in enumerate(args):
+                st.write(f"  Arg {i}: {type(arg).__name__} = {repr(arg)}")
+            for k, v in kwargs.items():
+                st.write(f"  {k}: {type(v).__name__} = {repr(v)}")
+            raise e
+        else:
+            raise e
+
 class SafeFeePage:
     """Enhanced Fee Page với comprehensive safety features - COMPLETE VERSION"""
     
@@ -11,6 +30,25 @@ class SafeFeePage:
     
     def render_enhanced_fee_calculation(self):
         """Enhanced fee calculation với comprehensive safety"""
+        try:
+            self._render_enhanced_fee_calculation_impl()
+        except TypeError as e:
+            if "'str' object cannot be interpreted as an integer" in str(e):
+                st.error("🚨 Integer conversion error detected in fee calculation!")
+                st.error(f"Error: {str(e)}")
+                st.write("**Please report this error with the following details:**")
+                st.code(f"Function: render_enhanced_fee_calculation\nError: {str(e)}")
+                import traceback
+                st.code(traceback.format_exc())
+            else:
+                raise e
+        except Exception as e:
+            st.error(f"❌ Unexpected error in fee calculation: {str(e)}")
+            import traceback
+            st.code(traceback.format_exc())
+            
+    def _render_enhanced_fee_calculation_impl(self):
+        """Implementation of enhanced fee calculation"""
         st.title("🧮 Tính Toán Phí Cuối Năm")
         
         regular_investors = self.fund_manager.get_regular_investors()
@@ -76,45 +114,96 @@ class SafeFeePage:
         
         with tab5:
             self._render_safe_fee_application(year, ending_date, ending_nav)
-    
+            
     def render_individual_fee(self):
         """Tính phí riêng cho nhà đầu tư với enhanced display"""
-        st.title("📋 Tính Phí Riêng Cho Nhà Đầu Tư")
-        
-        regular_investors = self.fund_manager.get_regular_investors()
-        if not regular_investors:
-            st.info("📄 Chưa có nhà đầu tư nào.")
-            return
-        
-        options = self.fund_manager.get_investor_options()
-        selected_display = st.selectbox("👤 Chọn Nhà Đầu Tư", list(options.keys()))
-        
-        if not selected_display:
-            return
-        
-        investor_id = options[selected_display]
-        
-        col1, col2 = st.columns(2)
-        calc_date = col1.date_input("📅 Ngày Tính Phí", value=date.today())
-        
-        latest_nav = self.fund_manager.get_latest_total_nav()
-        nav_input = col2.text_input("📊 Total NAV", 
-                                   value=format_currency(latest_nav) if latest_nav else "0đ",
-                                   key="individual_fee_nav_input")
-        calc_nav = parse_currency(nav_input)
-        
-        if st.button("🧮 Tính Toán", width="stretch"):
-            if calc_nav <= 0:
-                st.error("❌ Total NAV phải lớn hơn 0")
+        try:
+            st.title("📋 Tính Phí Riêng Cho Nhà Đầu Tư")
+            
+            regular_investors = self.fund_manager.get_regular_investors()
+            if not regular_investors:
+                st.info("📄 Chưa có nhà đầu tư nào.")
+                return
+            
+            options = self.fund_manager.get_investor_options()
+            selected_display = st.selectbox("👤 Chọn Nhà Đầu Tư", list(options.keys()))
+            
+            if not selected_display:
+                return
+            
+            # Type safety: ensure investor_id is always an integer using safe selectbox handling
+            from streamlit_widget_safety import safe_investor_id_from_selectbox
+            investor_id = safe_investor_id_from_selectbox(self.fund_manager, selected_display)
+            if investor_id is None:
+                st.error("❌ Could not get valid investor ID from selection")
+                return
+            
+            col1, col2 = st.columns(2)
+            calc_date = col1.date_input("📅 Ngày Tính Phí", value=date.today())
+            
+            latest_nav = self.fund_manager.get_latest_total_nav()
+            nav_input = col2.text_input("📊 Total NAV", 
+                                       value=format_currency(latest_nav) if latest_nav else "0đ",
+                                       key="individual_fee_nav_input")
+            calc_nav = parse_currency(nav_input)
+            
+            if st.button("🧮 Tính Toán", use_container_width=True):
+                if calc_nav <= 0:
+                    st.error("❌ Total NAV phải lớn hơn 0")
+                else:
+                    safe_operation("individual_fee_analysis", self._render_individual_fee_analysis, investor_id, calc_date, calc_nav, selected_display)
+                
+                st.info("💡 Chỉ tính toán preview, không áp dụng. Dùng để xem trước khi rút giữa năm.")
+                
+        except TypeError as e:
+            if "'str' object cannot be interpreted as an integer" in str(e):
+                st.error("🚨 Integer conversion error detected in individual fee calculation!")
+                st.error(f"Error: {str(e)}")
+                st.write("**Debug Information:**")
+                
+                # Debug all variables that might be causing the issue
+                debug_info = []
+                try:
+                    if 'regular_investors' in locals():
+                        debug_info.append(f"regular_investors count: {len(regular_investors)}")
+                        if regular_investors:
+                            debug_info.append(f"First investor type: {type(regular_investors[0])}")
+                            debug_info.append(f"First investor ID: {repr(regular_investors[0].id)} (type: {type(regular_investors[0].id).__name__})")
+                    
+                    if 'options' in locals():
+                        debug_info.append(f"options count: {len(options)}")
+                        for name, inv_id in list(options.items())[:3]:  # First 3
+                            debug_info.append(f"  {name}: {repr(inv_id)} (type: {type(inv_id).__name__})")
+                    
+                    if 'selected_display' in locals():
+                        debug_info.append(f"selected_display: {repr(selected_display)} (type: {type(selected_display).__name__})")
+                    
+                    if 'investor_id' in locals():
+                        debug_info.append(f"investor_id: {repr(investor_id)} (type: {type(investor_id).__name__})")
+                        
+                    # Check transaction types
+                    debug_info.append("Sample transaction investor_id types:")
+                    for i, tx in enumerate(self.fund_manager.transactions[:3]):
+                        debug_info.append(f"  TX{i}: investor_id={repr(tx.investor_id)} (type: {type(tx.investor_id).__name__})")
+                        
+                except Exception as debug_e:
+                    debug_info.append(f"Debug info collection failed: {debug_e}")
+                
+                st.code("\n".join(debug_info))
+                
+                import traceback
+                st.code(traceback.format_exc())
             else:
-                self._render_individual_fee_analysis(investor_id, calc_date, calc_nav, selected_display)
-        
-        st.info("💡 Chỉ tính toán preview, không áp dụng. Dùng để xem trước khi rút giữa năm.")
+                raise e
+        except Exception as e:
+            st.error(f"❌ Unexpected error in individual fee calculation: {str(e)}")
+            import traceback
+            st.code(traceback.format_exc())
     
     def _render_data_consistency_check(self):
         """Render data consistency check"""
         with st.expander("🔍 Kiểm Tra Tính Nhất Quán Dữ Liệu", expanded=False):
-            if st.button("🔍 Chạy Kiểm Tra", width="stretch"):
+            if st.button("🔍 Chạy Kiểm Tra", use_container_width=True):
                 validation_results = self.fund_manager.validate_data_consistency()
                 
                 col1, col2 = st.columns(2)
@@ -204,7 +293,7 @@ class SafeFeePage:
             for col in currency_cols:
                 df_results[col] = df_results[col].apply(format_currency)
             
-            st.dataframe(df_results, width="stretch", hide_index=True)
+            st.dataframe(df_results, use_container_width=True, hide_index=True)
             
             # Summary với color coding
             col1, col2, col3, col4 = st.columns(4)
@@ -298,7 +387,7 @@ class SafeFeePage:
             for col in percentage_cols:
                 df_performance[col] = df_performance[col].apply(format_percentage)
             
-            st.dataframe(df_performance, width="stretch", hide_index=True)
+            st.dataframe(df_performance, use_container_width=True, hide_index=True)
     
     def _render_safe_fee_application(self, year: int, ending_date: date, ending_nav: float):
         """Render safe fee application với multiple confirmations"""
@@ -352,7 +441,7 @@ class SafeFeePage:
         if step1 and step2 and step3:
             st.success("✅ Tất cả xác nhận hoàn thành")
             
-            if st.button("🚀 ÁP DỤNG PHÍ CUỐI NĂM", type="primary", width="stretch"):
+            if st.button("🚀 ÁP DỤNG PHÍ CUỐI NĂM", type="primary", use_container_width=True):
                 # 1. Tạo backup trước khi thao tác
                 self.fund_manager.backup_before_operation(f"Fee Application {year}")
                 st.info("💾 Đã tạo backup trước khi áp dụng phí.")
@@ -506,7 +595,7 @@ class SafeFeePage:
                 })
             
             df_tranches = pd.DataFrame(tranche_data)
-            st.dataframe(df_tranches, width="stretch")
+            st.dataframe(df_tranches, use_container_width=True)
     
     def _perform_safety_checks(self, year: int, ending_date: date, ending_nav: float) -> dict:
         """Perform comprehensive safety checks before fee application"""
@@ -642,7 +731,7 @@ class SafeFeePage:
                 df_results[col] = df_results[col].apply(format_currency)
             df_results['Tỷ Lệ L/L'] = df_results['Tỷ Lệ L/L'].apply(format_percentage)
             
-            st.dataframe(df_results, width="stretch", hide_index=True)
+            st.dataframe(df_results, use_container_width=True, hide_index=True)
             
             total_fee = sum(
                 self.fund_manager.calculate_investor_fee(inv.id, ending_date_dt, ending_nav)['total_fee'] 
@@ -705,7 +794,7 @@ class SafeFeePage:
         
         if data:
             df_tranches = pd.DataFrame(data)
-            st.dataframe(df_tranches, width="stretch")
+            st.dataframe(df_tranches, use_container_width=True)
             
             # Summary statistics
             total_current_value = sum(t.units * current_price for t in self.fund_manager.tranches if current_price > 0)
