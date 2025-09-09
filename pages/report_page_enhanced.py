@@ -245,13 +245,13 @@ class EnhancedReportPage:
                     title="Portfolio Distribution",
                     height=300
                 )
-                st.altair_chart(pie_chart, use_container_width=True)
+                st.altair_chart(pie_chart, width="stretch")
                 
                 # Table
                 display_df = df_composition.copy()
                 display_df['Value'] = display_df['Value'].apply(format_currency)
                 display_df['Percentage'] = display_df['Percentage'].apply(lambda x: f"{x:.1f}%")
-                st.dataframe(display_df, use_container_width=True, hide_index=True)
+                st.dataframe(display_df, width="stretch", hide_index=True)
             else:
                 st.info("ℹ️ Không có dữ liệu để hiển thị biểu đồ phân bổ danh mục.")
     
@@ -291,14 +291,14 @@ class EnhancedReportPage:
                 height=300
             )
             
-            st.altair_chart(bar_chart, use_container_width=True)
+            st.altair_chart(bar_chart, width="stretch")
             
             # Summary table
             display_df = df_performance.copy()
             display_df['Gross Return'] = display_df['Gross Return'].apply(format_percentage)
             display_df['Net Return'] = display_df['Net Return'].apply(format_percentage)
             display_df['Total Fees'] = display_df['Total Fees'].apply(format_currency)
-            st.dataframe(display_df, use_container_width=True, hide_index=True)
+            st.dataframe(display_df, width="stretch", hide_index=True)
     
     def _render_fund_growth_timeline(self):
         """Render fund growth over time"""
@@ -342,7 +342,7 @@ class EnhancedReportPage:
                     title="Fund NAV Growth Over Time",
                     height=400
                 )
-                st.altair_chart(line_chart, use_container_width=True)
+                st.altair_chart(line_chart, width="stretch")
                 
                 # Growth statistics
                 if len(timeline_data) > 1:
@@ -434,7 +434,7 @@ class EnhancedReportPage:
                 })
             
             df_tranches = pd.DataFrame(tranche_data)
-            st.dataframe(df_tranches, use_container_width=True, hide_index=True)
+            st.dataframe(df_tranches, width="stretch", hide_index=True)
         
         # Transaction history for this investor
         if report_data['transactions']:
@@ -451,7 +451,7 @@ class EnhancedReportPage:
                 })
             
             df_transactions = pd.DataFrame(trans_data)
-            st.dataframe(df_transactions, use_container_width=True, hide_index=True)
+            st.dataframe(df_transactions, width="stretch", hide_index=True)
         
         # Fee history
         if report_data['fee_history']:
@@ -468,7 +468,7 @@ class EnhancedReportPage:
                 })
             
             df_fees = pd.DataFrame(fee_data)
-            st.dataframe(df_fees, use_container_width=True, hide_index=True)
+            st.dataframe(df_fees, width="stretch", hide_index=True)
         
         # Investment insights
         st.markdown("#### 💡 Investment Insights")
@@ -618,7 +618,7 @@ class EnhancedReportPage:
                 data=buffer,
                 file_name=filename,
                 mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-                use_container_width=True
+                width="stretch"
             )
             
             st.success(f"✅ Individual report ready for download: {filename}")
@@ -691,7 +691,7 @@ class EnhancedReportPage:
                 data=buffer,
                 file_name=filename,
                 mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-                use_container_width=True
+                width="stretch"
             )
             
             st.success(f"✅ Executive summary ready for download: {filename}")
@@ -761,7 +761,7 @@ class EnhancedReportPage:
             display_df['Return Net'] = display_df['Return Net'].apply(format_percentage)
             display_df['Units Hiện Tại'] = display_df['Units Hiện Tại'].apply(lambda x: f"{x:.6f}")
             
-            st.dataframe(display_df, use_container_width=True)
+            st.dataframe(display_df, width="stretch")
             
             # Charts
             if len(performance_data) > 1:
@@ -776,7 +776,7 @@ class EnhancedReportPage:
                         color='Nhà Đầu Tư:N',
                         tooltip=['Nhà Đầu Tư', 'Giá Trị Hiện Tại']
                     )
-                    st.altair_chart(pie_chart, use_container_width=True)
+                    st.altair_chart(pie_chart, width="stretch")
                 
                 with col_chart2:
                     st.subheader("📊 Gross vs Net Return")
@@ -794,7 +794,7 @@ class EnhancedReportPage:
                         color='Return Type:N',
                         tooltip=['Nhà Đầu Tư', 'Return Type', 'Return']
                     )
-                    st.altair_chart(bar_chart, use_container_width=True)
+                    st.altair_chart(bar_chart, width="stretch")
                 
                 # Fee impact analysis
                 st.subheader("💰 Phân Tích Tác Động Phí")
@@ -806,7 +806,7 @@ class EnhancedReportPage:
                     color=alt.value('orange'),
                     tooltip=['Nhà Đầu Tư', 'Tổng Phí Đã Trả']
                 )
-                st.altair_chart(fee_chart, use_container_width=True)
+                st.altair_chart(fee_chart, width="stretch")
         
         else:
             st.info("📄 Chưa có dữ liệu performance.")
@@ -869,7 +869,7 @@ class EnhancedReportPage:
             display_df['Phí (VND)'] = display_df['Phí (VND)'].apply(format_currency)
             display_df['NAV/Unit'] = display_df['NAV/Unit'].apply(format_currency)
             
-            st.dataframe(display_df, use_container_width=True)
+            st.dataframe(display_df, width="stretch")
             
             # Summary metrics
             col1, col2, col3 = st.columns(3)
@@ -902,7 +902,7 @@ class EnhancedReportPage:
                     'Số Lần Tính': data['count']
                 })
             
-            st.dataframe(pd.DataFrame(summary_data), use_container_width=True)
+            st.dataframe(pd.DataFrame(summary_data), width="stretch")
             
             # Chart: Fee by period
             if len(fee_by_period) > 1:
@@ -918,7 +918,7 @@ class EnhancedReportPage:
                     tooltip=['Kỳ', 'Tổng Phí']
                 ).properties(title="Phí Performance Theo Kỳ")
                 
-                st.altair_chart(chart, use_container_width=True)
+                st.altair_chart(chart, width="stretch")
         
         else:
             st.info("📄 Không có dữ liệu phí với bộ lọc hiện tại.")
@@ -948,7 +948,7 @@ class EnhancedReportPage:
             })
         
         df_trans = pd.DataFrame(data)
-        st.dataframe(df_trans, use_container_width=True)
+        st.dataframe(df_trans, width="stretch")
         
         # Summary statistics
         col1, col2, col3, col4 = st.columns(4)
@@ -1017,7 +1017,7 @@ class EnhancedReportPage:
             })
         
         df_fm = pd.DataFrame(fm_data)
-        st.dataframe(df_fm, use_container_width=True)
+        st.dataframe(df_fm, width="stretch")
         
         # Fund Manager fee income over time
         fee_transactions = [t for t in self.fund_manager.transactions if t.investor_id == fund_manager.id and t.type == 'Phí Nhận']
@@ -1044,7 +1044,7 @@ class EnhancedReportPage:
                 tooltip=['Date', 'Fee Amount', 'Cumulative Fee']
             ).properties(title="Cumulative Fee Income")
             
-            st.altair_chart(chart, use_container_width=True)
+            st.altair_chart(chart, width="stretch")
             
             total_fee_income = sum(t.amount for t in fee_transactions)
             st.success(f"💰 **Tổng Fee Income:** {format_currency(total_fee_income)}")

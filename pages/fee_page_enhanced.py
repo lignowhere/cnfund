@@ -204,7 +204,7 @@ class SafeFeePage:
             for col in currency_cols:
                 df_results[col] = df_results[col].apply(format_currency)
             
-            st.dataframe(df_results, use_container_width=True, hide_index=True)
+            st.dataframe(df_results, width="stretch", hide_index=True)
             
             # Summary với color coding
             col1, col2, col3, col4 = st.columns(4)
@@ -298,7 +298,7 @@ class SafeFeePage:
             for col in percentage_cols:
                 df_performance[col] = df_performance[col].apply(format_percentage)
             
-            st.dataframe(df_performance, use_container_width=True, hide_index=True)
+            st.dataframe(df_performance, width="stretch", hide_index=True)
     
     def _render_safe_fee_application(self, year: int, ending_date: date, ending_nav: float):
         """Render safe fee application với multiple confirmations"""
@@ -506,7 +506,7 @@ class SafeFeePage:
                 })
             
             df_tranches = pd.DataFrame(tranche_data)
-            st.dataframe(df_tranches, use_container_width=True)
+            st.dataframe(df_tranches, width="stretch")
     
     def _perform_safety_checks(self, year: int, ending_date: date, ending_nav: float) -> dict:
         """Perform comprehensive safety checks before fee application"""
@@ -642,7 +642,7 @@ class SafeFeePage:
                 df_results[col] = df_results[col].apply(format_currency)
             df_results['Tỷ Lệ L/L'] = df_results['Tỷ Lệ L/L'].apply(format_percentage)
             
-            st.dataframe(df_results, use_container_width=True, hide_index=True)
+            st.dataframe(df_results, width="stretch", hide_index=True)
             
             total_fee = sum(
                 self.fund_manager.calculate_investor_fee(inv.id, ending_date_dt, ending_nav)['total_fee'] 
@@ -705,7 +705,7 @@ class SafeFeePage:
         
         if data:
             df_tranches = pd.DataFrame(data)
-            st.dataframe(df_tranches, use_container_width=True)
+            st.dataframe(df_tranches, width="stretch")
             
             # Summary statistics
             total_current_value = sum(t.units * current_price for t in self.fund_manager.tranches if current_price > 0)

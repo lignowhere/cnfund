@@ -314,7 +314,7 @@ class EnhancedTransactionPage:
                         'Units Nhận': f"{trans.units_change:.6f}"
                     })
                 
-                st.dataframe(pd.DataFrame(fee_data), use_container_width=True)
+                st.dataframe(pd.DataFrame(fee_data), width="stretch")
                 
                 total_fee_income = sum(t.amount for t in fee_transactions)
                 st.success(f"💰 **Tổng Fee Income:** {format_currency(total_fee_income)}")
@@ -447,7 +447,7 @@ class EnhancedTransactionPage:
         
         if transactions_data:
             df = pd.DataFrame(transactions_data)
-            st.dataframe(df, use_container_width=True)
+            st.dataframe(df, width="stretch")
             
             # Export to Excel
             if st.button("📊 Xuất Excel"):

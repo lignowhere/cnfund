@@ -45,7 +45,7 @@ def check_admin_authentication():
             label_visibility="visible"
         )
         
-        if st.button("🚀 Xác thực", type="primary", use_container_width=True):
+        if st.button("🚀 Xác thực", type="primary", width="stretch"):
             if password_input == admin_password:
                 st.session_state.logged_in = True
                 st.success("✅ Xác thực thành công!")

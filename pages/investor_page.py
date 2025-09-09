@@ -70,7 +70,7 @@ class InvestorPage:
         edited_df = st.data_editor(
             df_display,
             column_config=column_config,
-            use_container_width=True,
+            width="stretch",
             key="investor_editor"
         )
         
@@ -155,6 +155,6 @@ class InvestorPage:
                                 'HWM': format_currency(t.hwm)
                             })
                         
-                        st.dataframe(pd.DataFrame(tranche_data), use_container_width=True)
+                        st.dataframe(pd.DataFrame(tranche_data), width="stretch")
             else:
                 st.info("📝 Nhà đầu tư chưa có giao dịch nào.")

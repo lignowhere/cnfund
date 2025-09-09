@@ -220,7 +220,7 @@ def show_backup_history(fund_manager):
     # Display table with selection
     st.dataframe(
         df,
-        use_container_width=True,
+        width="stretch",
         hide_index=True,
         column_config={
             'ID': st.column_config.TextColumn('Backup ID', width="large"),
@@ -339,7 +339,7 @@ def show_backup_charts(fund_manager):
             labels={'count': 'Number of Backups', 'date': 'Date'}
         )
         fig_freq.update_layout(height=300)
-        st.plotly_chart(fig_freq, use_container_width=True)
+        st.plotly_chart(fig_freq, width="stretch")
     
     with col2:
         # Backup size over time
@@ -352,7 +352,7 @@ def show_backup_charts(fund_manager):
             labels={'file_size_mb': 'Size (MB)', 'timestamp': 'Time'}
         )
         fig_size.update_layout(height=300)
-        st.plotly_chart(fig_size, use_container_width=True)
+        st.plotly_chart(fig_size, width="stretch")
     
     # Backup type distribution
     type_counts = df['backup_type'].value_counts()
@@ -363,7 +363,7 @@ def show_backup_charts(fund_manager):
         title='Backup Types Distribution'
     )
     fig_pie.update_layout(height=300)
-    st.plotly_chart(fig_pie, use_container_width=True)
+    st.plotly_chart(fig_pie, width="stretch")
 
 def show_backup_settings(fund_manager):
     """Display backup settings panel"""
@@ -451,7 +451,7 @@ def show_operation_snapshots(fund_manager):
         })
     
     df = pd.DataFrame(snapshot_data)
-    st.dataframe(df, use_container_width=True, hide_index=True)
+    st.dataframe(df, width="stretch", hide_index=True)
     
     if len(snapshots) > 20:
         st.info(f"Showing latest 20 of {len(snapshots)} operation snapshots")
