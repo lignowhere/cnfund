@@ -261,6 +261,16 @@ class EnhancedFundManager:
         if not nav_transactions:
             return None
         
+        # Debug: Show all NAV transactions for investigation
+        print(f"🔍 get_latest_total_nav DEBUG:")
+        print(f"  - Total transactions with NAV: {len(nav_transactions)}")
+        
+        # Show the last 5 NAV transactions
+        sorted_all_nav = sorted(nav_transactions, key=lambda x: (x.date, x.id), reverse=True)
+        print(f"  - Last 5 NAV transactions:")
+        for i, t in enumerate(sorted_all_nav[:5]):
+            print(f"    {i+1}. ID:{t.id}, Type:{t.type}, Date:{t.date}, NAV:{t.nav}")
+        
         # Prioritize "NAV Update" transactions over other types
         nav_update_transactions = [t for t in nav_transactions if t.type == "NAV Update"]
         if nav_update_transactions:

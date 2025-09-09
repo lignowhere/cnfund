@@ -327,7 +327,22 @@ class SupabaseDataHandler:
             with self.engine.connect() as conn:
                 result = conn.execute(text("SELECT id, investor_id, date, type, amount, nav, units_change FROM transactions ORDER BY date ASC, id ASC"))
                 rows = result.fetchall()
-            return [Transaction(id=r[0], investor_id=r[1], date=r[2], type=r[3], amount=float(r[4]), nav=float(r[5]), units_change=float(r[6])) for r in rows]
+            
+            transactions = [Transaction(id=r[0], investor_id=r[1], date=r[2], type=r[3], amount=float(r[4]), nav=float(r[5]), units_change=float(r[6])) for r in rows]
+            
+            # Debug logging for transaction loading
+            nav_transactions = [t for t in transactions if t.nav and t.nav > 0]
+            print(f"🔍 load_transactions DEBUG:")
+            print(f"  - Total transactions loaded: {len(transactions)}")
+            print(f"  - Transactions with NAV: {len(nav_transactions)}")
+            if nav_transactions:
+                # Show last 3 NAV transactions from database
+                latest_navs = sorted(nav_transactions, key=lambda x: (x.date, x.id), reverse=True)[:3]
+                print(f"  - Last 3 NAV transactions from DB:")
+                for i, t in enumerate(latest_navs):
+                    print(f"    {i+1}. ID:{t.id}, Type:{t.type}, Date:{t.date}, NAV:{t.nav}")
+            
+            return transactions
         except Exception as e:
             st.error(f"Lỗi tải giao dịch: {str(e)}")
             return []
@@ -487,16 +502,28 @@ class SupabaseDataHandler:
                 return False
 
             tx_data = [{
-                'transaction_id': tx.transaction_id,
+                'transaction_id': tx.id,  # Fixed: use tx.id not tx.transaction_id
                 'investor_id': tx.investor_id,
                 'date': tx.date,
                 'amount': tx.amount,
                 'type': tx.type,
                 'units_change': tx.units_change,
                 'nav': tx.nav,
-                'hwm_before': tx.hwm_before,
-                'hwm_after': tx.hwm_after
+                'hwm_before': getattr(tx, 'hwm_before', 0.0),  # Add safe defaults
+                'hwm_after': getattr(tx, 'hwm_after', 0.0)
             } for tx in transactions]
+            
+            # Debug logging for transaction save
+            nav_txs = [tx for tx in transactions if tx.nav and tx.nav > 0]
+            if nav_txs:
+                print(f"🔍 save_transactions DEBUG:")
+                print(f"  - Saving {len(transactions)} transactions ({len(nav_txs)} with NAV)")
+                # Show NAV Update transactions being saved
+                nav_updates = [tx for tx in nav_txs if tx.type == "NAV Update"]
+                if nav_updates:
+                    print(f"  - NAV Update transactions being saved:")
+                    for tx in nav_updates:
+                        print(f"    ID:{tx.id}, NAV:{tx.nav}, Date:{tx.date}")
 
             with self.engine.connect() as conn:
                 trans = conn.begin()
