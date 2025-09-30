@@ -482,32 +482,20 @@ class DriveBackedDataManager:
     # Data Access Methods (compatible with CSVDataHandler)
     # ========================================
 
-    def ensure_data_loaded(self, force_reload: bool = False, max_age_seconds: int = 60):
+    def ensure_data_loaded(self, force_reload: bool = False, max_age_seconds: int = 0):
         """
-        Ensure data is loaded - load from Drive if needed
+        Ensure data is loaded - ALWAYS reload from Drive (NO CACHE)
 
         Args:
-            force_reload: Force reload from Drive even if already loaded
-            max_age_seconds: Maximum age of cached data in seconds (default: 60 seconds)
-                           - 60s: Good balance for small teams
-                           - 0: No cache (always reload, slower but always fresh)
-                           - 300: Long cache (faster but potentially stale)
+            force_reload: Not used (kept for compatibility)
+            max_age_seconds: Not used (kept for compatibility)
+
+        Note: Cache removed entirely - always loads fresh data from Drive
+        This ensures users always see the latest data without any cache issues.
         """
-        should_reload = force_reload or not self._is_data_loaded()
-
-        # Check data freshness - reload if too old
-        if not should_reload and self._is_data_loaded():
-            last_load_key = f'{self.session_key_prefix}last_load'
-            if last_load_key in st.session_state:
-                last_load_time = st.session_state[last_load_key]
-                age_seconds = (datetime.now() - last_load_time).total_seconds()
-
-                if age_seconds > max_age_seconds:
-                    print(f"🔄 Data cached for {age_seconds:.0f}s (max: {max_age_seconds}s) - reloading from Drive")
-                    should_reload = True
-
-        if should_reload:
-            self.load_from_drive()
+        # SIMPLIFIED: Always reload from Drive
+        print("🔄 NO CACHE: Always loading fresh data from Drive")
+        self.load_from_drive()
 
     def load_investors(self) -> List[Investor]:
         """Load investors from session state"""
@@ -703,12 +691,10 @@ class DriveBackedDataManager:
             self._set_session_data('transactions', transactions_df)
             self._set_session_data('fee_records', fee_records_df)
 
-            # CRITICAL: Mark session state as LOADED (not stale) after save
-            # This prevents immediate reload which would load from Drive cache (stale)
-            # Data in session state is already correct since we just saved it
-            st.session_state[f'{self.session_key_prefix}last_load'] = datetime.now()
+            # Mark as loaded (timestamp not used anymore since cache removed)
+            self._mark_as_loaded()
 
-            print("✅ Session state updated (marked as fresh - data in memory is correct)")
+            print("✅ Session state updated")
 
             # Backup to Drive
             print("☁️ Backing up to Drive...")

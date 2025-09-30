@@ -257,7 +257,7 @@ class EnhancedTransactionPage:
                     if success:
                         st.success(message)
 
-                        # Save to Drive immediately (DO NOT reload after)
+                        # Save to Drive
                         print("💾 Saving NAV update to Drive...")
                         save_success = self.fund_manager.save_data()
 
@@ -265,21 +265,35 @@ class EnhancedTransactionPage:
                             st.error("❌ Không thể lưu NAV update!")
                             return
 
-                        # Invalidate relevant caches
+                        # NO CACHE: Reload from Drive
+                        print("🔄 Reloading from Drive (no cache)...")
+                        import time
+                        time.sleep(2)
+
+                        # Reload with retry
+                        for attempt in range(3):
+                            try:
+                                if attempt > 0:
+                                    time.sleep(2)
+                                self.fund_manager.data_handler.load_from_drive()
+                                self.fund_manager.load_data()
+                                break
+                            except Exception as e:
+                                if attempt == 2:
+                                    st.warning(f"⚠️ Không thể reload, vui lòng reload thủ công")
+
+                        # Invalidate caches
                         invalidate_nav_cache()
-
-                        # Show success animation
-                        st.balloons()
-                        st.session_state.data_changed = False  # Data saved
-
-                        # Quick cache clear (optional)
                         try:
                             st.cache_data.clear()
-                        except Exception:
+                        except:
                             pass
 
-                        # Rerun UI (data already in memory, no reload needed)
-                        print("✅ NAV update saved - rerunning UI")
+                        # Show success
+                        st.balloons()
+                        st.session_state.data_changed = False
+
+                        print("✅ NAV update saved and reloaded")
                         st.rerun()
                     else:
                         st.error(message)
@@ -701,8 +715,7 @@ class EnhancedTransactionPage:
             if success:
                 st.success(f"✅ {message}")
 
-                # CRITICAL FIX: Save data immediately to Drive
-                # DO NOT reload after save - data in memory is already correct
+                # Save data immediately to Drive
                 print("💾 Saving transaction to Drive...")
                 save_success = self.fund_manager.save_data()
 
@@ -710,17 +723,40 @@ class EnhancedTransactionPage:
                     st.error("❌ Không thể lưu giao dịch!")
                     return
 
-                # Invalidate transaction and NAV caches
+                # NO CACHE: Must reload from Drive to get fresh data
+                # Use retry to handle Drive API cache lag
+                print("🔄 Reloading from Drive with retry (no cache)...")
+                import time
+
+                # Wait for Drive API indexing
+                time.sleep(2)
+
+                # Reload with retry (3 attempts)
+                max_attempts = 3
+                for attempt in range(max_attempts):
+                    try:
+                        if attempt > 0:
+                            print(f"   Retry {attempt}/{max_attempts-1}...")
+                            time.sleep(2)
+
+                        self.fund_manager.data_handler.load_from_drive()
+                        self.fund_manager.load_data()
+                        print(f"✅ Data reloaded successfully (attempt {attempt+1})")
+                        break
+                    except Exception as e:
+                        if attempt == max_attempts - 1:
+                            st.warning(f"⚠️ Không thể reload data, nhưng đã lưu thành công. Vui lòng reload thủ công.")
+                            print(f"❌ Reload failed after {max_attempts} attempts: {e}")
+
+                # Invalidate caches
                 invalidate_transaction_cache()
                 invalidate_nav_cache()
 
-                # Show balloons for positive feedback
+                # Show success
                 st.balloons()
-                st.session_state.data_changed = False  # Data is saved, no longer changed
+                st.session_state.data_changed = False
 
-                # Rerun UI to display the updated data (already in memory)
-                # DO NOT reload from Drive to avoid race condition with Drive API cache
-                print("✅ Transaction saved - rerunning UI")
+                print("✅ Transaction saved and reloaded - rerunning UI")
                 st.rerun()
             else:
                 st.error(f"❌ {message}")

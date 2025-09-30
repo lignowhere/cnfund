@@ -259,29 +259,28 @@ class SidebarManager:
             st.error(f"❌ Lỗi kết nối Drive: {str(e)}")
 
     def handle_reload_data(self):
-        """Handle reload data from Google Drive with retry for cache busting"""
+        """Handle reload data from Google Drive - NO CACHE, always fresh"""
         try:
-            with st.spinner("🔄 Đang tải lại dữ liệu từ Google Drive... (có thể mất vài giây)"):
-                # Force reload from Drive with retry to bust API cache
-                # This ensures we get the latest file even if Drive API is caching
-                print("🔄 Force reloading with cache busting...")
+            with st.spinner("🔄 Đang tải lại dữ liệu từ Google Drive..."):
+                # NO CACHE: Always load fresh data
+                print("🔄 Reloading data (no cache)...")
 
-                # Monkey-patch _find_latest_backup to use retries
-                original_method = self.data_handler._find_latest_backup
+                # Reload from Drive with retry
+                import time
+                max_attempts = 3
+                for attempt in range(max_attempts):
+                    try:
+                        if attempt > 0:
+                            print(f"   Retry {attempt}/{max_attempts-1}...")
+                            time.sleep(2)
 
-                def find_latest_with_retry():
-                    return original_method(expected_filename=None, max_retries=3)
-
-                self.data_handler._find_latest_backup = find_latest_with_retry
-
-                # Now load from Drive
-                self.data_handler.load_from_drive()
-
-                # Restore original method
-                self.data_handler._find_latest_backup = original_method
-
-                # Reload fund manager data
-                self.fund_manager.load_data()
+                        self.data_handler.load_from_drive()
+                        self.fund_manager.load_data()
+                        print(f"✅ Data reloaded (attempt {attempt+1})")
+                        break
+                    except Exception as e:
+                        if attempt == max_attempts - 1:
+                            raise e
 
                 st.success("✅ Đã tải lại dữ liệu mới nhất!")
                 st.toast("🔄 Data reloaded successfully", icon="✅")
