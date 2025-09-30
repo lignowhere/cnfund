@@ -505,18 +505,15 @@ class DriveBackedDataManager:
             transactions = []
             for _, row in df.iterrows():
                 try:
+                    # Transaction model fields: id, investor_id, date, type, amount, nav, units_change
                     transaction = Transaction(
                         id=safe_int_conversion(row['id']),
-                        transaction_type=str(row['transaction_type']),
                         investor_id=safe_int_conversion(row['investor_id']),
-                        tranche_id=str(row.get('tranche_id', '')),
-                        transaction_date=pd.to_datetime(row['transaction_date']),
-                        units=safe_float_conversion(row.get('units', 0.0)),
-                        nav=safe_float_conversion(row.get('nav', 0.0)),
+                        date=pd.to_datetime(row['transaction_date']),  # Map to 'date'
+                        type=str(row['transaction_type']),  # Map to 'type'
                         amount=safe_float_conversion(row.get('amount', 0.0)),
-                        fee_amount=safe_float_conversion(row.get('fee_amount', 0.0)),
-                        net_amount=safe_float_conversion(row.get('net_amount', 0.0)),
-                        notes=str(row.get('notes', ''))
+                        nav=safe_float_conversion(row.get('nav', 0.0)),
+                        units_change=safe_float_conversion(row.get('units', 0.0))  # Map to 'units_change'
                     )
 
                     transactions.append(transaction)
@@ -544,14 +541,18 @@ class DriveBackedDataManager:
             fee_records = []
             for _, row in df.iterrows():
                 try:
+                    # FeeRecord model fields: id, period, investor_id, fee_amount, fee_units,
+                    # calculation_date, units_before, units_after, nav_per_unit, description
                     fee_record = FeeRecord(
                         id=safe_int_conversion(row['id']),
                         investor_id=safe_int_conversion(row['investor_id']),
-                        tranche_id=str(row.get('tranche_id', '')),
-                        fee_date=pd.to_datetime(row['fee_date']),
-                        fee_type=str(row['fee_type']),
+                        period=str(row['fee_type']),  # Map 'fee_type' to 'period'
                         fee_amount=safe_float_conversion(row['fee_amount']),
-                        nav_at_fee=safe_float_conversion(row.get('nav_at_fee', 0.0)),
+                        fee_units=safe_float_conversion(row.get('fee_units', 0.0)),
+                        calculation_date=pd.to_datetime(row['fee_date']),  # Map to 'calculation_date'
+                        units_before=safe_float_conversion(row.get('units_before', 0.0)),
+                        units_after=safe_float_conversion(row.get('units_after', 0.0)),
+                        nav_per_unit=safe_float_conversion(row.get('nav_at_fee', 0.0)),  # Map to 'nav_per_unit'
                         description=str(row.get('description', ''))
                     )
 
@@ -580,25 +581,41 @@ class DriveBackedDataManager:
     ) -> bool:
         """Save all data to session state and backup to Drive"""
         try:
+            print(f"💾 Starting save: {len(investors)} investors, {len(tranches)} tranches, {len(transactions)} transactions, {len(fee_records)} fee records")
+
             # Convert to DataFrames
+            print("📊 Converting to DataFrames...")
             investors_df = self._investors_to_df(investors)
             tranches_df = self._tranches_to_df(tranches)
             transactions_df = self._transactions_to_df(transactions)
             fee_records_df = self._fee_records_to_df(fee_records)
 
+            print(f"✅ DataFrames created: {len(investors_df)} investors, {len(tranches_df)} tranches, {len(transactions_df)} transactions, {len(fee_records_df)} fees")
+
             # Save to session state
+            print("💾 Saving to session state...")
             self._set_session_data('investors', investors_df)
             self._set_session_data('tranches', tranches_df)
             self._set_session_data('transactions', transactions_df)
             self._set_session_data('fee_records', fee_records_df)
 
+            print("✅ Session state updated")
+
             # Backup to Drive
+            print("☁️ Backing up to Drive...")
             success = self.backup_to_drive()
+
+            if success:
+                print("✅ Save completed successfully")
+            else:
+                print("⚠️ Drive backup failed (session state saved)")
 
             return success
 
         except Exception as e:
             print(f"❌ Error saving data: {e}")
+            import traceback
+            traceback.print_exc()
             return False
 
     def _investors_to_df(self, investors: List[Investor]) -> pd.DataFrame:
@@ -640,16 +657,16 @@ class DriveBackedDataManager:
         for txn in transactions:
             data.append({
                 'id': txn.id,
-                'transaction_type': txn.transaction_type,
+                'transaction_type': txn.type,  # Model uses 'type', not 'transaction_type'
                 'investor_id': txn.investor_id,
-                'tranche_id': txn.tranche_id,
-                'transaction_date': txn.transaction_date,
-                'units': txn.units,
+                'tranche_id': getattr(txn, 'tranche_id', ''),  # Optional field
+                'transaction_date': txn.date,  # Model uses 'date', not 'transaction_date'
+                'units': txn.units_change,  # Model uses 'units_change', not 'units'
                 'nav': txn.nav,
                 'amount': txn.amount,
-                'fee_amount': txn.fee_amount,
-                'net_amount': txn.net_amount,
-                'notes': txn.notes
+                'fee_amount': getattr(txn, 'fee_amount', 0.0),  # Optional field
+                'net_amount': getattr(txn, 'net_amount', 0.0),  # Optional field
+                'notes': getattr(txn, 'notes', '')  # Optional field
             })
         return pd.DataFrame(data)
 
@@ -660,11 +677,15 @@ class DriveBackedDataManager:
             data.append({
                 'id': fee.id,
                 'investor_id': fee.investor_id,
-                'tranche_id': fee.tranche_id,
-                'fee_date': fee.fee_date,
-                'fee_type': fee.fee_type,
+                'tranche_id': getattr(fee, 'tranche_id', ''),  # Optional field
+                'fee_date': fee.calculation_date,  # Model uses 'calculation_date'
+                'fee_type': fee.period,  # Model uses 'period' for fee type/period
                 'fee_amount': fee.fee_amount,
-                'nav_at_fee': fee.nav_at_fee,
-                'description': fee.description
+                'nav_at_fee': fee.nav_per_unit,  # Model uses 'nav_per_unit'
+                'description': fee.description,
+                # Additional fields from model
+                'fee_units': fee.fee_units,
+                'units_before': fee.units_before,
+                'units_after': fee.units_after
             })
         return pd.DataFrame(data)
