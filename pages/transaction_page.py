@@ -251,26 +251,35 @@ class EnhancedTransactionPage:
                     current_time = datetime.now().time()
                     trans_date_dt = datetime.combine(trans_date, current_time)
                     
-                    # ULTRA FAST: Direct processing without debug logging
+                    # Process NAV update
                     success, message = self.fund_manager.process_nav_update(total_nav, trans_date_dt)
-                    
+
                     if success:
                         st.success(message)
-                        st.session_state.data_changed = True  # Set refresh flag
+
+                        # Save to Drive immediately (DO NOT reload after)
+                        print("💾 Saving NAV update to Drive...")
+                        save_success = self.fund_manager.save_data()
+
+                        if not save_success:
+                            st.error("❌ Không thể lưu NAV update!")
+                            return
 
                         # Invalidate relevant caches
                         invalidate_nav_cache()
 
-                        # ULTRA FAST: Immediate visual feedback
-                        st.balloons()  # Show success animation immediately
+                        # Show success animation
+                        st.balloons()
+                        st.session_state.data_changed = False  # Data saved
 
-                        # ULTRA FAST: Minimal background processing (non-blocking)
+                        # Quick cache clear (optional)
                         try:
-                            st.cache_data.clear()  # Quick cache clear only
+                            st.cache_data.clear()
                         except Exception:
-                            pass  # Don't block on cache errors
-                        
-                        # ULTRA FAST: Immediate rerun without waiting for post-processing
+                            pass
+
+                        # Rerun UI (data already in memory, no reload needed)
+                        print("✅ NAV update saved - rerunning UI")
                         st.rerun()
                     else:
                         st.error(message)
@@ -692,7 +701,8 @@ class EnhancedTransactionPage:
             if success:
                 st.success(f"✅ {message}")
 
-                # CRITICAL FIX: Save data immediately to Drive BEFORE reloading
+                # CRITICAL FIX: Save data immediately to Drive
+                # DO NOT reload after save - data in memory is already correct
                 print("💾 Saving transaction to Drive...")
                 save_success = self.fund_manager.save_data()
 
@@ -700,19 +710,17 @@ class EnhancedTransactionPage:
                     st.error("❌ Không thể lưu giao dịch!")
                     return
 
-                # Wait for Drive API to index the new file
-                print("⏳ Waiting for Drive indexing...")
-                import time
-                time.sleep(3)  # Wait for Drive API to complete upload and indexing
-
-                # Now it's safe to reload - the new file should be available
-                print("🔄 Reloading data from Drive after transaction...")
-                self.fund_manager.data_handler.ensure_data_loaded(force_reload=True)
-                self.fund_manager.load_data()
+                # Invalidate transaction and NAV caches
+                invalidate_transaction_cache()
+                invalidate_nav_cache()
 
                 # Show balloons for positive feedback
                 st.balloons()
-                st.session_state.data_changed = True
+                st.session_state.data_changed = False  # Data is saved, no longer changed
+
+                # Rerun UI to display the updated data (already in memory)
+                # DO NOT reload from Drive to avoid race condition with Drive API cache
+                print("✅ Transaction saved - rerunning UI")
                 st.rerun()
             else:
                 st.error(f"❌ {message}")
