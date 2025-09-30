@@ -161,16 +161,21 @@ class SidebarManager:
     def render_action_buttons(self):
         """Render các nút thao tác nhanh - theo style code gốc"""
         st.sidebar.markdown('<div class="sidebar-section">Thao tác nhanh</div>', unsafe_allow_html=True)
-        
+
         col1, col2 = st.sidebar.columns(2)
-        
-        if col1.button("📊 Export Excel", width="stretch", 
+
+        if col1.button("📊 Export Excel", use_container_width=True,
                       help="Xuất báo cáo tổng hợp ra file Excel"):
             self.handle_excel_export()
-        
-        if col2.button("☁️ Test Drive", width="stretch", 
+
+        if col2.button("☁️ Test Drive", use_container_width=True,
                       help="Kiểm tra kết nối tới Google Drive"):
             self.handle_drive_test()
+
+        # Reload data button (full width)
+        if st.sidebar.button("🔄 Reload Data", use_container_width=True,
+                            help="Tải lại dữ liệu mới nhất từ Google Drive"):
+            self.handle_reload_data()
 
     def render_connection_status(self):
         """Render thông tin debug - theo style code gốc"""
@@ -237,21 +242,42 @@ class SidebarManager:
         """Handle Google Drive connection test"""
         try:
             from integrations.google_drive_manager import GoogleDriveManager
-            
+
             with st.spinner("☁️ Kiểm tra Google Drive..."):
                 gdrive = GoogleDriveManager(self.fund_manager)
-                
+
                 if gdrive.connected:
                     st.success("✅ Google Drive kết nối thành công!")
                     st.toast("☁️ Drive connection OK", icon="✅")
                 else:
                     st.error("❌ Không thể kết nối Google Drive")
                     st.info("💡 Kiểm tra file credentials.json")
-                    
+
         except ImportError:
             st.error("❌ Google Drive Manager không khả dụng")
         except Exception as e:
             st.error(f"❌ Lỗi kết nối Drive: {str(e)}")
+
+    def handle_reload_data(self):
+        """Handle reload data from Google Drive"""
+        try:
+            with st.spinner("🔄 Đang tải lại dữ liệu từ Google Drive..."):
+                # Force reload from Drive
+                self.data_handler.ensure_data_loaded(force_reload=True)
+
+                # Reload fund manager data
+                self.fund_manager.load_data()
+
+                st.success("✅ Đã tải lại dữ liệu mới nhất!")
+                st.toast("🔄 Data reloaded successfully", icon="✅")
+
+                # Rerun to refresh UI
+                st.rerun()
+
+        except Exception as e:
+            st.error(f"❌ Lỗi tải lại dữ liệu: {str(e)}")
+            import traceback
+            print(traceback.format_exc())
 
     def handle_data_refresh(self):
         """Handle data refresh operation"""

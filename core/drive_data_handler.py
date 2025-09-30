@@ -400,9 +400,28 @@ class DriveBackedDataManager:
     # Data Access Methods (compatible with CSVDataHandler)
     # ========================================
 
-    def ensure_data_loaded(self):
-        """Ensure data is loaded - load from Drive if needed"""
-        if not self._is_data_loaded():
+    def ensure_data_loaded(self, force_reload: bool = False, max_age_seconds: int = 300):
+        """
+        Ensure data is loaded - load from Drive if needed
+
+        Args:
+            force_reload: Force reload from Drive even if already loaded
+            max_age_seconds: Maximum age of cached data in seconds (default: 5 minutes)
+        """
+        should_reload = force_reload or not self._is_data_loaded()
+
+        # Check data freshness - reload if too old
+        if not should_reload and self._is_data_loaded():
+            last_load_key = f'{self.session_key_prefix}last_load'
+            if last_load_key in st.session_state:
+                last_load_time = st.session_state[last_load_key]
+                age_seconds = (datetime.now() - last_load_time).total_seconds()
+
+                if age_seconds > max_age_seconds:
+                    print(f"🔄 Data cached for {age_seconds:.0f}s (max: {max_age_seconds}s) - reloading from Drive")
+                    should_reload = True
+
+        if should_reload:
             self.load_from_drive()
 
     def load_investors(self) -> List[Investor]:
@@ -598,6 +617,9 @@ class DriveBackedDataManager:
             self._set_session_data('tranches', tranches_df)
             self._set_session_data('transactions', transactions_df)
             self._set_session_data('fee_records', fee_records_df)
+
+            # Update last_load timestamp to mark data as fresh
+            st.session_state[f'{self.session_key_prefix}last_load'] = datetime.now()
 
             print("✅ Session state updated")
 
