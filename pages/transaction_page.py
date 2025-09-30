@@ -69,7 +69,7 @@ class EnhancedTransactionPage:
     @track_performance("load_transactions")
     def get_transactions(_self):
         """Load transactions with caching"""
-        return _self.fund_manager.get_all_transactions()
+        return _self.fund_manager.transactions
 
     @cache_nav_data
     @track_performance("load_nav_history")
@@ -691,6 +691,13 @@ class EnhancedTransactionPage:
 
             if success:
                 st.success(f"✅ {message}")
+
+                # IMPORTANT: Force reload data from Drive after save
+                # This ensures the UI immediately reflects the new transaction
+                print("🔄 Forcing reload from Drive after transaction...")
+                self.fund_manager.data_handler.ensure_data_loaded(force_reload=True)
+                self.fund_manager.load_data()
+
                 # Show balloons for positive feedback
                 st.balloons()
                 st.session_state.data_changed = True

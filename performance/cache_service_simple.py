@@ -54,11 +54,13 @@ def warm_cache(fund_manager):
     try:
         # Pre-load frequently accessed data
         _ = fund_manager.get_regular_investors()
-        _ = fund_manager.get_all_transactions()
+        _ = fund_manager.transactions  # Access transactions list directly
         _ = fund_manager.get_latest_total_nav()
         print("✅ Cache warming completed")
     except Exception as e:
         print(f"⚠️ Cache warming failed: {e}")
+        import traceback
+        traceback.print_exc()
 
 # === CACHE STATISTICS (SIMPLIFIED) ===
 
@@ -105,7 +107,7 @@ def cached_load_investors(fund_manager):
 @st.cache_data(ttl=120, show_spinner=False)
 def cached_load_transactions(fund_manager):
     """Cache transaction loading"""
-    return fund_manager.get_all_transactions()
+    return fund_manager.transactions
 
 @st.cache_data(ttl=300, show_spinner=False)
 def cached_load_nav_history(fund_manager):

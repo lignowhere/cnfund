@@ -32,7 +32,7 @@ class EnhancedReportPage:
         return {
             'investors': _self.fund_manager.get_regular_investors(),
             'latest_nav': _self.fund_manager.get_latest_total_nav(),
-            'transactions': _self.fund_manager.get_all_transactions()
+            'transactions': _self.fund_manager.transactions
         }
     
     def render_reports(self):

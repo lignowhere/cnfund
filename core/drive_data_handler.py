@@ -10,7 +10,7 @@ import pandas as pd
 import streamlit as st
 from pathlib import Path
 from typing import List, Optional, Dict, Any
-from datetime import datetime, date
+from datetime import datetime, date, timedelta
 
 from .models import Investor, Tranche, Transaction, FeeRecord
 from utils.timezone_manager import TimezoneManager
@@ -657,10 +657,12 @@ class DriveBackedDataManager:
             self._set_session_data('transactions', transactions_df)
             self._set_session_data('fee_records', fee_records_df)
 
-            # Update last_load timestamp to mark data as fresh
-            st.session_state[f'{self.session_key_prefix}last_load'] = datetime.now()
+            # IMPORTANT: Mark data as stale to force reload on next access
+            # This ensures changes are picked up by other sessions/users
+            # We set last_load to a very old time to trigger immediate reload
+            st.session_state[f'{self.session_key_prefix}last_load'] = datetime.now() - timedelta(hours=24)
 
-            print("✅ Session state updated")
+            print("✅ Session state updated (marked as stale for next reload)")
 
             # Backup to Drive
             print("☁️ Backing up to Drive...")
