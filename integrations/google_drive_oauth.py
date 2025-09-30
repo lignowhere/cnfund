@@ -144,8 +144,20 @@ if GOOGLE_OAUTH_AVAILABLE:
                         import json
                         import tempfile
 
+                        # Convert AttrDict to regular dict (Streamlit secrets issue)
+                        def convert_to_dict(obj):
+                            """Recursively convert AttrDict to dict"""
+                            if hasattr(obj, 'to_dict'):
+                                return obj.to_dict()
+                            elif isinstance(obj, dict):
+                                return {k: convert_to_dict(v) for k, v in obj.items()}
+                            elif isinstance(obj, list):
+                                return [convert_to_dict(item) for item in obj]
+                            else:
+                                return obj
+
                         # Create temp credentials file from secrets
-                        creds_dict = dict(st.secrets['oauth_credentials'])
+                        creds_dict = convert_to_dict(st.secrets['oauth_credentials'])
 
                         with tempfile.NamedTemporaryFile(mode='w', suffix='.json', delete=False) as f:
                             json.dump(creds_dict, f)
