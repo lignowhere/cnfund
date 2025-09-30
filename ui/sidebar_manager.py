@@ -21,33 +21,31 @@ class SidebarManager:
         self.menu_options = menu_options
         self._cache = {}
 
-    @st.cache_data(ttl=30, show_spinner=False)
-    def _get_nav_data(_self):
-        """Get NAV data with caching"""
+    def _get_nav_data(self):
+        """Get NAV data - NO CACHE (always fresh)"""
         try:
-            latest_nav = _self.fund_manager.get_latest_total_nav()
-            fund_manager = _self.fund_manager.get_fund_manager()
+            latest_nav = self.fund_manager.get_latest_total_nav()
+            fund_manager = self.fund_manager.get_fund_manager()
 
             fm_info = None
             if fund_manager and latest_nav and latest_nav > 0:
-                fm_tranches = _self.fund_manager.get_investor_tranches(fund_manager.id)
+                fm_tranches = self.fund_manager.get_investor_tranches(fund_manager.id)
                 if fm_tranches:
                     fm_units = sum(t.units for t in fm_tranches)
-                    fm_value = fm_units * _self.fund_manager.calculate_price_per_unit(latest_nav)
+                    fm_value = fm_units * self.fund_manager.calculate_price_per_unit(latest_nav)
                     fm_info = {'units': fm_units, 'value': fm_value}
 
             return {'nav': latest_nav, 'fm_info': fm_info}
         except Exception:
             return {'nav': None, 'fm_info': None}
 
-    @st.cache_data(ttl=60)
-    def _get_stats_data(_self):
-        """Get statistics data with caching"""
+    def _get_stats_data(self):
+        """Get statistics data - NO CACHE (always fresh)"""
         try:
-            regular_investors = _self.fund_manager.get_regular_investors()
-            active_tranches = [t for t in _self.fund_manager.tranches if t.units > 0]
-            fee_records_count = len(_self.fund_manager.fee_records)
-            
+            regular_investors = self.fund_manager.get_regular_investors()
+            active_tranches = [t for t in self.fund_manager.tranches if t.units > 0]
+            fee_records_count = len(self.fund_manager.fee_records)
+
             return {
                 'investors': len(regular_investors),
                 'tranches': len(active_tranches),

@@ -1,33 +1,33 @@
 """
 Simplified Caching Service for CNFund System
-Uses only Streamlit's built-in caching decorators
+NO CACHE - All decorators are pass-through (do nothing)
 """
 
 import streamlit as st
 from typing import Callable
 from functools import wraps
 
-# === SIMPLE CACHE DECORATORS ===
+# === NO CACHE DECORATORS (Pass-through only) ===
 
 def cache_investor_data(func: Callable):
-    """Cache investor data (5 minutes TTL)"""
-    return st.cache_data(ttl=300, show_spinner=False)(func)
+    """NO CACHE - Returns function as-is"""
+    return func
 
 def cache_transaction_data(func: Callable):
-    """Cache transaction data (2 minutes TTL)"""
-    return st.cache_data(ttl=120, show_spinner=False)(func)
+    """NO CACHE - Returns function as-is"""
+    return func
 
 def cache_nav_data(func: Callable):
-    """Cache NAV data (5 minutes TTL)"""
-    return st.cache_data(ttl=300, show_spinner=False)(func)
+    """NO CACHE - Returns function as-is"""
+    return func
 
 def cache_report_data(func: Callable):
-    """Cache report data (10 minutes TTL)"""
-    return st.cache_data(ttl=600, show_spinner=False)(func)
+    """NO CACHE - Returns function as-is"""
+    return func
 
 def cache_static_data(func: Callable):
-    """Cache static data (1 hour TTL)"""
-    return st.cache_data(ttl=3600, show_spinner=False)(func)
+    """NO CACHE - Returns function as-is"""
+    return func
 
 # === CACHE INVALIDATION ===
 
@@ -77,14 +77,13 @@ def render_cache_info():
     """Render cache information"""
     st.subheader("💾 Cache Information")
     st.info("""
-    **Caching Strategy:**
-    - Investor Data: 5 minutes
-    - Transaction Data: 2 minutes
-    - NAV Data: 5 minutes
-    - Report Data: 10 minutes
+    **Caching Strategy: NO CACHE**
+    - All data is always loaded fresh from Google Drive
+    - Ensures 100% data accuracy and consistency
+    - No stale data issues
 
-    Cache is automatically managed by Streamlit.
-    Data refreshes automatically after TTL expires.
+    ✅ Every page load = fresh data
+    ✅ All users see the same (latest) data
     """)
 
     col1, col2 = st.columns(2)
