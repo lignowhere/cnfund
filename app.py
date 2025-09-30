@@ -51,45 +51,31 @@ def load_config():
 
 @st.cache_resource
 def load_data_handler():
-    """Load and cache data handler - Drive-backed for cloud, CSV for local"""
+    """Load and cache data handler - Always use Google Drive for unified storage"""
     try:
-        # Detect environment
+        # ✅ UNIFIED: Always use Google Drive (local + cloud)
+        from core.drive_data_handler import DriveBackedDataManager
+        data_handler = DriveBackedDataManager()
+
+        if not hasattr(data_handler, 'connected') or not data_handler.connected:
+            st.warning("⚠️ Google Drive chưa kết nối - cần setup OAuth")
+            st.info("📖 Xem hướng dẫn setup tại: docs/STREAMLIT_CLOUD_SETUP.md")
+            st.info("💡 Chạy local: `python scripts/setup_oauth.py` để authenticate")
+            return None
+
+        # Show success message for first-time users
         is_cloud = is_cloud_environment()
+        env_label = "Cloud" if is_cloud else "Local"
 
-        if is_cloud:
-            # ✅ Cloud: Use Drive-backed data handler
-            from core.drive_data_handler import DriveBackedDataManager
-            data_handler = DriveBackedDataManager()
+        if 'drive_handler_loaded' not in st.session_state:
+            st.sidebar.success(f"✅ Sử dụng Google Drive Storage ({env_label})")
+            st.session_state.drive_handler_loaded = True
 
-            if not hasattr(data_handler, 'connected') or not data_handler.connected:
-                st.warning("⚠️ Google Drive chưa kết nối - cần setup OAuth")
-                st.info("📖 Xem hướng dẫn setup tại: docs/STREAMLIT_CLOUD_SETUP.md")
-                return None
-
-            # Show success message for first-time users
-            if 'drive_handler_loaded' not in st.session_state:
-                st.sidebar.success("✅ Sử dụng Google Drive Storage (Cloud)")
-                st.session_state.drive_handler_loaded = True
-
-            return data_handler
-        else:
-            # 🏠 Local: Use CSV Data Handler
-            from core.csv_data_handler import CSVDataHandler
-            data_handler = CSVDataHandler()
-
-            if not hasattr(data_handler, 'connected') or not data_handler.connected:
-                st.error("❌ Không thể khởi tạo CSV Data Handler")
-                return None
-
-            # Show success message for first-time users
-            if 'csv_handler_loaded' not in st.session_state:
-                st.sidebar.success("✅ Sử dụng CSV Local Storage")
-                st.session_state.csv_handler_loaded = True
-
-            return data_handler
+        return data_handler
 
     except Exception as e:
         st.error(f"❌ Lỗi khởi tạo Data Handler: {str(e)}")
+        st.info("💡 Đảm bảo đã cài đặt: `pip install google-auth-oauthlib googleapiclient`")
         return None
 
 @st.cache_resource

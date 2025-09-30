@@ -455,7 +455,8 @@ def show_drive_backup_controls():
     is_drive_handler = type(data_handler).__name__ == 'DriveBackedDataManager'
 
     if not is_drive_handler:
-        st.info("ℹ️ Đang sử dụng CSV local storage - không cần Drive backup")
+        st.warning("⚠️ Hệ thống cần Google Drive để hoạt động")
+        st.info("💡 App hiện đang dùng Google Drive làm storage chính cho cả local và cloud")
         return
 
     # Show Drive connection status
