@@ -214,36 +214,39 @@ class EnhancedFundManager:
         return (total_nav / total_units) if total_units > EPSILON else DEFAULT_UNIT_PRICE
 
     def get_latest_total_nav(self) -> Optional[float]:
+        """
+        Get the latest Total NAV from the most recent transaction (any type).
+
+        Returns NAV from the most recent transaction by date and ID,
+        regardless of transaction type (NAV Update, Nạp, Rút, etc.).
+        This ensures we always use the most up-to-date NAV value.
+        """
         if not self.transactions:
             return None
+
+        # Get all transactions with valid NAV (any type)
         nav_transactions = [t for t in self.transactions if (t.nav is not None and t.nav > 0)]
         if not nav_transactions:
             return None
-        
-        # OPTIMIZED: Removed debug logging for faster performance
-        # FIXED: Smart sorting that handles both chronological order and ID order correctly
-        nav_update_transactions = [t for t in nav_transactions if t.type == "NAV Update"]
-        if nav_update_transactions:
-            # Smart sorting: First by date (converted to date only), then by ID
-            # This handles timezone issues while respecting user's date selection
-            def smart_sort_key(tx):
-                # Convert datetime to date to avoid timezone confusion
-                tx_date = tx.date.date() if hasattr(tx.date, 'date') else tx.date
-                return (tx_date, tx.id)
-            
-            sorted_transactions = sorted(nav_update_transactions, key=smart_sort_key, reverse=True)
-            latest_nav_update = sorted_transactions[0]
-            
-            return latest_nav_update.nav
-        else:
-            # Fallback to any transaction with NAV, use same smart sorting
-            def smart_sort_key(tx):
-                tx_date = tx.date.date() if hasattr(tx.date, 'date') else tx.date
-                return (tx_date, tx.id)
-            
-            sorted_transactions = sorted(nav_transactions, key=smart_sort_key, reverse=True)
-            latest_any = sorted_transactions[0] 
-            return latest_any.nav
+
+        # Sort by date (newest first), then by ID (highest first)
+        # This gets the LATEST transaction regardless of type
+        def smart_sort_key(tx):
+            # Convert datetime to date to avoid timezone confusion
+            tx_date = tx.date.date() if hasattr(tx.date, 'date') else tx.date
+            return (tx_date, tx.id)
+
+        sorted_transactions = sorted(nav_transactions, key=smart_sort_key, reverse=True)
+        latest_transaction = sorted_transactions[0]
+
+        # Debug: Show which transaction was used for NAV
+        tx_date = latest_transaction.date.date() if hasattr(latest_transaction.date, 'date') else latest_transaction.date
+        print(f"📊 Latest NAV: {latest_transaction.nav:,.0f} from transaction:")
+        print(f"   Type: {latest_transaction.type}")
+        print(f"   Date: {tx_date}")
+        print(f"   ID: {latest_transaction.id}")
+
+        return latest_transaction.nav
 
     def get_nav_for_date(self, target_date) -> Optional[float]:
         """Get NAV for a specific date (most recent NAV on or before that date)"""
