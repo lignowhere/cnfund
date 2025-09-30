@@ -575,9 +575,10 @@ def main():
                 st.json({
                     "Fund Manager Type": type(fm).__name__,
                     "Has backup_manager": hasattr(fm, 'backup_manager'),
-                    "backup_manager value": str(fm.backup_manager) if hasattr(fm, 'backup_manager') else "N/A",
+                    "backup_manager value": str(getattr(fm, 'backup_manager', None)) if hasattr(fm, 'backup_manager') else "N/A",
                     "Data Handler Type": type(fm.data_handler).__name__,
-                    "Auto Backup Available": AUTO_BACKUP_AVAILABLE
+                    "Auto Backup Available": AUTO_BACKUP_AVAILABLE,
+                    "Backup System": "PersonalAutoBackupManager (integrated via app.py)"
                 })
             else:
                 st.warning("Fund manager not in session state")

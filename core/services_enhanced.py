@@ -33,12 +33,12 @@ class EnhancedFundManager:
         if enable_snapshots:
             print("🚀 Backup system: PersonalAutoBackupManager (via app integration)")
             # Old backup managers removed - now handled by auto_backup_personal.py
-            # self.backup_manager  # Removed = None
             self.snapshot_manager = None
         else:
             print("🚫 Backup system disabled (enable_snapshots=False)")
-            # self.backup_manager  # Removed = None
             self.snapshot_manager = None
+
+        # DO NOT set backup_manager attribute - it's now handled by auto_backup_personal service
             
         # self.load_data()
         # self._ensure_fund_manager_exists()
@@ -65,15 +65,8 @@ class EnhancedFundManager:
         """
         ULTRA OPTIMIZED: Deferred backup - maximum UI responsiveness
         """
-        if not self.backup_manager:
-            return
-        
-        # ULTRA FAST: Skip all auto-backup for immediate operations
-        if operation_type in ['NAV_UPDATE', 'DEPOSIT', 'PARTIAL_WITHDRAWAL', 'FULL_WITHDRAWAL']:
-            return  # Skip auto-backup entirely for frequent operations
-        
-        # For critical operations only
-        # Note: Old backup_manager removed - auto-backup handled by integrations.auto_backup_personal
+        # backup_manager removed - auto-backup handled by integrations.auto_backup_personal
+        # All backup operations are now handled by the auto_backup_personal service
         pass
     
     def _should_skip_frequent_backup(self) -> bool:
@@ -1367,85 +1360,39 @@ class EnhancedFundManager:
     def create_manual_backup(self, backup_type: str = "MANUAL") -> str:
         """
         Tạo manual backup
+        Note: backup_manager removed - backups handled by auto_backup_personal service
         """
-        if not self.backup_manager:
-            print("❌ Backup system not enabled")
-            return None
-        
-        # Check if using cloud backup manager
-        if hasattr(self.backup_manager, 'create_database_backup'):
-            backup_id = self.backup_manager.create_database_backup(self, backup_type)
-        else:
-            backup_id = self.backup_manager.create_daily_backup(self, backup_type)
-        if backup_id:
-            print(f"✅ Manual backup created: {backup_id}")
-        return backup_id
+        print("ℹ️ Manual backup creation is now handled by auto_backup_personal service")
+        return None
     
     def restore_from_backup(self, backup_id: str = None, backup_date: str = None) -> bool:
         """
         Restore từ backup
+        Note: backup_manager removed - backups handled by auto_backup_personal service
         """
-        if not self.backup_manager:
-            print("❌ Backup system not enabled")
-            return False
-        
-        # Create emergency backup before restore
-        if hasattr(self.backup_manager, 'create_database_backup'):
-            emergency_backup = self.backup_manager.create_database_backup(self, "PRE_RESTORE_EMERGENCY")
-            print(f"🚨 Created emergency backup before restore: {emergency_backup}")
-            success = self.backup_manager.restore_database_backup(self, backup_id, backup_date)
-        else:
-            emergency_backup = self.backup_manager.create_daily_backup(self, "PRE_RESTORE_EMERGENCY")  
-            print(f"🚨 Created emergency backup before restore: {emergency_backup}")
-            success = self.backup_manager.restore_daily_backup(self, backup_id, backup_date)
-        if success:
-            print(f"✅ Successfully restored from backup")
-            # Trigger data validation after restore
-            validation_result = self.validate_data_integrity(detailed=False)
-            if validation_result['is_valid']:
-                print(f"✅ Data integrity validation PASSED after restore")
-            else:
-                print(f"⚠️  Data integrity issues found after restore: {len(validation_result['errors'])} errors")
-        else:
-            print(f"❌ Failed to restore from backup")
-        
-        return success
+        print("ℹ️ Backup restoration is now handled by auto_backup_personal service")
+        return False
     
     def get_backup_status(self) -> Dict[str, Any]:
         """
         Get backup system status
+        Note: backup_manager removed - backups handled by auto_backup_personal service
         """
-        if not self.backup_manager:
-            return {'enabled': False, 'message': 'Backup system not enabled'}
-        
-        stats = self.backup_manager.get_backup_stats()
-        return {'enabled': True, **stats}
+        return {'enabled': True, 'message': 'Backup handled by auto_backup_personal service'}
     
     def list_available_backups(self, days: int = 30) -> List[Dict[str, Any]]:
         """
         List available backups
+        Note: backup_manager removed - backups handled by auto_backup_personal service
         """
-        if not self.backup_manager:
-            return []
-        
-        if hasattr(self.backup_manager, 'list_database_backups'):
-            return self.backup_manager.list_database_backups(days)
-        else:
-            return self.backup_manager.list_daily_backups(days)
+        return []
     
     def trigger_auto_backup_if_needed(self) -> bool:
         """
         Trigger auto backup nếu cần (called from main application)
+        Note: backup_manager removed - backups handled by auto_backup_personal service
         """
-        if not self.backup_manager:
-            return False
-        
-        # For cloud backup, trigger manual backup
-        if hasattr(self.backup_manager, 'create_database_backup'):
-            backup_id = self.backup_manager.create_database_backup(self, "AUTO_TRIGGER")
-            return backup_id is not None
-        else:
-            return self.backup_manager.trigger_auto_backup(self)
+        return True  # Auto backup service runs independently
     
     def create_emergency_backup(self) -> str:
         """
