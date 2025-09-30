@@ -140,22 +140,56 @@ class DriveBackedDataManager:
             # Search for Excel backup files
             query = f"'{folder_id}' in parents and name contains 'CNFund_Backup' and mimeType='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' and trashed=false"
 
+            # Get ALL matching files first (up to 100)
             results = self.drive_manager.service.files().list(
                 q=query,
                 orderBy='modifiedTime desc',
-                pageSize=1,
-                fields='files(id, name, modifiedTime, webViewLink)'
+                pageSize=100,
+                fields='files(id, name, modifiedTime, createdTime, webViewLink)'
             ).execute()
 
             files = results.get('files', [])
 
-            if files:
-                return files[0]
+            if not files:
+                return None
 
-            return None
+            # Sort by filename timestamp (most reliable)
+            # Format: CNFund_Backup_YYYYMMDD_HHMMSS.xlsx
+            def extract_timestamp(filename: str) -> str:
+                """Extract timestamp from filename for sorting"""
+                try:
+                    # CNFund_Backup_20250930_143020.xlsx -> 20250930_143020
+                    parts = filename.split('_')
+                    if len(parts) >= 3:
+                        # Get last two parts before .xlsx
+                        timestamp = '_'.join(parts[-2:]).replace('.xlsx', '')
+                        return timestamp
+                    return '0'
+                except:
+                    return '0'
+
+            # Sort files by extracted timestamp (descending)
+            sorted_files = sorted(files, key=lambda f: extract_timestamp(f['name']), reverse=True)
+
+            latest = sorted_files[0]
+
+            print(f"📂 Found {len(files)} backup files")
+            print(f"✅ Using latest: {latest['name']}")
+            print(f"   Modified: {latest.get('modifiedTime', 'N/A')}")
+            print(f"   Created: {latest.get('createdTime', 'N/A')}")
+
+            # Show other recent files for debugging
+            if len(sorted_files) > 1:
+                print(f"📋 Other recent backups:")
+                for i, f in enumerate(sorted_files[1:4], 1):  # Show next 3
+                    print(f"   {i}. {f['name']} (Modified: {f.get('modifiedTime', 'N/A')})")
+
+            return latest
 
         except Exception as e:
             print(f"⚠️ Could not find backup: {e}")
+            import traceback
+            traceback.print_exc()
             return None
 
     def _download_file(self, file_id: str) -> Optional[io.BytesIO]:
@@ -232,8 +266,14 @@ class DriveBackedDataManager:
 
         return pd.DataFrame(columns=schemas.get(table_name, []))
 
-    def backup_to_drive(self) -> bool:
-        """Backup all session data to Google Drive"""
+    def backup_to_drive(self, auto_cleanup: bool = True, keep_recent: int = 10) -> bool:
+        """
+        Backup all session data to Google Drive
+
+        Args:
+            auto_cleanup: Automatically delete old backups (default: True)
+            keep_recent: Number of recent backups to keep (default: 10)
+        """
         if not self.connected:
             st.warning("⚠️ Không thể backup - Drive chưa kết nối")
             return False
@@ -254,6 +294,11 @@ class DriveBackedDataManager:
 
                 if success:
                     st.session_state[f'{self.session_key_prefix}last_backup'] = datetime.now()
+
+                    # Auto cleanup old backups
+                    if auto_cleanup:
+                        self._cleanup_old_backups(keep_recent)
+
                     return True
 
                 return False
@@ -262,6 +307,69 @@ class DriveBackedDataManager:
             st.error(f"❌ Lỗi backup: {e}")
             print(f"❌ Backup error: {e}")
             return False
+
+    def _cleanup_old_backups(self, keep_recent: int = 10):
+        """
+        Delete old backup files, keeping only the most recent ones
+
+        Args:
+            keep_recent: Number of recent backups to keep (default: 10)
+        """
+        try:
+            if not self.drive_manager or not self.drive_manager.service:
+                return
+
+            folder_id = self.drive_manager.folder_id
+
+            # Get ALL backup files
+            query = f"'{folder_id}' in parents and name contains 'CNFund_Backup' and mimeType='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' and trashed=false"
+
+            results = self.drive_manager.service.files().list(
+                q=query,
+                orderBy='modifiedTime desc',
+                pageSize=100,
+                fields='files(id, name, modifiedTime)'
+            ).execute()
+
+            files = results.get('files', [])
+
+            if len(files) <= keep_recent:
+                print(f"✅ Cleanup: {len(files)} backups (within limit of {keep_recent})")
+                return
+
+            # Sort by filename timestamp
+            def extract_timestamp(filename: str) -> str:
+                try:
+                    parts = filename.split('_')
+                    if len(parts) >= 3:
+                        timestamp = '_'.join(parts[-2:]).replace('.xlsx', '')
+                        return timestamp
+                    return '0'
+                except:
+                    return '0'
+
+            sorted_files = sorted(files, key=lambda f: extract_timestamp(f['name']), reverse=True)
+
+            # Keep recent, delete old
+            files_to_keep = sorted_files[:keep_recent]
+            files_to_delete = sorted_files[keep_recent:]
+
+            print(f"🧹 Cleanup: Keeping {len(files_to_keep)} backups, deleting {len(files_to_delete)} old files")
+
+            # Delete old files
+            deleted_count = 0
+            for file in files_to_delete:
+                try:
+                    self.drive_manager.service.files().delete(fileId=file['id']).execute()
+                    deleted_count += 1
+                    print(f"   🗑️ Deleted: {file['name']}")
+                except Exception as e:
+                    print(f"   ⚠️ Could not delete {file['name']}: {e}")
+
+            print(f"✅ Cleanup completed: Deleted {deleted_count} old backups")
+
+        except Exception as e:
+            print(f"⚠️ Cleanup error (non-critical): {e}")
 
     def _create_excel_from_session(self) -> Optional[io.BytesIO]:
         """Create Excel file from session state data"""
