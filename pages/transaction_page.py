@@ -692,9 +692,21 @@ class EnhancedTransactionPage:
             if success:
                 st.success(f"✅ {message}")
 
-                # IMPORTANT: Force reload data from Drive after save
-                # This ensures the UI immediately reflects the new transaction
-                print("🔄 Forcing reload from Drive after transaction...")
+                # CRITICAL FIX: Save data immediately to Drive BEFORE reloading
+                print("💾 Saving transaction to Drive...")
+                save_success = self.fund_manager.save_data()
+
+                if not save_success:
+                    st.error("❌ Không thể lưu giao dịch!")
+                    return
+
+                # Wait for Drive API to index the new file
+                print("⏳ Waiting for Drive indexing...")
+                import time
+                time.sleep(3)  # Wait for Drive API to complete upload and indexing
+
+                # Now it's safe to reload - the new file should be available
+                print("🔄 Reloading data from Drive after transaction...")
                 self.fund_manager.data_handler.ensure_data_loaded(force_reload=True)
                 self.fund_manager.load_data()
 
