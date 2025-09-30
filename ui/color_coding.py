@@ -128,17 +128,11 @@ class ColorCoding:
                 delta_html = ColorCoding.format_percentage(delta / 100)  # Assuming delta is already %
 
         html = f"""
-        <div style="
-            background: white;
-            border: 1px solid #e5e7eb;
-            border-radius: 8px;
-            padding: 1rem;
-            margin-bottom: 0.5rem;
-        ">
-            <div style="color: #6b7280; font-size: 0.875rem; margin-bottom: 0.25rem;">
+        <div class="metric-card metric-card-lg" style="margin-bottom: 0.5rem;">
+            <div class="metric-label" style="margin-bottom: 0.25rem;">
                 {label}
             </div>
-            <div style="color: #1f2937; font-size: 1.5rem; font-weight: 700; margin-bottom: 0.25rem;">
+            <div class="metric-value" style="margin-bottom: 0.25rem;">
                 {value_str}
             </div>
             {f'<div style="font-size: 0.875rem;">{delta_html}</div>' if delta_html else ''}

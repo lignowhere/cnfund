@@ -579,6 +579,51 @@ def apply_global_styles():
             outline: 2px solid var(--accent-color);
             outline-offset: 2px;
         }
+
+        /* === METRIC CARDS (Dark Mode Compatible) === */
+        .metric-card {
+            background: var(--card-bg) !important;
+            border: 1px solid var(--card-border) !important;
+            border-radius: 8px !important;
+            padding: 1rem !important;
+        }
+
+        .metric-card .metric-label {
+            color: var(--text-secondary) !important;
+            font-size: 0.875rem !important;
+        }
+
+        .metric-card .metric-value {
+            font-size: 1.25rem !important;
+            font-weight: 700 !important;
+            margin-top: 0.25rem !important;
+            color: var(--text-primary) !important;
+        }
+
+        .metric-card-lg .metric-value {
+            font-size: 1.5rem !important;
+        }
+
+        /* Profit/Loss Summary Card */
+        .summary-card {
+            text-align: center !important;
+            padding: 1.5rem !important;
+            background: var(--card-bg) !important;
+            border: 1px solid var(--card-border) !important;
+            border-radius: 12px !important;
+            margin: 1rem 0 !important;
+        }
+
+        .summary-card .summary-label {
+            color: var(--text-secondary) !important;
+            font-size: 1rem !important;
+            margin-bottom: 0.5rem !important;
+        }
+
+        .summary-card .summary-value {
+            font-size: 2.5rem !important;
+            font-weight: 700 !important;
+        }
     </style>
 
     <script>

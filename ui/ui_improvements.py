@@ -42,7 +42,7 @@ def apply_subtle_improvements():
     /* === IMPROVEMENT 4: Card-like containers with subtle elevation === */
     .element-container:has(> .stAlert),
     .element-container:has(> .stDataFrame) {
-        background: white;
+        background: var(--card-bg);
         padding: 1rem;
         border-radius: 8px;
         box-shadow: 0 1px 3px rgba(0, 0, 0, 0.05);
@@ -51,10 +51,10 @@ def apply_subtle_improvements():
 
     /* === IMPROVEMENT 5: Better metric visibility === */
     [data-testid="stMetric"] {
-        background: linear-gradient(135deg, #f9fafb 0%, #ffffff 100%);
+        background: var(--card-bg);
         padding: 1.25rem;
         border-radius: 8px;
-        border: 1px solid #e5e7eb;
+        border: 1px solid var(--card-border);
     }
 
     [data-testid="stMetricValue"] {
@@ -181,10 +181,10 @@ def apply_subtle_improvements():
 
     /* === IMPROVEMENT 13: Form container polish === */
     .stForm {
-        border: 1px solid #e5e7eb;
+        border: 1px solid var(--card-border);
         border-radius: 8px;
         padding: 1.5rem;
-        background: white;
+        background: var(--card-bg);
     }
 
     /* === IMPROVEMENT 14: Better checkbox/radio styling === */
@@ -198,31 +198,7 @@ def apply_subtle_improvements():
 
     /* === IMPROVEMENT 15: Sidebar visual refinement === */
     [data-testid="stSidebar"] {
-        background: linear-gradient(180deg, #ffffff 0%, #f9fafb 100%);
-    }
-
-    /* Dark mode adjustments */
-    @media (prefers-color-scheme: dark) {
-        .element-container:has(> .stAlert),
-        .element-container:has(> .stDataFrame),
-        [data-testid="stMetric"],
-        .stForm {
-            background: #1f2937;
-            border-color: #374151;
-        }
-
-        .stDataFrame thead tr th {
-            background-color: #374151 !important;
-        }
-
-        .streamlit-expanderHeader {
-            background-color: #374151;
-            border-color: #4b5563;
-        }
-
-        [data-testid="stSidebar"] {
-            background: linear-gradient(180deg, #1f2937 0%, #111827 100%);
-        }
+        background: var(--sidebar-bg);
     }
     </style>
     """

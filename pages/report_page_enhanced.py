@@ -228,11 +228,11 @@ class EnhancedReportPage:
             st.metric("📈 Price/Unit", format_currency(current_price))
 
         with col3:
-            # Gross Return with inline color
+            # Gross Return with inline color (Dark mode compatible)
             st.markdown(f"""
-            <div style="background: white; border: 1px solid #e5e7eb; border-radius: 8px; padding: 1rem;">
-                <div style="color: #6b7280; font-size: 0.875rem;">📊 Gross Return</div>
-                <div style="font-size: 1.5rem; font-weight: 700; margin-top: 0.25rem;">
+            <div class="metric-card metric-card-lg">
+                <div class="metric-label">📊 Gross Return</div>
+                <div class="metric-value">
                     {percentage_html(gross_return)}
                 </div>
             </div>
@@ -244,12 +244,12 @@ class EnhancedReportPage:
         with col5:
             st.metric("🛒 FM Value", format_currency(fm_value))
 
-        # Show total profit/loss with color - bigger and clearer
+        # Show total profit/loss with color - bigger and clearer (Dark mode compatible)
         st.markdown("---")
         st.markdown(f"""
-        <div style="text-align: center; padding: 1.5rem; background: #f9fafb; border-radius: 12px; margin: 1rem 0;">
-            <div style="color: #6b7280; font-size: 1rem; margin-bottom: 0.5rem;">💹 TỔNG LÃI/LỖ</div>
-            <div style="font-size: 2.5rem; font-weight: 700;">
+        <div class="summary-card">
+            <div class="summary-label">💹 TỔNG LÃI/LỖ</div>
+            <div class="summary-value">
                 {profit_loss_html(total_profit_loss)}
             </div>
         </div>
@@ -266,9 +266,9 @@ class EnhancedReportPage:
 
         with insight_col1:
             st.markdown(f"""
-            <div style="background: white; border: 1px solid #e5e7eb; border-radius: 8px; padding: 1rem;">
-                <div style="color: #6b7280; font-size: 0.875rem;">📉 Net Return (After Fees)</div>
-                <div style="font-size: 1.25rem; font-weight: 700; margin-top: 0.25rem;">
+            <div class="metric-card">
+                <div class="metric-label">📉 Net Return (After Fees)</div>
+                <div class="metric-value">
                     {percentage_html(net_return)}
                 </div>
             </div>
@@ -276,9 +276,9 @@ class EnhancedReportPage:
 
         with insight_col2:
             st.markdown(f"""
-            <div style="background: white; border: 1px solid #e5e7eb; border-radius: 8px; padding: 1rem;">
-                <div style="color: #6b7280; font-size: 0.875rem;">💱 Cumulative Fee Rate</div>
-                <div style="font-size: 1.25rem; font-weight: 700; margin-top: 0.25rem;">
+            <div class="metric-card">
+                <div class="metric-label">💱 Cumulative Fee Rate</div>
+                <div class="metric-value">
                     {format_percentage(fee_rate)}
                 </div>
             </div>
@@ -286,9 +286,9 @@ class EnhancedReportPage:
 
         with insight_col3:
             st.markdown(f"""
-            <div style="background: white; border: 1px solid #e5e7eb; border-radius: 8px; padding: 1rem;">
-                <div style="color: #6b7280; font-size: 0.875rem;">🚀 AUM Growth</div>
-                <div style="font-size: 1.25rem; font-weight: 700; margin-top: 0.25rem;">
+            <div class="metric-card">
+                <div class="metric-label">🚀 AUM Growth</div>
+                <div class="metric-value">
                     {percentage_html(aum_growth)}
                 </div>
             </div>
@@ -457,9 +457,9 @@ class EnhancedReportPage:
 
         with col1:
             st.markdown("""
-            <div style="background: white; border: 1px solid #e5e7eb; border-radius: 8px; padding: 1rem;">
-                <div style="color: #6b7280; font-size: 0.875rem;">💰 Original Investment</div>
-                <div style="font-size: 1.5rem; font-weight: 700; margin-top: 0.25rem;">
+            <div class="metric-card metric-card-lg">
+                <div class="metric-label">💰 Original Investment</div>
+                <div class="metric-value">
                     {0}
                 </div>
             </div>
@@ -467,9 +467,9 @@ class EnhancedReportPage:
 
         with col2:
             st.markdown("""
-            <div style="background: white; border: 1px solid #e5e7eb; border-radius: 8px; padding: 1rem;">
-                <div style="color: #6b7280; font-size: 0.875rem;">📊 Current Value</div>
-                <div style="font-size: 1.5rem; font-weight: 700; margin-top: 0.25rem;">
+            <div class="metric-card metric-card-lg">
+                <div class="metric-label">📊 Current Value</div>
+                <div class="metric-value">
                     {0}
                 </div>
             </div>
@@ -477,9 +477,9 @@ class EnhancedReportPage:
 
         with col3:
             st.markdown("""
-            <div style="background: white; border: 1px solid #e5e7eb; border-radius: 8px; padding: 1rem;">
-                <div style="color: #6b7280; font-size: 0.875rem;">📈 Current P&L</div>
-                <div style="font-size: 1.5rem; font-weight: 700; margin-top: 0.25rem;">
+            <div class="metric-card metric-card-lg">
+                <div class="metric-label">📈 Current P&L</div>
+                <div class="metric-value">
                     {0}
                 </div>
             </div>
@@ -487,9 +487,9 @@ class EnhancedReportPage:
 
         with col4:
             st.markdown("""
-            <div style="background: white; border: 1px solid #e5e7eb; border-radius: 8px; padding: 1rem;">
-                <div style="color: #6b7280; font-size: 0.875rem;">💸 Total Fees Paid</div>
-                <div style="font-size: 1.5rem; font-weight: 700; margin-top: 0.25rem;">
+            <div class="metric-card metric-card-lg">
+                <div class="metric-label">💸 Total Fees Paid</div>
+                <div class="metric-value">
                     {0}
                 </div>
             </div>
@@ -503,9 +503,9 @@ class EnhancedReportPage:
         with perf_col1:
             gross_return = report_data['lifetime_performance']['gross_return']
             st.markdown("""
-            <div style="background: white; border: 1px solid #e5e7eb; border-radius: 8px; padding: 1rem;">
-                <div style="color: #6b7280; font-size: 0.875rem;">🚀 Gross Return (Before Fees)</div>
-                <div style="font-size: 1.5rem; font-weight: 700; margin-top: 0.25rem;">
+            <div class="metric-card metric-card-lg">
+                <div class="metric-label">🚀 Gross Return (Before Fees)</div>
+                <div class="metric-value">
                     {0}
                 </div>
             </div>
@@ -514,9 +514,9 @@ class EnhancedReportPage:
         with perf_col2:
             net_return = report_data['lifetime_performance']['net_return']
             st.markdown("""
-            <div style="background: white; border: 1px solid #e5e7eb; border-radius: 8px; padding: 1rem;">
-                <div style="color: #6b7280; font-size: 0.875rem;">💼 Net Return (After Fees)</div>
-                <div style="font-size: 1.5rem; font-weight: 700; margin-top: 0.25rem;">
+            <div class="metric-card metric-card-lg">
+                <div class="metric-label">💼 Net Return (After Fees)</div>
+                <div class="metric-value">
                     {0}
                 </div>
             </div>
