@@ -259,11 +259,26 @@ class SidebarManager:
             st.error(f"❌ Lỗi kết nối Drive: {str(e)}")
 
     def handle_reload_data(self):
-        """Handle reload data from Google Drive"""
+        """Handle reload data from Google Drive with retry for cache busting"""
         try:
-            with st.spinner("🔄 Đang tải lại dữ liệu từ Google Drive..."):
-                # Force reload from Drive
-                self.data_handler.ensure_data_loaded(force_reload=True)
+            with st.spinner("🔄 Đang tải lại dữ liệu từ Google Drive... (có thể mất vài giây)"):
+                # Force reload from Drive with retry to bust API cache
+                # This ensures we get the latest file even if Drive API is caching
+                print("🔄 Force reloading with cache busting...")
+
+                # Monkey-patch _find_latest_backup to use retries
+                original_method = self.data_handler._find_latest_backup
+
+                def find_latest_with_retry():
+                    return original_method(expected_filename=None, max_retries=3)
+
+                self.data_handler._find_latest_backup = find_latest_with_retry
+
+                # Now load from Drive
+                self.data_handler.load_from_drive()
+
+                # Restore original method
+                self.data_handler._find_latest_backup = original_method
 
                 # Reload fund manager data
                 self.fund_manager.load_data()

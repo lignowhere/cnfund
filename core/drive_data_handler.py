@@ -129,85 +129,128 @@ class DriveBackedDataManager:
             self._mark_as_loaded()
             return False
 
-    def _find_latest_backup(self) -> Optional[Dict[str, Any]]:
-        """Find the most recent backup file on Drive"""
-        try:
-            if not self.drive_manager or not self.drive_manager.service:
-                return None
+    def _find_latest_backup(self, expected_filename: str = None, max_retries: int = 1) -> Optional[Dict[str, Any]]:
+        """
+        Find the most recent backup file on Drive
 
-            folder_id = self.drive_manager.folder_id
+        Args:
+            expected_filename: If provided, will retry until this file appears (cache busting)
+            max_retries: Number of retries with delay (default: 1, no retry)
+        """
+        import time
+        import random
 
-            # Search for Excel backup files
-            query = f"'{folder_id}' in parents and name contains 'CNFund_Backup' and mimeType='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' and trashed=false"
+        for attempt in range(max_retries):
+            try:
+                if not self.drive_manager or not self.drive_manager.service:
+                    return None
 
-            print(f"🔍 Querying Drive for backup files...")
-            print(f"   Folder ID: {folder_id}")
-            print(f"   Query: {query}")
+                folder_id = self.drive_manager.folder_id
 
-            # Get ALL matching files first (up to 100)
-            # NOTE: Drive API may cache results - this can cause stale data
-            results = self.drive_manager.service.files().list(
-                q=query,
-                orderBy='modifiedTime desc',
-                pageSize=100,
-                fields='files(id, name, modifiedTime, createdTime, webViewLink)',
-                # Spaces parameter helps with cache busting
-                spaces='drive'
-            ).execute()
+                # Search for Excel backup files
+                query = f"'{folder_id}' in parents and name contains 'CNFund_Backup' and mimeType='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' and trashed=false"
 
-            print(f"✅ Query returned {len(results.get('files', []))} files")
+                if attempt > 0:
+                    print(f"🔄 Retry {attempt}/{max_retries-1} - waiting for Drive API indexing...")
+                    time.sleep(2)  # Wait 2s between retries
 
-            files = results.get('files', [])
+                print(f"🔍 Querying Drive for backup files... (attempt {attempt+1}/{max_retries})")
+                print(f"   Folder ID: {folder_id}")
+                if expected_filename:
+                    print(f"   Expected file: {expected_filename}")
 
-            if not files:
-                return None
+                # Get ALL matching files first (up to 100)
+                # NOTE: Drive API may cache results - use multiple techniques to bust cache
 
-            # Sort by filename timestamp (most reliable)
-            # Format: CNFund_Backup_YYYYMMDD_HHMMSS.xlsx
-            def extract_timestamp(filename: str) -> str:
-                """Extract timestamp from filename for sorting"""
-                try:
-                    # CNFund_Backup_20250930_143020.xlsx -> 20250930_143020
-                    parts = filename.split('_')
-                    if len(parts) >= 3:
-                        # Get last two parts before .xlsx
-                        timestamp = '_'.join(parts[-2:]).replace('.xlsx', '')
-                        return timestamp
-                    return '0'
-                except:
-                    return '0'
+                # Technique 1: Add random pageSize variation (99-100)
+                page_size = random.choice([99, 100])
 
-            # Sort files by extracted timestamp (descending)
-            sorted_files = sorted(files, key=lambda f: extract_timestamp(f['name']), reverse=True)
+                # Technique 2: Alternate field ordering to force fresh query
+                use_alt_fields = random.choice([True, False])
+                if use_alt_fields:
+                    fields = 'files(name, id, modifiedTime, createdTime, webViewLink)'  # Different order
+                else:
+                    fields = 'files(id, name, modifiedTime, createdTime, webViewLink)'  # Normal order
 
-            # DEBUG: Show ALL files with timestamps for troubleshooting
-            print(f"\n{'='*80}")
-            print(f"📂 BACKUP FILE SELECTION DEBUG")
-            print(f"{'='*80}")
-            print(f"Total files found: {len(files)}")
-            print(f"\n📋 All backup files (sorted by filename timestamp):")
-            for i, f in enumerate(sorted_files[:10], 1):  # Show top 10
-                ts = extract_timestamp(f['name'])
-                print(f"   {i}. {f['name']}")
-                print(f"      Timestamp: {ts}")
-                print(f"      Modified:  {f.get('modifiedTime', 'N/A')}")
-                print(f"      Created:   {f.get('createdTime', 'N/A')}")
-                print(f"      File ID:   {f.get('id', 'N/A')}")
-                print()
+                results = self.drive_manager.service.files().list(
+                    q=query,
+                    orderBy='modifiedTime desc',
+                    pageSize=page_size,
+                    fields=fields,
+                    spaces='drive'
+                ).execute()
 
-            latest = sorted_files[0]
+                print(f"✅ Query returned {len(results.get('files', []))} files")
 
-            print(f"✅ SELECTED FILE: {latest['name']}")
-            print(f"   File ID: {latest.get('id', 'N/A')}")
-            print(f"{'='*80}\n")
+                files = results.get('files', [])
 
-            return latest
+                if not files:
+                    if attempt < max_retries - 1:
+                        continue  # Retry
+                    return None
 
-        except Exception as e:
-            print(f"⚠️ Could not find backup: {e}")
-            import traceback
-            traceback.print_exc()
-            return None
+                # Sort by filename timestamp (most reliable)
+                # Format: CNFund_Backup_YYYYMMDD_HHMMSS.xlsx
+                def extract_timestamp(filename: str) -> str:
+                    """Extract timestamp from filename for sorting"""
+                    try:
+                        # CNFund_Backup_20250930_143020.xlsx -> 20250930_143020
+                        parts = filename.split('_')
+                        if len(parts) >= 3:
+                            # Get last two parts before .xlsx
+                            timestamp = '_'.join(parts[-2:]).replace('.xlsx', '')
+                            return timestamp
+                        return '0'
+                    except:
+                        return '0'
+
+                # Sort files by extracted timestamp (descending)
+                sorted_files = sorted(files, key=lambda f: extract_timestamp(f['name']), reverse=True)
+
+                # Check if expected file is present
+                if expected_filename:
+                    found = any(f['name'] == expected_filename for f in sorted_files)
+                    if not found and attempt < max_retries - 1:
+                        print(f"⚠️ Expected file '{expected_filename}' not found - will retry")
+                        continue  # Retry
+                    elif found:
+                        print(f"✅ Expected file '{expected_filename}' found!")
+
+                # DEBUG: Show ALL files with timestamps for troubleshooting
+                print(f"\n{'='*80}")
+                print(f"📂 BACKUP FILE SELECTION DEBUG")
+                print(f"{'='*80}")
+                print(f"Total files found: {len(files)}")
+                print(f"\n📋 All backup files (sorted by filename timestamp):")
+                for i, f in enumerate(sorted_files[:10], 1):  # Show top 10
+                    ts = extract_timestamp(f['name'])
+                    prefix = "🎯 " if expected_filename and f['name'] == expected_filename else "   "
+                    print(f"{prefix}{i}. {f['name']}")
+                    print(f"      Timestamp: {ts}")
+                    print(f"      Modified:  {f.get('modifiedTime', 'N/A')}")
+                    print(f"      Created:   {f.get('createdTime', 'N/A')}")
+                    print(f"      File ID:   {f.get('id', 'N/A')}")
+                    print()
+
+                latest = sorted_files[0]
+
+                print(f"✅ SELECTED FILE: {latest['name']}")
+                print(f"   File ID: {latest.get('id', 'N/A')}")
+                print(f"{'='*80}\n")
+
+                return latest
+
+            except Exception as e:
+                print(f"⚠️ Error on attempt {attempt+1}: {e}")
+                if attempt < max_retries - 1:
+                    continue  # Retry
+                else:
+                    import traceback
+                    traceback.print_exc()
+                    return None
+
+        # If we exhausted all retries without success
+        return None
 
     def _download_file(self, file_id: str) -> Optional[io.BytesIO]:
         """Download file from Drive"""
@@ -660,12 +703,12 @@ class DriveBackedDataManager:
             self._set_session_data('transactions', transactions_df)
             self._set_session_data('fee_records', fee_records_df)
 
-            # IMPORTANT: Mark data as stale to force reload on next access
-            # This ensures changes are picked up by other sessions/users
-            # We set last_load to a very old time to trigger immediate reload
-            st.session_state[f'{self.session_key_prefix}last_load'] = datetime.now() - timedelta(hours=24)
+            # CRITICAL: Mark session state as LOADED (not stale) after save
+            # This prevents immediate reload which would load from Drive cache (stale)
+            # Data in session state is already correct since we just saved it
+            st.session_state[f'{self.session_key_prefix}last_load'] = datetime.now()
 
-            print("✅ Session state updated (marked as stale for next reload)")
+            print("✅ Session state updated (marked as fresh - data in memory is correct)")
 
             # Backup to Drive
             print("☁️ Backing up to Drive...")
