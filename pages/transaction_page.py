@@ -673,60 +673,35 @@ class EnhancedTransactionPage:
             st.success("✅ Dữ liệu hợp lệ")
     
     def _process_validated_transaction(self, investor_id, trans_type, amount, total_nav, trans_date):
-        """OPTIMIZED: Fast transaction processing with deferred operations."""
+        """Process validated transaction with enhanced feedback"""
         try:
-            # performance_optimizer removed - use direct processing
-            
             # Create naive datetime for local operations (Excel compatible)
             current_time = datetime.now().time()
-            trans_date_dt = datetime.combine(trans_date, current_time) 
-            
-            # Choose appropriate transaction method
+            trans_date_dt = datetime.combine(trans_date, current_time)
+
+            # Process transaction directly (fast processor not needed)
             if trans_type == "Nạp":
-                transaction_func = self.fund_manager.process_deposit
-                args = (investor_id, amount, total_nav, trans_date_dt)
+                success, message = self.fund_manager.process_deposit(
+                    investor_id, amount, total_nav, trans_date_dt
+                )
             else:  # Rút
-                transaction_func = self.fund_manager.process_withdrawal  
-                args = (investor_id, amount, total_nav, trans_date_dt)
-            
-            # Process with fast processor (immediate UI feedback, deferred save/backup)
-            success, message = self._fast_processor.process_transaction_fast(
-                transaction_func, *args
-            )
-            
+                success, message = self.fund_manager.process_withdrawal(
+                    investor_id, amount, total_nav, trans_date_dt
+                )
+
             if success:
+                st.success(f"✅ {message}")
                 # Show balloons for positive feedback
                 st.balloons()
                 st.session_state.data_changed = True
                 st.rerun()
-            # Error already shown by fast processor
-            
-        except ImportError:
-            # Fallback to original processing if optimizer not available
-            self._process_transaction_original(investor_id, trans_type, amount, total_nav, trans_date)
+            else:
+                st.error(f"❌ {message}")
+
         except Exception as e:
             st.error(f"❌ Transaction processing error: {str(e)}")
-    
-    def _process_transaction_original(self, investor_id, trans_type, amount, total_nav, trans_date):
-        """Original transaction processing (fallback)"""
-        current_time = datetime.now().time()
-        trans_date_dt = datetime.combine(trans_date, current_time) 
-        
-        if trans_type == "Nạp":
-            success, message = self.fund_manager.process_deposit(
-                investor_id, amount, total_nav, trans_date_dt
-            )
-        else:  # Rút
-            success, message = self.fund_manager.process_withdrawal(
-                investor_id, amount, total_nav, trans_date_dt
-            )
-        
-        if success:
-            st.success(f"✅ {message}")
-            st.session_state.data_changed = True 
-            st.rerun() 
-        else:
-            st.error(f"❌ {message}")
+            import traceback
+            print(traceback.format_exc())
     
     def _confirm_undo_transaction(self, transaction):
         """Confirm undo transaction"""
