@@ -140,13 +140,22 @@ class DriveBackedDataManager:
             # Search for Excel backup files
             query = f"'{folder_id}' in parents and name contains 'CNFund_Backup' and mimeType='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' and trashed=false"
 
+            print(f"🔍 Querying Drive for backup files...")
+            print(f"   Folder ID: {folder_id}")
+            print(f"   Query: {query}")
+
             # Get ALL matching files first (up to 100)
+            # NOTE: Drive API may cache results - this can cause stale data
             results = self.drive_manager.service.files().list(
                 q=query,
                 orderBy='modifiedTime desc',
                 pageSize=100,
-                fields='files(id, name, modifiedTime, createdTime, webViewLink)'
+                fields='files(id, name, modifiedTime, createdTime, webViewLink)',
+                # Spaces parameter helps with cache busting
+                spaces='drive'
             ).execute()
+
+            print(f"✅ Query returned {len(results.get('files', []))} files")
 
             files = results.get('files', [])
 
@@ -171,18 +180,26 @@ class DriveBackedDataManager:
             # Sort files by extracted timestamp (descending)
             sorted_files = sorted(files, key=lambda f: extract_timestamp(f['name']), reverse=True)
 
+            # DEBUG: Show ALL files with timestamps for troubleshooting
+            print(f"\n{'='*80}")
+            print(f"📂 BACKUP FILE SELECTION DEBUG")
+            print(f"{'='*80}")
+            print(f"Total files found: {len(files)}")
+            print(f"\n📋 All backup files (sorted by filename timestamp):")
+            for i, f in enumerate(sorted_files[:10], 1):  # Show top 10
+                ts = extract_timestamp(f['name'])
+                print(f"   {i}. {f['name']}")
+                print(f"      Timestamp: {ts}")
+                print(f"      Modified:  {f.get('modifiedTime', 'N/A')}")
+                print(f"      Created:   {f.get('createdTime', 'N/A')}")
+                print(f"      File ID:   {f.get('id', 'N/A')}")
+                print()
+
             latest = sorted_files[0]
 
-            print(f"📂 Found {len(files)} backup files")
-            print(f"✅ Using latest: {latest['name']}")
-            print(f"   Modified: {latest.get('modifiedTime', 'N/A')}")
-            print(f"   Created: {latest.get('createdTime', 'N/A')}")
-
-            # Show other recent files for debugging
-            if len(sorted_files) > 1:
-                print(f"📋 Other recent backups:")
-                for i, f in enumerate(sorted_files[1:4], 1):  # Show next 3
-                    print(f"   {i}. {f['name']} (Modified: {f.get('modifiedTime', 'N/A')})")
+            print(f"✅ SELECTED FILE: {latest['name']}")
+            print(f"   File ID: {latest.get('id', 'N/A')}")
+            print(f"{'='*80}\n")
 
             return latest
 
@@ -290,16 +307,38 @@ class DriveBackedDataManager:
                 timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
                 filename = f"CNFund_Backup_{timestamp}.xlsx"
 
+                print(f"📤 Uploading: {filename}")
                 success = self.drive_manager.upload_to_drive(excel_buffer, filename)
 
                 if success:
+                    print(f"✅ Upload successful: {filename}")
+
+                    # IMPORTANT: Wait for Drive API to index the file
+                    # Drive API has eventual consistency - file may not appear immediately in search
+                    import time
+                    print("⏳ Waiting 2 seconds for Drive API indexing...")
+                    time.sleep(2)
+
+                    # Verify file appears in search results
+                    print("🔍 Verifying file appears in Drive search...")
+                    verification_attempt = self._find_latest_backup()
+                    if verification_attempt and verification_attempt['name'] == filename:
+                        print(f"✅ Verification passed: File {filename} found in Drive")
+                    else:
+                        found_name = verification_attempt['name'] if verification_attempt else 'None'
+                        print(f"⚠️ Verification issue: Expected {filename}, found {found_name}")
+                        print(f"   This might be a Drive API indexing delay")
+
                     st.session_state[f'{self.session_key_prefix}last_backup'] = datetime.now()
+                    st.session_state[f'{self.session_key_prefix}last_backup_filename'] = filename
 
                     # Auto cleanup old backups
                     if auto_cleanup:
                         self._cleanup_old_backups(keep_recent)
 
                     return True
+                else:
+                    print(f"❌ Upload failed: {filename}")
 
                 return False
 
