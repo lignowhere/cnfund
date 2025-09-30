@@ -219,33 +219,83 @@ if GOOGLE_OAUTH_AVAILABLE:
                 return None
     
         def _get_folder_id(self) -> str:
-            """Get folder ID from various sources"""
+            """Get folder ID from various sources with caching"""
             folder_id = None
 
-            # Try to get from Streamlit secrets
+            # PRIORITY 1: Try to get from Streamlit secrets (highest priority)
             if hasattr(st, 'secrets'):
                 if 'drive_folder_id' in st.secrets:
                     folder_id = st.secrets['drive_folder_id']
                 elif 'default' in st.secrets and 'drive_folder_id' in st.secrets['default']:
                     folder_id = st.secrets['default']['drive_folder_id']
 
-            # Try environment variable
+            # PRIORITY 2: Try environment variable
             if not folder_id:
                 folder_id = os.getenv('GOOGLE_DRIVE_FOLDER_ID')
 
-            # Create a default folder if none specified
+            # PRIORITY 3: Try cached folder ID from session state
+            if not folder_id and hasattr(st, 'session_state'):
+                folder_id = st.session_state.get('cached_drive_folder_id')
+
+            # PRIORITY 4: Try cached folder ID from local file
+            if not folder_id:
+                cache_file = Path('.drive_folder_cache')
+                if cache_file.exists():
+                    try:
+                        folder_id = cache_file.read_text().strip()
+                        print(f"📦 Loaded cached folder ID from file: {folder_id}")
+                    except Exception as e:
+                        print(f"⚠️ Could not read folder cache: {e}")
+
+            # PRIORITY 5: Search for existing or create new folder
             if not folder_id:
                 folder_id = self._create_backup_folder()
+
+                # Cache the folder ID for future use
+                if folder_id:
+                    # Save to session state
+                    if hasattr(st, 'session_state'):
+                        st.session_state.cached_drive_folder_id = folder_id
+
+                    # Save to local cache file
+                    try:
+                        cache_file = Path('.drive_folder_cache')
+                        cache_file.write_text(folder_id)
+                        print(f"💾 Cached folder ID to file for future use")
+                    except Exception as e:
+                        print(f"⚠️ Could not save folder cache: {e}")
 
             print(f"📂 Using folder ID: {folder_id}")
             return folder_id
 
         def _create_backup_folder(self) -> Optional[str]:
-            """Create a backup folder in Google Drive"""
+            """Find existing or create a backup folder in Google Drive"""
             try:
                 if not self.service:
                     return None
 
+                # STEP 1: Search for existing "CNFund Backup" folder first
+                print("🔍 Searching for existing 'CNFund Backup' folder...")
+                query = "name='CNFund Backup' and mimeType='application/vnd.google-apps.folder' and trashed=false"
+
+                results = self.service.files().list(
+                    q=query,
+                    spaces='drive',
+                    fields='files(id, name, webViewLink)',
+                    pageSize=10
+                ).execute()
+
+                files = results.get('files', [])
+
+                # If folder exists, use it
+                if files:
+                    folder_id = files[0].get('id')
+                    print(f"✅ Found existing backup folder: {folder_id}")
+                    print(f"🔗 Folder link: {files[0].get('webViewLink', '')}")
+                    return folder_id
+
+                # STEP 2: Create new folder only if not found
+                print("📁 Creating new 'CNFund Backup' folder...")
                 folder_metadata = {
                     'name': 'CNFund Backup',
                     'mimeType': 'application/vnd.google-apps.folder'
@@ -260,10 +310,12 @@ if GOOGLE_OAUTH_AVAILABLE:
                 if folder_id:
                     st.success(f"📁 Created backup folder: CNFund Backup")
                     st.info(f"🔗 Folder link: {folder.get('webViewLink', '')}")
+                    print(f"💾 IMPORTANT: Save this folder ID to Streamlit secrets: {folder_id}")
+                    print(f"💾 Add to .streamlit/secrets.toml: drive_folder_id = \"{folder_id}\"")
                     return folder_id
 
             except Exception as e:
-                print(f"❌ Could not create backup folder: {e}")
+                print(f"❌ Could not create/find backup folder: {e}")
 
             return None
     
