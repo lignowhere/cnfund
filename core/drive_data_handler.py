@@ -439,13 +439,16 @@ class DriveBackedDataManager:
     # Data Access Methods (compatible with CSVDataHandler)
     # ========================================
 
-    def ensure_data_loaded(self, force_reload: bool = False, max_age_seconds: int = 300):
+    def ensure_data_loaded(self, force_reload: bool = False, max_age_seconds: int = 60):
         """
         Ensure data is loaded - load from Drive if needed
 
         Args:
             force_reload: Force reload from Drive even if already loaded
-            max_age_seconds: Maximum age of cached data in seconds (default: 5 minutes)
+            max_age_seconds: Maximum age of cached data in seconds (default: 60 seconds)
+                           - 60s: Good balance for small teams
+                           - 0: No cache (always reload, slower but always fresh)
+                           - 300: Long cache (faster but potentially stale)
         """
         should_reload = force_reload or not self._is_data_loaded()
 
