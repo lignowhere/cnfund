@@ -137,16 +137,45 @@ if GOOGLE_OAUTH_AVAILABLE:
         def _do_oauth_flow(self) -> Optional['Credentials']:
             """Perform OAuth 2.0 flow"""
             try:
-                # Check if we have OAuth credentials file
-                if not self.credentials_file.exists():
-                    st.error(f"❌ OAuth credentials file not found: {self.credentials_file}")
-                    st.info("📋 Please create oauth_credentials.json with your OAuth client credentials")
-                    return None
+                # Try to get credentials from Streamlit secrets (for cloud)
+                if hasattr(st, 'secrets') and 'oauth_credentials' in st.secrets:
+                    print("🔐 Using OAuth credentials from Streamlit secrets...")
+                    try:
+                        import json
+                        import tempfile
 
-                # Create flow
-                flow = InstalledAppFlow.from_client_secrets_file(
-                    str(self.credentials_file), self.SCOPES
-                )
+                        # Create temp credentials file from secrets
+                        creds_dict = dict(st.secrets['oauth_credentials'])
+
+                        with tempfile.NamedTemporaryFile(mode='w', suffix='.json', delete=False) as f:
+                            json.dump(creds_dict, f)
+                            temp_creds_file = f.name
+
+                        # Create flow from temp file
+                        flow = InstalledAppFlow.from_client_secrets_file(
+                            temp_creds_file, self.SCOPES
+                        )
+
+                        # Clean up temp file
+                        import os
+                        os.unlink(temp_creds_file)
+
+                    except Exception as e:
+                        print(f"⚠️ Could not create flow from secrets: {e}")
+                        st.error(f"❌ Error loading OAuth credentials from secrets: {e}")
+                        return None
+
+                # Try to get from file (for local development)
+                elif self.credentials_file.exists():
+                    # Create flow
+                    flow = InstalledAppFlow.from_client_secrets_file(
+                        str(self.credentials_file), self.SCOPES
+                    )
+                else:
+                    st.error(f"❌ OAuth credentials not found")
+                    st.info("📋 For local: Create oauth_credentials.json")
+                    st.info("📋 For cloud: Add oauth_credentials to Streamlit secrets")
+                    return None
 
                 # For Streamlit, we need to use manual flow
                 st.info("🔐 OAuth authentication required...")
