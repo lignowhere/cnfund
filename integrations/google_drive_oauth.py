@@ -52,8 +52,20 @@ if GOOGLE_OAUTH_AVAILABLE:
                 creds = self._load_saved_credentials()
 
                 if not creds:
-                    # Need to do OAuth flow
-                    creds = self._do_oauth_flow()
+                    # On cloud: Cannot do OAuth flow (no browser)
+                    # On local: Can do OAuth flow
+                    is_cloud = os.getenv('STREAMLIT_CLOUD') or '/mount/src' in os.getcwd()
+
+                    if is_cloud:
+                        print("❌ No OAuth token found in Streamlit secrets")
+                        st.error("❌ OAuth token not found in secrets")
+                        st.info("📖 Setup guide: docs/STREAMLIT_CLOUD_SETUP.md")
+                        self.connected = False
+                        return
+                    else:
+                        # Local: Try OAuth flow
+                        print("🔐 Attempting OAuth flow (local only)...")
+                        creds = self._do_oauth_flow()
 
                 if creds:
                     # Build service
