@@ -1,7 +1,14 @@
 import streamlit as st
 import pandas as pd
 from datetime import date, datetime
-from utils import format_currency, parse_currency, format_percentage, highlight_profit_loss
+from helpers import format_currency, parse_currency, format_percentage, highlight_profit_loss
+
+# Performance optimizations
+from performance.cache_service_simple import cache_report_data
+from performance.performance_monitor import track_performance
+
+# UX enhancements
+from ui.ux_enhancements import UXEnhancements
 
 # Add comprehensive error handling for integer conversion issues
 def safe_operation(operation_name, func, *args, **kwargs):
@@ -24,9 +31,15 @@ def safe_operation(operation_name, func, *args, **kwargs):
 
 class SafeFeePage:
     """Enhanced Fee Page với comprehensive safety features - COMPLETE VERSION"""
-    
+
     def __init__(self, fund_manager):
         self.fund_manager = fund_manager
+
+    @cache_report_data
+    @track_performance("calculate_fees")
+    def calculate_fees_cached(_self, investor_id, start_date, end_date, current_nav):
+        """Calculate fees with caching"""
+        return _self.fund_manager.calculate_performance_fee(investor_id, start_date, end_date, current_nav)
     
     def render_enhanced_fee_calculation(self):
         """Enhanced fee calculation với comprehensive safety"""
@@ -132,7 +145,7 @@ class SafeFeePage:
                 return
             
             # Type safety: ensure investor_id is always an integer using safe selectbox handling
-            from streamlit_widget_safety import safe_investor_id_from_selectbox
+            from utils.streamlit_widget_safety import safe_investor_id_from_selectbox
             investor_id = safe_investor_id_from_selectbox(self.fund_manager, selected_display)
             if investor_id is None:
                 st.error("❌ Could not get valid investor ID from selection")
@@ -550,7 +563,7 @@ class SafeFeePage:
             if tranches:
                 st.markdown("**Lý do không có phí:**")
                 for i, tranche in enumerate(tranches):
-                    from datetime_utils import safe_days_between
+                    from utils.datetime_utils import safe_days_between
                     time_delta_days = safe_days_between(calc_date_dt, tranche.entry_date)
                     if time_delta_days > 0:
                         time_delta_years = time_delta_days / 365.25
@@ -570,7 +583,7 @@ class SafeFeePage:
             
             for tranche in tranches:
                 # Calculate fee for this specific tranche
-                from datetime_utils import safe_days_between
+                from utils.datetime_utils import safe_days_between
                 time_delta_days = safe_days_between(calc_date_dt, tranche.entry_date)
                 time_delta_years = time_delta_days / 365.25 if time_delta_days > 0 else 0
                 

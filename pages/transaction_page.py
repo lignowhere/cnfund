@@ -2,14 +2,33 @@ import streamlit as st
 import pandas as pd
 from datetime import date, datetime, timedelta
 import re
-from timezone_manager import TimezoneManager
+from utils.timezone_manager import TimezoneManager
 
 try:
-    from utils import format_currency, parse_currency, format_percentage, EPSILON
+    from helpers import format_currency, parse_currency, format_percentage
+    EPSILON = 1e-6  # Small epsilon for floating point comparisons
 except ImportError:
-    from data_utils import format_currency_safe as format_currency
+    from helpers import format_currency
+    EPSILON = 1e-6
 
-from timezone_manager import TimezoneManager
+from utils.timezone_manager import TimezoneManager
+
+# Integrations
+try:
+    from integrations.auto_backup_personal import backup_after_transaction
+    BACKUP_AVAILABLE = True
+except ImportError:
+    BACKUP_AVAILABLE = False
+    backup_after_transaction = None
+
+# Performance optimizations
+from performance.cache_service_simple import cache_transaction_data, cache_nav_data, invalidate_transaction_cache, invalidate_nav_cache
+from performance.skeleton_components import SkeletonLoader, skeleton_transaction_table, inject_skeleton_css
+from performance.performance_monitor import track_performance
+from performance.virtual_scroll import VirtualScrollTable, render_transaction_table_virtual
+
+# UX enhancements
+from ui.ux_enhancements import UXEnhancements
 
 def parse_currency(text):
     """Enhanced currency parsing with better error handling"""
@@ -42,16 +61,41 @@ EPSILON = 1e-6
 
 class EnhancedTransactionPage:
     """Enhanced Transaction Page với validation & undo features"""
-    
+
     def __init__(self, fund_manager):
         self.fund_manager = fund_manager
+
+    @cache_transaction_data
+    @track_performance("load_transactions")
+    def get_transactions(_self):
+        """Load transactions with caching"""
+        return _self.fund_manager.get_all_transactions()
+
+    @cache_nav_data
+    @track_performance("load_nav_history")
+    def get_nav_history(_self):
+        """Load NAV history with caching"""
+        return _self.fund_manager.get_nav_history()
     
     def render_transaction_form(self):
         """Enhanced form thêm giao dịch với validation đúng cách bên trong st.form."""
         st.title("💸 Thêm Giao Dịch")
-        
+
+        # Breadcrumb
+        UXEnhancements.breadcrumb([
+            ("🏠 Trang chủ", "/"),
+            ("💸 Thêm giao dịch", "")
+        ])
+
+        # Empty state nếu chưa có investors
         if not self.fund_manager.investors:
-            st.warning("⚠️ Chưa có nhà đầu tư nào. Hãy thêm nhà đầu tư trước.")
+            UXEnhancements.empty_state(
+                icon="👥",
+                title="Chưa có nhà đầu tư nào",
+                description="Bạn cần thêm nhà đầu tư trước khi tạo giao dịch",
+                action_label="➕ Thêm nhà đầu tư",
+                action_callback=lambda: st.session_state.update({'menu_selection': "👥 Thêm Nhà Đầu Tư"})
+            )
             return
         
         latest_nav = self.fund_manager.get_latest_total_nav()
@@ -134,6 +178,9 @@ class EnhancedTransactionPage:
                         investor_id, trans_type, amount, total_nav, trans_date
                     )
                     if success:
+                        # Invalidate caches after successful transaction
+                        invalidate_transaction_cache()
+                        invalidate_nav_cache()
                         st.balloons()
                 else:
                     # Nếu không hợp lệ, hiển thị các lỗi
@@ -148,52 +195,6 @@ class EnhancedTransactionPage:
         """Enhanced NAV update với validation, không cần xác nhận."""
         st.title("📈 Cập Nhật Total NAV")
         
-        # Add debug button for cloud troubleshooting
-        col_debug, col_spacer = st.columns([1, 4])
-        with col_debug:
-            col_debug1, col_debug2 = st.columns(2)
-            
-            with col_debug1:
-                if st.button("🔍 Debug NAV", help="Check current NAV from database"):
-                    try:
-                        from cloud_debug import CloudDebugger
-                        
-                        current_nav = self.fund_manager.get_latest_total_nav()
-                        st.info(f"Current NAV from memory: {format_currency(current_nav) if current_nav else 'No NAV found'}")
-                        
-                        # Force reload and check again
-                        print("🔄 Debug: Force reloading data from database...")
-                        self.fund_manager.load_data()
-                        reloaded_nav = self.fund_manager.get_latest_total_nav()
-                        st.info(f"NAV after DB reload: {format_currency(reloaded_nav) if reloaded_nav else 'None'}")
-                        
-                        # Show transaction count
-                        transaction_count = len(self.fund_manager.transactions)
-                        st.info(f"Total transactions in memory: {transaction_count}")
-                        
-                        # Log debug operation
-                        CloudDebugger.log_nav_operation("DEBUG_NAV_CHECK", reloaded_nav or 0, {
-                            'memory_nav': current_nav,
-                            'reloaded_nav': reloaded_nav,
-                            'transaction_count': transaction_count
-                        })
-                    except Exception as e:
-                        st.error(f"Debug error: {str(e)}")
-            
-            with col_debug2:
-                if st.button("🔬 DB Analysis", help="Deep database analysis"):
-                    try:
-                        from debug_database import deep_database_analysis
-                        deep_database_analysis()
-                    except Exception as e:
-                        st.error(f"Could not run database analysis: {str(e)}")
-        
-        # Show debug panel
-        try:
-            from cloud_debug import CloudDebugger
-            CloudDebugger.show_debug_panel()
-        except:
-            pass
         
         latest_nav = self.fund_manager.get_latest_total_nav()
         
@@ -246,10 +247,9 @@ class EnhancedTransactionPage:
                 if total_nav <= 0:
                     st.error("❌ Total NAV phải lớn hơn 0")
                 else:
-                    # Create timezone-aware datetime using timezone manager
-                    current_time = TimezoneManager.now().time()
+                    # Create naive datetime for local operations (Excel compatible)
+                    current_time = datetime.now().time()
                     trans_date_dt = datetime.combine(trans_date, current_time)
-                    trans_date_dt = TimezoneManager.to_app_timezone(trans_date_dt)
                     
                     # ULTRA FAST: Direct processing without debug logging
                     success, message = self.fund_manager.process_nav_update(total_nav, trans_date_dt)
@@ -257,10 +257,13 @@ class EnhancedTransactionPage:
                     if success:
                         st.success(message)
                         st.session_state.data_changed = True  # Set refresh flag
-                        
+
+                        # Invalidate relevant caches
+                        invalidate_nav_cache()
+
                         # ULTRA FAST: Immediate visual feedback
                         st.balloons()  # Show success animation immediately
-                        
+
                         # ULTRA FAST: Minimal background processing (non-blocking)
                         try:
                             st.cache_data.clear()  # Quick cache clear only
@@ -672,16 +675,11 @@ class EnhancedTransactionPage:
     def _process_validated_transaction(self, investor_id, trans_type, amount, total_nav, trans_date):
         """OPTIMIZED: Fast transaction processing with deferred operations."""
         try:
-            from performance_optimizer import create_fast_processor
+            # performance_optimizer removed - use direct processing
             
-            # Create fast processor if not exists
-            if not hasattr(self, '_fast_processor'):
-                self._fast_processor = create_fast_processor(self.fund_manager)
-            
-            # Create timezone-aware datetime using timezone manager
-            current_time = TimezoneManager.now().time()
-            trans_date_dt = datetime.combine(trans_date, current_time)
-            trans_date_dt = TimezoneManager.to_app_timezone(trans_date_dt) 
+            # Create naive datetime for local operations (Excel compatible)
+            current_time = datetime.now().time()
+            trans_date_dt = datetime.combine(trans_date, current_time) 
             
             # Choose appropriate transaction method
             if trans_type == "Nạp":
@@ -711,9 +709,8 @@ class EnhancedTransactionPage:
     
     def _process_transaction_original(self, investor_id, trans_type, amount, total_nav, trans_date):
         """Original transaction processing (fallback)"""
-        current_time = TimezoneManager.now().time()
-        trans_date_dt = datetime.combine(trans_date, current_time)
-        trans_date_dt = TimezoneManager.to_app_timezone(trans_date_dt) 
+        current_time = datetime.now().time()
+        trans_date_dt = datetime.combine(trans_date, current_time) 
         
         if trans_type == "Nạp":
             success, message = self.fund_manager.process_deposit(
@@ -759,10 +756,9 @@ class EnhancedTransactionPage:
                 st.error("❌ Insufficient units for withdrawal")
                 return False
             
-            # Create timezone-aware datetime using timezone manager
-            current_time = TimezoneManager.now().time()
+            # Create naive datetime for local operations (Excel compatible)
+            current_time = datetime.now().time()
             withdrawal_date_dt = datetime.combine(withdrawal_date, current_time)
-            withdrawal_date_dt = TimezoneManager.to_app_timezone(withdrawal_date_dt)
             
             # Remove units proportionally from tranches
             removal_ratio = units_to_remove / total_fm_units
@@ -784,6 +780,13 @@ class EnhancedTransactionPage:
                 -units_to_remove
             )
             
+            # Backup after transaction (if available)
+            if BACKUP_AVAILABLE and backup_after_transaction:
+                try:
+                    backup_after_transaction(self.fund_manager, 'transaction_save')
+                except Exception as e:
+                    print(f"Backup warning: {e}")
+
             return True
             
         except Exception as e:

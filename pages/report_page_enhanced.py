@@ -3,25 +3,69 @@ import pandas as pd
 import altair as alt
 import io
 from datetime import datetime, date
-from utils import format_currency, format_percentage, parse_currency, highlight_profit_loss
-from chart_utils import safe_altair_chart
-from timezone_manager import TimezoneManager
+from helpers import format_currency, format_percentage, parse_currency, highlight_profit_loss
+from ui.chart_utils import safe_altair_chart
+from utils.timezone_manager import TimezoneManager
+
+# Performance optimizations
+from performance.cache_service_simple import cache_report_data
+from performance.skeleton_components import SkeletonLoader, skeleton_chart, skeleton_metric_card, inject_skeleton_css
+from performance.performance_monitor import track_performance
+from performance.virtual_scroll import render_transaction_table_virtual
+
+# UX enhancements
+from ui.ux_enhancements import UXEnhancements
+
+# Color coding for profit/loss
+from ui.color_coding import ColorCoding, profit_loss_html, percentage_html, currency_change_html
 
 class EnhancedReportPage:
     """Enhanced Report Page với individual export và professional reports"""
-    
+
     def __init__(self, fund_manager):
         self.fund_manager = fund_manager
+
+    @cache_report_data
+    @track_performance("generate_executive_dashboard")
+    def get_dashboard_data(_self):
+        """Load dashboard data with caching"""
+        return {
+            'investors': _self.fund_manager.get_regular_investors(),
+            'latest_nav': _self.fund_manager.get_latest_total_nav(),
+            'transactions': _self.fund_manager.get_all_transactions()
+        }
     
     def render_reports(self):
         """Render enhanced reports với professional features"""
-        # Chart rendering using safe_altair_chart for compatibility
-        
         st.title("📊 Báo Cáo & Thống Kê")
-        
-        regular_investors = self.fund_manager.get_regular_investors()
+
+        # Breadcrumb
+        UXEnhancements.breadcrumb([
+            ("🏠 Trang chủ", "/"),
+            ("📊 Báo cáo", "")
+        ])
+
+        # Show loading skeleton
+        if 'loading_reports' not in st.session_state:
+            st.session_state.loading_reports = True
+
+        if st.session_state.loading_reports:
+            UXEnhancements.loading_skeleton(rows=6, columns=3)
+            regular_investors = self.fund_manager.get_regular_investors()
+            st.session_state.loading_reports = False
+            st.rerun()
+        else:
+            regular_investors = self.fund_manager.get_regular_investors()
+
+        # Empty state
         if not regular_investors:
-            st.info("📄 Chưa có nhà đầu tư nào.")
+            UXEnhancements.empty_state(
+                icon="📊",
+                title="Chưa có dữ liệu báo cáo",
+                description="Thêm nhà đầu tư và giao dịch để xem báo cáo chi tiết",
+                action_label="➕ Thêm nhà đầu tư",
+                action_callback=lambda: st.session_state.update({'menu_selection': "👥 Thêm Nhà Đầu Tư"})
+            )
             return
         
         tab1, tab2, tab3, tab4, tab5, tab6 = st.tabs([
@@ -102,7 +146,7 @@ class EnhancedReportPage:
             return
         
         # Type safety: ensure investor_id is always an integer using safe selectbox handling
-        from streamlit_widget_safety import safe_investor_id_from_selectbox
+        from utils.streamlit_widget_safety import safe_investor_id_from_selectbox
         investor_id = safe_investor_id_from_selectbox(self.fund_manager, selected_display)
         if investor_id is None:
             st.error("❌ Could not get valid investor ID from selection")
@@ -140,25 +184,28 @@ class EnhancedReportPage:
                 st.info("🚧 Email feature đang phát triển")
     
     def _render_kpi_section(self, current_nav):
-        """Render key performance indicators"""
+        """Render key performance indicators with color coding"""
         st.markdown("### 🎯 Key Performance Indicators")
-        
+
+        # Add global color classes
+        ColorCoding.add_global_color_classes()
+
         # Calculate metrics
         total_units = sum(t.units for t in self.fund_manager.tranches)
         current_price = self.fund_manager.calculate_price_per_unit(current_nav)
         regular_investors = self.fund_manager.get_regular_investors()
-        
+
         # Total invested vs current value
         total_original_invested = 0
         total_current_value = 0
         total_fees_paid = 0
-        
+
         for investor in regular_investors:
             lifetime_perf = self.fund_manager.get_investor_lifetime_performance(investor.id, current_nav)
             total_original_invested += lifetime_perf['original_invested']
             total_current_value += lifetime_perf['current_value']
             total_fees_paid += lifetime_perf['total_fees_paid']
-        
+
         # Fund Manager value
         fund_manager = self.fund_manager.get_fund_manager()
         fm_value = 0
@@ -166,52 +213,86 @@ class EnhancedReportPage:
             fm_tranches = self.fund_manager.get_investor_tranches(fund_manager.id)
             fm_units = sum(t.units for t in fm_tranches)
             fm_value = fm_units * current_price
-        
-        # Display KPIs
+
+        # Calculate profit/loss
+        total_profit_loss = total_current_value + total_fees_paid - total_original_invested
+        gross_return = total_profit_loss / total_original_invested if total_original_invested > 0 else 0
+
+        # Display KPIs with color coding
         col1, col2, col3, col4, col5 = st.columns(5)
-        
-        col1.metric(
-            "💰 Total NAV",
-            format_currency(current_nav)
-        )
-        
-        col2.metric(
-            "📈 Price/Unit",
-            format_currency(current_price)
-        )
-        
-        gross_return = (total_current_value + total_fees_paid - total_original_invested) / total_original_invested if total_original_invested > 0 else 0
-        col3.metric(
-            "📊 Gross Return",
-            format_percentage(gross_return),
-            delta_color="normal" if gross_return >= 0 else "inverse"
-        )
-        
-        col4.metric(
-            "💸 Total Fees Collected",
-            format_currency(total_fees_paid)
-        )
-        
-        col5.metric(
-            "🛒 Fund Manager Value",
-            format_currency(fm_value)
-        )
-        
-        # Additional insights
+
+        with col1:
+            st.metric("💰 Total NAV", format_currency(current_nav))
+
+        with col2:
+            st.metric("📈 Price/Unit", format_currency(current_price))
+
+        with col3:
+            # Gross Return with inline color
+            st.markdown(f"""
+            <div style="background: white; border: 1px solid #e5e7eb; border-radius: 8px; padding: 1rem;">
+                <div style="color: #6b7280; font-size: 0.875rem;">📊 Gross Return</div>
+                <div style="font-size: 1.5rem; font-weight: 700; margin-top: 0.25rem;">
+                    {percentage_html(gross_return)}
+                </div>
+            </div>
+            """, unsafe_allow_html=True)
+
+        with col4:
+            st.metric("💸 Total Fees", format_currency(total_fees_paid))
+
+        with col5:
+            st.metric("🛒 FM Value", format_currency(fm_value))
+
+        # Show total profit/loss with color - bigger and clearer
         st.markdown("---")
+        st.markdown(f"""
+        <div style="text-align: center; padding: 1.5rem; background: #f9fafb; border-radius: 12px; margin: 1rem 0;">
+            <div style="color: #6b7280; font-size: 1rem; margin-bottom: 0.5rem;">💹 TỔNG LÃI/LỖ</div>
+            <div style="font-size: 2.5rem; font-weight: 700;">
+                {profit_loss_html(total_profit_loss)}
+            </div>
+        </div>
+        """, unsafe_allow_html=True)
+        
+        # Additional insights with color
+        st.markdown("---")
+        st.markdown("### 📈 Chi Tiết Performance")
         insight_col1, insight_col2, insight_col3 = st.columns(3)
-        
+
+        net_return = (total_current_value - total_original_invested) / total_original_invested if total_original_invested > 0 else 0
+        fee_rate = total_fees_paid / total_original_invested if total_original_invested > 0 else 0
+        aum_growth = (current_nav - total_original_invested) / total_original_invested if total_original_invested > 0 else 0
+
         with insight_col1:
-            net_return = (total_current_value - total_original_invested) / total_original_invested if total_original_invested > 0 else 0
-            st.metric("📉 Net Return (After Fees)", format_percentage(net_return))
-        
+            st.markdown(f"""
+            <div style="background: white; border: 1px solid #e5e7eb; border-radius: 8px; padding: 1rem;">
+                <div style="color: #6b7280; font-size: 0.875rem;">📉 Net Return (After Fees)</div>
+                <div style="font-size: 1.25rem; font-weight: 700; margin-top: 0.25rem;">
+                    {percentage_html(net_return)}
+                </div>
+            </div>
+            """, unsafe_allow_html=True)
+
         with insight_col2:
-            fee_rate = total_fees_paid / total_original_invested if total_original_invested > 0 else 0
-            st.metric("💱 Cumulative Fee Rate", format_percentage(fee_rate))
-        
+            st.markdown(f"""
+            <div style="background: white; border: 1px solid #e5e7eb; border-radius: 8px; padding: 1rem;">
+                <div style="color: #6b7280; font-size: 0.875rem;">💱 Cumulative Fee Rate</div>
+                <div style="font-size: 1.25rem; font-weight: 700; margin-top: 0.25rem;">
+                    {format_percentage(fee_rate)}
+                </div>
+            </div>
+            """, unsafe_allow_html=True)
+
         with insight_col3:
-            aum_growth = (current_nav - total_original_invested) / total_original_invested if total_original_invested > 0 else 0
-            st.metric("🚀 AUM Growth", format_percentage(aum_growth))
+            st.markdown(f"""
+            <div style="background: white; border: 1px solid #e5e7eb; border-radius: 8px; padding: 1rem;">
+                <div style="color: #6b7280; font-size: 0.875rem;">🚀 AUM Growth</div>
+                <div style="font-size: 1.25rem; font-weight: 700; margin-top: 0.25rem;">
+                    {percentage_html(aum_growth)}
+                </div>
+            </div>
+            """, unsafe_allow_html=True)
     
     def _render_portfolio_composition(self, current_nav):
         """Render portfolio composition chart"""
@@ -255,41 +336,41 @@ class EnhancedReportPage:
                     height=300
                 )
                 safe_altair_chart(pie_chart, use_container_width=True)
-                
-                # Table
-                display_df = df_composition.copy()
-                display_df['Value'] = display_df['Value'].apply(format_currency)
-                display_df['Percentage'] = display_df['Percentage'].apply(lambda x: f"{x:.1f}%")
-                st.dataframe(display_df, use_container_width=True, hide_index=True)
             else:
                 st.info("ℹ️ Không có dữ liệu để hiển thị biểu đồ phân bổ danh mục.")
     
     def _render_performance_summary(self, current_nav):
-        """Render performance summary"""
+        """Render performance summary with color coding"""
         st.markdown("### 📈 Performance Summary")
-        
+
         performance_data = []
         for investor in self.fund_manager.get_regular_investors():
             lifetime_perf = self.fund_manager.get_investor_lifetime_performance(investor.id, current_nav)
             if lifetime_perf['original_invested'] > 0:
+                # Calculate profit/loss
+                profit_loss = lifetime_perf['current_value'] + lifetime_perf['total_fees_paid'] - lifetime_perf['original_invested']
+
                 performance_data.append({
                     'Investor': investor.display_name,
+                    'Original Invested': lifetime_perf['original_invested'],
+                    'Current Value': lifetime_perf['current_value'],
+                    'Profit/Loss': profit_loss,
                     'Gross Return': lifetime_perf['gross_return'],
                     'Net Return': lifetime_perf['net_return'],
                     'Total Fees': lifetime_perf['total_fees_paid']
                 })
-        
+
         if performance_data:
             df_performance = pd.DataFrame(performance_data)
-            
+
             # Return comparison chart
             chart_data = df_performance.melt(
-                id_vars=['Investor'], 
+                id_vars=['Investor'],
                 value_vars=['Gross Return', 'Net Return'],
                 var_name='Return Type',
                 value_name='Return'
             )
-            
+
             bar_chart = alt.Chart(chart_data).mark_bar().encode(
                 x='Investor:N',
                 y='Return:Q',
@@ -299,15 +380,8 @@ class EnhancedReportPage:
                 title="Gross vs Net Returns",
                 height=300
             )
-            
+
             safe_altair_chart(bar_chart, use_container_width=True)
-            
-            # Summary table
-            display_df = df_performance.copy()
-            display_df['Gross Return'] = display_df['Gross Return'].apply(format_percentage)
-            display_df['Net Return'] = display_df['Net Return'].apply(format_percentage)
-            display_df['Total Fees'] = display_df['Total Fees'].apply(format_currency)
-            st.dataframe(display_df, use_container_width=True, hide_index=True)
     
     def _render_fund_growth_timeline(self):
         """Render fund growth over time"""
@@ -378,72 +452,122 @@ class EnhancedReportPage:
             st.error("❌ Không thể tạo báo cáo cho investor này")
             return
         
-        # Summary section
+        # Summary section with color coding
         col1, col2, col3, col4 = st.columns(4)
-        
-        col1.metric(
-            "💰 Original Investment",
-            format_currency(report_data['lifetime_performance']['original_invested'])
-        )
-        
-        col2.metric(
-            "📊 Current Value", 
-            format_currency(report_data['current_balance'])
-        )
-        
-        profit_color = "normal" if report_data['current_profit'] >= 0 else "inverse"
-        col3.metric(
-            "📈 Current P&L",
-            format_currency(report_data['current_profit']),
-            delta_color=profit_color
-        )
-        
-        col4.metric(
-            "💸 Total Fees Paid",
-            format_currency(report_data['lifetime_performance']['total_fees_paid'])
-        )
-        
-        # Performance comparison
+
+        with col1:
+            st.markdown("""
+            <div style="background: white; border: 1px solid #e5e7eb; border-radius: 8px; padding: 1rem;">
+                <div style="color: #6b7280; font-size: 0.875rem;">💰 Original Investment</div>
+                <div style="font-size: 1.5rem; font-weight: 700; margin-top: 0.25rem;">
+                    {0}
+                </div>
+            </div>
+            """.format(format_currency(report_data['lifetime_performance']['original_invested'])), unsafe_allow_html=True)
+
+        with col2:
+            st.markdown("""
+            <div style="background: white; border: 1px solid #e5e7eb; border-radius: 8px; padding: 1rem;">
+                <div style="color: #6b7280; font-size: 0.875rem;">📊 Current Value</div>
+                <div style="font-size: 1.5rem; font-weight: 700; margin-top: 0.25rem;">
+                    {0}
+                </div>
+            </div>
+            """.format(format_currency(report_data['current_balance'])), unsafe_allow_html=True)
+
+        with col3:
+            st.markdown("""
+            <div style="background: white; border: 1px solid #e5e7eb; border-radius: 8px; padding: 1rem;">
+                <div style="color: #6b7280; font-size: 0.875rem;">📈 Current P&L</div>
+                <div style="font-size: 1.5rem; font-weight: 700; margin-top: 0.25rem;">
+                    {0}
+                </div>
+            </div>
+            """.format(profit_loss_html(report_data['current_profit'])), unsafe_allow_html=True)
+
+        with col4:
+            st.markdown("""
+            <div style="background: white; border: 1px solid #e5e7eb; border-radius: 8px; padding: 1rem;">
+                <div style="color: #6b7280; font-size: 0.875rem;">💸 Total Fees Paid</div>
+                <div style="font-size: 1.5rem; font-weight: 700; margin-top: 0.25rem;">
+                    {0}
+                </div>
+            </div>
+            """.format(format_currency(report_data['lifetime_performance']['total_fees_paid'])), unsafe_allow_html=True)
+
+        # Performance comparison with color coding
         st.markdown("#### 📊 Performance Analysis")
-        
+
         perf_col1, perf_col2 = st.columns(2)
-        
+
         with perf_col1:
             gross_return = report_data['lifetime_performance']['gross_return']
-            st.metric(
-                "🚀 Gross Return (Before Fees)",
-                format_percentage(gross_return),
-                delta_color="normal" if gross_return >= 0 else "inverse"
-            )
-        
+            st.markdown("""
+            <div style="background: white; border: 1px solid #e5e7eb; border-radius: 8px; padding: 1rem;">
+                <div style="color: #6b7280; font-size: 0.875rem;">🚀 Gross Return (Before Fees)</div>
+                <div style="font-size: 1.5rem; font-weight: 700; margin-top: 0.25rem;">
+                    {0}
+                </div>
+            </div>
+            """.format(percentage_html(gross_return)), unsafe_allow_html=True)
+
         with perf_col2:
             net_return = report_data['lifetime_performance']['net_return']
-            st.metric(
-                "💼 Net Return (After Fees)",
-                format_percentage(net_return),
-                delta_color="normal" if net_return >= 0 else "inverse"
-            )
+            st.markdown("""
+            <div style="background: white; border: 1px solid #e5e7eb; border-radius: 8px; padding: 1rem;">
+                <div style="color: #6b7280; font-size: 0.875rem;">💼 Net Return (After Fees)</div>
+                <div style="font-size: 1.5rem; font-weight: 700; margin-top: 0.25rem;">
+                    {0}
+                </div>
+            </div>
+            """.format(percentage_html(net_return)), unsafe_allow_html=True)
         
-        # Tranches detail
+        # Tranches detail with color coding
         if report_data['tranches']:
             st.markdown("#### 📋 Investment Tranches")
-            
-            tranche_data = []
+
+            # Header row
+            col1, col2, col3, col4, col5, col6, col7 = st.columns([1.2, 1, 1, 1.2, 1.2, 1, 1])
+            with col1:
+                st.markdown("**Entry Date**")
+            with col2:
+                st.markdown("**Entry Price**")
+            with col3:
+                st.markdown("**Units**")
+            with col4:
+                st.markdown("**Original Investment**")
+            with col5:
+                st.markdown("**Current Value**")
+            with col6:
+                st.markdown("**P&L**")
+            with col7:
+                st.markdown("**Fees Paid**")
+
+            st.divider()
+
+            # Build table with colored P&L
             for tranche in report_data['tranches']:
                 current_value = tranche.units * report_data['current_price']
-                
-                tranche_data.append({
-                    'Entry Date': tranche.entry_date.strftime("%d/%m/%Y"),
-                    'Entry Price': format_currency(tranche.entry_nav),
-                    'Units': f"{tranche.units:.6f}",
-                    'Original Investment': format_currency(tranche.original_invested_value),
-                    'Current Value': format_currency(current_value),
-                    'P&L': format_currency(current_value - tranche.invested_value),
-                    'Fees Paid': format_currency(tranche.cumulative_fees_paid)
-                })
-            
-            df_tranches = pd.DataFrame(tranche_data)
-            st.dataframe(df_tranches, use_container_width=True, hide_index=True)
+                pnl = current_value - tranche.invested_value
+
+                col1, col2, col3, col4, col5, col6, col7 = st.columns([1.2, 1, 1, 1.2, 1.2, 1, 1])
+
+                with col1:
+                    st.text(tranche.entry_date.strftime("%d/%m/%Y"))
+                with col2:
+                    st.text(format_currency(tranche.entry_nav))
+                with col3:
+                    st.text(f"{tranche.units:.6f}")
+                with col4:
+                    st.text(format_currency(tranche.original_invested_value))
+                with col5:
+                    st.text(format_currency(current_value))
+                with col6:
+                    st.markdown(profit_loss_html(pnl), unsafe_allow_html=True)
+                with col7:
+                    st.text(format_currency(tranche.cumulative_fees_paid))
+
+            st.markdown("<div style='margin: 1rem 0;'></div>", unsafe_allow_html=True)
         
         # Transaction history for this investor
         if report_data['transactions']:
@@ -865,7 +989,7 @@ class EnhancedReportPage:
             filtered_records = [r for r in filtered_records if r.period in selected_periods]
         if selected_investors:
             # Type safety: ensure all selected IDs are integers using safe conversion
-            from streamlit_widget_safety import safe_selectbox_int_value
+            from utils.streamlit_widget_safety import safe_selectbox_int_value
             selected_ids = []
             for name in selected_investors:
                 try:

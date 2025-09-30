@@ -1,15 +1,12 @@
 #!/usr/bin/env python3
 """
-Backup Management Dashboard Page
-Provides comprehensive backup management UI
+Updated Backup Management Dashboard Page
+Support for both Drive-backed and CSV storage systems
 """
 
 import streamlit as st
 import pandas as pd
 from datetime import datetime, date, timedelta
-import plotly.express as px
-import plotly.graph_objects as go
-from chart_utils import safe_plotly_chart
 from pathlib import Path
 import json
 import sys
@@ -17,523 +14,573 @@ import os
 
 # Add parent directory to path for imports
 sys.path.append(os.path.dirname(os.path.dirname(__file__)))
-from auth_helper import check_admin_authentication, show_admin_status
+from utils.auth_helper import is_admin_authenticated, show_admin_status
 
-def show_backup_status_cards(fund_manager):
-    """Display backup status cards"""
-    status = fund_manager.get_backup_status()
-    
-    if not status['enabled']:
-        st.error("🚫 Backup system is DISABLED")
+# Import new backup system
+try:
+    from integrations.auto_backup_personal import get_auto_backup_manager, manual_backup
+    AUTO_BACKUP_AVAILABLE = True
+except ImportError:
+    AUTO_BACKUP_AVAILABLE = False
+
+def show_backup_status_cards():
+    """Display backup status cards using PersonalAutoBackupManager"""
+    if not AUTO_BACKUP_AVAILABLE:
+        st.error("🚫 Auto backup system not available")
         return
     
+    # Get fund manager from session state
+    if 'fund_manager' not in st.session_state:
+        st.error("❌ Fund manager not initialized")
+        return
+    
+    fund_manager = st.session_state.fund_manager
+    backup_manager = get_auto_backup_manager(fund_manager)
+    status = backup_manager.get_backup_status()
     
     col1, col2, col3, col4 = st.columns(4)
     
-    # Check storage type for appropriate stats (check both locations)
-    storage_type = status.get('storage_type', 'local')  # First check root level
-    if storage_type == 'local' and 'storage' in status:
-        storage_type = status['storage'].get('storage_type', 'local')  # Fallback to nested
-    
-    if storage_type == 'supabase_database':
-        backup_stats = status.get('database_backups', {})
-    else:
-        backup_stats = status.get('daily_backups', {})
-    
     with col1:
         st.metric(
-            label="📅 Total Backups",
-            value=backup_stats.get('total', 0),
-            delta=f"{backup_stats.get('recent_7_days', 0)} last 7 days"
+            label="🏠 Service Status",
+            value="Running" if status['service_running'] else "Stopped",
+            delta="Active" if status['service_running'] else "Inactive"
         )
     
     with col2:
-        storage_label = "☁️ Cloud Storage" if storage_type == 'supabase_database' else "💾 Local Storage"
-        
-        # Get compression status
-        compression_enabled = False
-        if 'storage' in status:
-            compression_enabled = status['storage'].get('compression_enabled', False)
-        
         st.metric(
-            label=storage_label,
-            value=f"{backup_stats.get('total_size_mb', 0):.1f} MB",
-            delta="Compressed" if compression_enabled else "Uncompressed"
+            label="💾 Local Backups",
+            value=status['local_backups']['count'],
+            delta=f"{status['local_backups']['total_size_mb']:.1f} MB"
         )
     
     with col3:
-        ops_stats = status.get('operation_snapshots', {'current_count': 0, 'max_count': 50})
+        cloud_count = status['cloud_backup'].get('files', 0) if status['cloud_backup']['connected'] else 0
         st.metric(
-            label="⚡ Op. Snapshots",
-            value=f"{ops_stats['current_count']}/{ops_stats['max_count']}",
-            delta="In Memory"
+            label="☁️ Cloud Backups", 
+            value=cloud_count,
+            delta="Connected" if status['cloud_backup']['connected'] else "Not connected"
         )
     
     with col4:
-        last_backup = backup_stats.get('last_backup_date')
-        if last_backup:
-            try:
-                days_ago = (date.today() - date.fromisoformat(last_backup)).days
-                delta_text = "Today" if days_ago == 0 else f"{days_ago} days ago"
-            except:
-                delta_text = "Recent"
-        else:
-            delta_text = "Never"
-        
         st.metric(
-            label="🕐 Last Backup",
-            value=last_backup or "Never",
-            delta=delta_text
+            label="📊 Today's Backups",
+            value=f"{status['backups_today']}/5",
+            delta="Daily limit"
         )
 
-def show_backup_controls(fund_manager):
-    """Display backup control buttons"""
-    st.subheader("🎛️ Backup Controls")
-    
-    col1, col2, col3, col4 = st.columns(4)
-    
-    with col1:
-        if st.button("💾 Create Manual Backup", type="primary"):
-            with st.spinner("Creating backup..."):
-                backup_id = fund_manager.create_manual_backup("MANUAL_UI")
-                if backup_id:
-                    st.success(f"✅ Backup created: `{backup_id}`")
-                    st.rerun()
-                else:
-                    st.error("❌ Failed to create backup")
-    
-    with col2:
-        if st.button("🚨 Emergency Backup", type="secondary"):
-            with st.spinner("Creating emergency backup..."):
-                backup_id = fund_manager.create_emergency_backup()
-                if backup_id:
-                    st.success(f"✅ Emergency backup: `{backup_id}`")
-                    st.rerun()
-                else:
-                    st.error("❌ Failed to create emergency backup")
-    
-    with col3:
-        if st.button("🤖 Trigger Auto Backup"):
-            with st.spinner("Triggering auto backup..."):
-                success = fund_manager.trigger_auto_backup_if_needed()
-                if success:
-                    st.success("✅ Auto backup completed")
-                    st.rerun()
-                else:
-                    st.info("ℹ️ Auto backup not needed (already completed today)")
-    
-    with col4:
-        if st.button("🔍 Validate Data"):
-            with st.spinner("Validating data integrity..."):
-                result = fund_manager.validate_data_integrity(detailed=False)
-                if result['is_valid']:
-                    st.success(f"✅ Data integrity OK ({result['summary']['total_warnings']} warnings)")
-                else:
-                    st.error(f"❌ Data integrity issues: {result['summary']['total_errors']} errors")
-                    with st.expander("Show Errors"):
-                        for error in result['errors']:
-                            st.error(error)
-    
-    # Add download backup feature for cloud environment
-    if hasattr(fund_manager.backup_manager, 'create_downloadable_backup'):
-        st.markdown("---")
-        st.subheader("📥 Download Backup")
+def handle_restore_from_backup(backup_file_path, filename):
+    """Handle restore operation from backup Excel file"""
+    try:
+        if 'fund_manager' not in st.session_state:
+            st.error("❌ Fund manager not initialized")
+            return
         
-        col_download1, col_download2 = st.columns([3, 1])
+        # Confirmation dialog with backup info
+        st.warning(f"⚠️ Bạn có chắc chắn muốn restore từ backup: **{filename}**?")
+        st.warning("🔴 **CHÚ Ý**: Thao tác này sẽ ghi đè toàn bộ dữ liệu hiện tại!")
         
-        with col_download1:
-            st.info("💡 **Download Backup**: Create a local backup file you can save to your computer")
+        # Show preview of backup content
+        try:
+            import pandas as pd
+            excel_data = pd.read_excel(backup_file_path, sheet_name=None)
+            
+            st.info("📋 **Nội dung backup sẽ được restore:**")
+            backup_info = []
+            for sheet_name, sheet_data in excel_data.items():
+                if sheet_name in ['Investors', 'Tranches', 'Transactions', 'Fee_Records']:
+                    backup_info.append(f"- **{sheet_name}**: {len(sheet_data)} records")
+            
+            if backup_info:
+                for info in backup_info:
+                    st.markdown(info)
+        except Exception as e:
+            st.warning(f"⚠️ Không thể preview backup: {str(e)}")
         
-        with col_download2:
-            if st.button("📥 Create Download", type="secondary"):
-                with st.spinner("Creating downloadable backup..."):
+        col1, col2, col3 = st.columns([1, 1, 2])
+        
+        with col1:
+            if st.button("✅ Xác nhận Restore", key="confirm_restore", type="primary"):
+                with st.spinner(f"🔄 Đang restore từ {filename}..."):
+                    # Create safety backup first
                     try:
-                        filename, backup_bytes = fund_manager.backup_manager.create_downloadable_backup(fund_manager)
+                        safety_backup_success = False
+                        if AUTO_BACKUP_AVAILABLE:
+                            from integrations.auto_backup_personal import manual_backup
+                            safety_backup_success = manual_backup(st.session_state.fund_manager, "pre_restore_safety")
+                            if safety_backup_success:
+                                st.info("✅ Đã tạo safety backup trước khi restore")
+                    except:
+                        pass  # Continue even if safety backup fails
+                    # Read Excel backup file
+                    import pandas as pd
+                    
+                    # Read all sheets from backup
+                    excel_data = pd.read_excel(backup_file_path, sheet_name=None)
+                    
+                    success_count = 0
+                    errors = []
+                    
+                    # Restore investors
+                    if 'Investors' in excel_data:
+                        try:
+                            investors_df = excel_data['Investors']
+                            # Convert back to CSV format and save
+                            investors_df.to_csv('data/investors.csv', index=False)
+                            success_count += 1
+                        except Exception as e:
+                            errors.append(f"Investors: {str(e)}")
+                    
+                    # Restore tranches  
+                    if 'Tranches' in excel_data:
+                        try:
+                            tranches_df = excel_data['Tranches']
+                            tranches_df.to_csv('data/tranches.csv', index=False)
+                            success_count += 1
+                        except Exception as e:
+                            errors.append(f"Tranches: {str(e)}")
+                    
+                    # Restore transactions
+                    if 'Transactions' in excel_data:
+                        try:
+                            transactions_df = excel_data['Transactions']
+                            transactions_df.to_csv('data/transactions.csv', index=False)
+                            success_count += 1
+                        except Exception as e:
+                            errors.append(f"Transactions: {str(e)}")
+                    
+                    # Restore fee records
+                    if 'Fee_Records' in excel_data:
+                        try:
+                            fees_df = excel_data['Fee_Records']
+                            fees_df.to_csv('data/fee_records.csv', index=False)
+                            success_count += 1
+                        except Exception as e:
+                            errors.append(f"Fee Records: {str(e)}")
+                    
+                    # Reload fund manager data
+                    st.session_state.fund_manager.load_data()
+                    
+                    # Show results
+                    if success_count > 0:
+                        st.success(f"✅ Restore thành công {success_count} bảng dữ liệu!")
+                        st.balloons()
+                        if errors:
+                            st.warning(f"⚠️ Có {len(errors)} lỗi:")
+                            for error in errors:
+                                st.error(f"  - {error}")
                         
-                        if filename and backup_bytes:
-                            st.download_button(
-                                label="💾 Download Backup File",
-                                data=backup_bytes,
-                                file_name=filename,
-                                mime="application/gzip" if filename.endswith('.gz') else "application/json",
-                                type="primary"
-                            )
-                            st.success(f"✅ Backup ready: `{filename}` ({len(backup_bytes)/1024:.1f} KB)")
-                        else:
-                            st.error("❌ Failed to create downloadable backup")
-                    except Exception as e:
-                        st.error(f"❌ Error: {str(e)}")
+                        # Auto-refresh after 2 seconds
+                        import time
+                        time.sleep(2)
+                        st.rerun()
+                    else:
+                        st.error("❌ Không thể restore dữ liệu")
+                        for error in errors:
+                            st.error(f"  - {error}")
+        
+        with col2:
+            if st.button("❌ Hủy bỏ", key="cancel_restore"):
+                st.rerun()
+                
+    except Exception as e:
+        st.error(f"❌ Lỗi restore: {str(e)}")
 
-def show_backup_history(fund_manager):
-    """Display backup history table"""
-    st.subheader("📋 Backup History")
+def show_backup_history():
+    """Show backup history from local exports folder with restore functionality"""
+    st.subheader("📊 Backup History")
     
-    # Filter controls
-    col1, col2, col3 = st.columns([2, 1, 1])
+    # Warning about restore
+    with st.expander("⚠️ Hướng dẫn Restore"):
+        st.warning("🔴 **CHÚ Ý quan trọng về Restore:**")
+        st.markdown("""
+        - **Restore sẽ ghi đè toàn bộ dữ liệu hiện tại**
+        - Nên tạo backup hiện tại trước khi restore
+        - Restore chỉ áp dụng cho file Excel backup
+        - Sau restore, hệ thống sẽ tự động reload data
+        """)
     
-    with col1:
-        days_filter = st.selectbox(
-            "Show backups from last:",
-            options=[7, 14, 30, 60, 90],
-            index=2,  # Default 30 days
-            format_func=lambda x: f"{x} days"
-        )
-    
-    with col2:
-        backup_types = ["All", "MANUAL", "AUTO", "EMERGENCY", "PRE_RESTORE"]
-        type_filter = st.selectbox("Backup Type:", backup_types)
-    
-    with col3:
-        st.write("")  # Spacer
-        refresh_button = st.button("🔄 Refresh")
-    
-    # Get backup data
-    backups = fund_manager.list_available_backups(days_filter)
-    
-    # Apply type filter
-    if type_filter != "All":
-        backups = [b for b in backups if b['backup_type'] == type_filter]
-    
-    if not backups:
-        st.info("No backups found for the selected criteria")
+    export_dir = Path("exports")
+    if not export_dir.exists():
+        st.info("📁 No backup directory found")
         return
     
-    # Convert to DataFrame for better display
+    # Get all backup files
+    backup_files = list(export_dir.glob("Fund_Export_*.xlsx"))
+    
+    if not backup_files:
+        st.info("📁 No backup files found")
+        return
+    
+    # Create backup history data
     backup_data = []
-    for backup in backups:
-        backup_date = backup['date']
-        backup_time = datetime.fromisoformat(backup['timestamp']).strftime('%H:%M:%S')
-        
-        backup_data.append({
-            'ID': backup['backup_id'],
-            'Type': backup['backup_type'],
-            'Date': backup_date,
-            'Time': backup_time,
-            'Size (MB)': f"{backup['file_size_mb']:.2f}",
-            'Investors': backup['investors_count'],
-            'Tranches': backup['tranches_count'],
-            'Transactions': backup['transactions_count'],
-            'Fee Records': backup['fee_records_count']
-        })
+    for file_path in backup_files:
+        try:
+            stats = file_path.stat()
+            backup_data.append({
+                'Filename': file_path.name,
+                'Date': datetime.fromtimestamp(stats.st_mtime),
+                'Size (KB)': round(stats.st_size / 1024, 1),
+                'Type': 'Auto' if 'auto_' in file_path.name else 'Manual',
+                'Path': str(file_path)
+            })
+        except Exception as e:
+            st.warning(f"⚠️ Could not read {file_path.name}: {e}")
     
-    df = pd.DataFrame(backup_data)
-    
-    # Display table with selection
-    st.dataframe(
-        df,
-        use_container_width=True,
-        hide_index=True,
-        column_config={
-            'ID': st.column_config.TextColumn('Backup ID', width="large"),
-            'Type': st.column_config.SelectboxColumn('Type', width="small"),
-            'Date': st.column_config.DateColumn('Date', width="medium"),
-            'Time': st.column_config.TimeColumn('Time', width="small"),
-            'Size (MB)': st.column_config.NumberColumn('Size (MB)', format="%.2f")
-        }
-    )
-    
-    return backups
-
-def show_restore_controls(fund_manager, backups):
-    """Display restore controls"""
-    st.subheader("🔄 Restore Operations")
-    
-    if not backups:
-        st.warning("No backups available for restore")
+    if not backup_data:
+        st.info("📁 No readable backup files found")
         return
     
-    # Restore by backup selection
-    col1, col2 = st.columns([3, 1])
+    # Sort by date (newest first)
+    backup_data.sort(key=lambda x: x['Date'], reverse=True)
+    
+    # Show as dataframe
+    df = pd.DataFrame(backup_data)
+    df['Date'] = df['Date'].dt.strftime('%Y-%m-%d %H:%M:%S')
+    
+    # Display table with restore buttons
+    display_df = df.drop('Path', axis=1).copy()
+    
+    # Add restore column with better formatting
+    st.markdown("**Danh sách Backup Files (nhấn 🔄 để restore):**")
+    
+    for i, row in enumerate(backup_data):
+        with st.container():
+            col1, col2 = st.columns([5, 1])
+            with col1:
+                # Format the display with better styling
+                file_date = row['Date'].strftime('%Y-%m-%d %H:%M')
+                file_size_mb = row['Size (KB)'] / 1024
+                type_emoji = "🤖" if row['Type'] == 'Auto' else "👤"
+                
+                st.markdown(f"""
+                **{row['Filename']}**  
+                📅 {file_date} | 📦 {file_size_mb:.1f} MB | {type_emoji} {row['Type']}
+                """)
+            with col2:
+                if st.button(f"🔄", key=f"restore_{i}", help=f"Restore từ backup: {row['Filename']}", type="secondary"):
+                    handle_restore_from_backup(row['Path'], row['Filename'])
+            
+            st.divider()
+    
+    # Show total stats
+    col1, col2, col3 = st.columns(3)
+    with col1:
+        st.metric("Total Files", len(backup_data))
+    with col2:
+        total_size = sum(item['Size (KB)'] for item in backup_data)
+        st.metric("Total Size", f"{total_size/1024:.1f} MB")
+    with col3:
+        if backup_data:
+            # Use original datetime objects from backup_data, not the string-converted ones
+            latest = max(backup_data, key=lambda x: x['Date'])
+            st.metric("Latest Backup", latest['Date'].strftime('%Y-%m-%d'))
+
+def show_cloud_backup_status():
+    """Show cloud backup status and details"""
+    st.subheader("☁️ Cloud Backup Status")
+    
+    if not AUTO_BACKUP_AVAILABLE:
+        st.error("🚫 Auto backup system not available")
+        return
+    
+    if 'fund_manager' not in st.session_state:
+        st.error("❌ Fund manager not initialized")
+        return
+    
+    fund_manager = st.session_state.fund_manager
+    backup_manager = get_auto_backup_manager(fund_manager)
+    status = backup_manager.get_backup_status()
+    
+    cloud_info = status['cloud_backup']
+    
+    if cloud_info['connected']:
+        st.success("✅ Cloud backup connected")
+        
+        col1, col2 = st.columns(2)
+        with col1:
+            st.info(f"👤 Account: {cloud_info.get('account', 'Unknown')}")
+            st.info(f"🔐 Method: {cloud_info.get('method', 'Unknown')}")
+        
+        with col2:
+            st.info(f"📄 Files in Drive: {cloud_info.get('files', 0)}")
+            st.info("📁 Storage: 15GB free (personal account)")
+        
+        # Test connection button
+        if st.button("🧪 Test Connection", help="Test Google Drive connection"):
+            try:
+                drive_manager = backup_manager.drive_manager
+                if drive_manager:
+                    test_result = drive_manager.test_connection()
+                    if test_result.get('connected'):
+                        st.success(f"✅ Connection successful! Files: {test_result.get('files_count', 0)}")
+                    else:
+                        st.error("❌ Connection test failed")
+                        for error in test_result.get('errors', []):
+                            st.error(f"   - {error}")
+                else:
+                    st.warning("⚠️ Drive manager not available")
+            except Exception as e:
+                st.error(f"❌ Test failed: {e}")
+    else:
+        st.warning("⚠️ Cloud backup not connected")
+        if 'error' in cloud_info:
+            st.error(f"Error: {cloud_info['error']}")
+        
+        st.info("💡 To enable cloud backup:")
+        st.markdown("""
+        1. Follow setup in `SETUP_OAUTH_PERSONAL.md`
+        2. Create OAuth credentials
+        3. Restart the app
+        """)
+
+def show_backup_controls():
+    """Show backup control buttons and settings"""
+    st.subheader("🎮 Backup Controls")
+    
+    if not AUTO_BACKUP_AVAILABLE:
+        st.error("🚫 Auto backup system not available")
+        return
+    
+    if 'fund_manager' not in st.session_state:
+        st.error("❌ Fund manager not initialized")
+        return
+    
+    fund_manager = st.session_state.fund_manager
+    backup_manager = get_auto_backup_manager(fund_manager)
+    
+    col1, col2, col3 = st.columns(3)
     
     with col1:
-        # Create options for selectbox
-        backup_options = [""] + [f"{b['backup_id']} ({b['backup_type']}) - {b['date']}" for b in backups]
-        selected_backup = st.selectbox(
-            "Select backup to restore:",
-            options=backup_options,
-            help="Choose a backup from the history above"
-        )
+        if st.button("📊 Create Backup Now", type="primary", help="Create manual backup"):
+            with st.spinner("Creating backup..."):
+                success = manual_backup(fund_manager, "dashboard_manual")
+            
+            if success:
+                st.success("✅ Backup created successfully!")
+                st.balloons()
+                st.rerun()
+            else:
+                st.error("❌ Backup creation failed")
     
     with col2:
-        st.write("")  # Spacer for alignment
-        restore_button = st.button("🔄 Restore Selected", type="primary")
-    
-    # Restore by date
-    st.write("**Or restore latest backup from specific date:**")
-    col3, col4 = st.columns([2, 1])
+        if st.button("🔄 Refresh Status", help="Refresh backup status"):
+            st.rerun()
     
     with col3:
-        restore_date = st.date_input(
-            "Select date:",
-            value=date.today(),
-            max_value=date.today(),
-            help="Will restore the latest backup from this date"
-        )
-    
-    with col4:
-        st.write("")  # Spacer
-        restore_date_button = st.button("🔄 Restore by Date")
-    
-    # Handle restore operations
-    if restore_button and selected_backup and selected_backup != "":
-        backup_id = selected_backup.split(" ")[0]  # Extract backup ID
-        
-        # Confirmation
-        st.warning("⚠️ **WARNING**: This will OVERWRITE current data!")
-        
-        confirm_restore = st.checkbox("I understand this will replace all current data")
-        
-        if confirm_restore:
-            if st.button("⚠️ CONFIRM RESTORE", type="secondary"):
-                with st.spinner("Restoring backup..."):
-                    success = fund_manager.restore_from_backup(backup_id=backup_id)
-                    if success:
-                        st.success("✅ Restore completed successfully!")
-                        st.info("💡 Data has been restored. Please refresh other pages to see changes.")
-                        st.balloons()
+        if st.button("🧹 Clean Old Backups", help="Remove old local backups (keep 10 newest)"):
+            try:
+                export_dir = Path("exports")
+                if export_dir.exists():
+                    backup_files = list(export_dir.glob("Fund_Export_*.xlsx"))
+                    backup_files.sort(key=lambda x: x.stat().st_mtime, reverse=True)
+                    
+                    if len(backup_files) > 10:
+                        files_to_delete = backup_files[10:]
+                        deleted_count = 0
+                        
+                        for file_path in files_to_delete:
+                            try:
+                                file_path.unlink()
+                                deleted_count += 1
+                            except Exception as e:
+                                st.warning(f"Could not delete {file_path.name}: {e}")
+                        
+                        st.success(f"🧹 Cleaned up {deleted_count} old backup files")
+                        st.rerun()
                     else:
-                        st.error("❌ Restore failed. Check logs for details.")
-    
-    if restore_date_button:
-        # Confirmation for date restore
-        st.warning("⚠️ **WARNING**: This will OVERWRITE current data!")
-        
-        confirm_date_restore = st.checkbox("I understand this will restore latest backup from selected date")
-        
-        if confirm_date_restore:
-            if st.button("⚠️ CONFIRM DATE RESTORE", type="secondary"):
-                with st.spinner("Restoring from date..."):
-                    success = fund_manager.restore_from_backup(backup_date=restore_date.isoformat())
-                    if success:
-                        st.success("✅ Date restore completed successfully!")
-                        st.info("💡 Data has been restored. Please refresh other pages to see changes.")
-                        st.balloons()
-                    else:
-                        st.error("❌ Date restore failed. Check logs for details.")
+                        st.info("✅ No cleanup needed (≤10 files)")
+                else:
+                    st.warning("📁 No backup directory found")
+                    
+            except Exception as e:
+                st.error(f"❌ Cleanup failed: {e}")
 
-def show_backup_charts(fund_manager):
-    """Display backup charts and analytics"""
-    st.subheader("📊 Backup Analytics")
-    
-    backups = fund_manager.list_available_backups(30)  # Last 30 days
-    
-    if not backups:
-        st.info("No backup data available for charts")
-        return
-    
-    # Prepare data for charts
-    df = pd.DataFrame(backups)
-    df['date'] = pd.to_datetime(df['date'])
-    df['timestamp'] = pd.to_datetime(df['timestamp'])
-    
-    col1, col2 = st.columns(2)
-    
-    with col1:
-        # Backup frequency by date
-        daily_counts = df.groupby('date').size().reset_index(name='count')
-        
-        fig_freq = px.bar(
-            daily_counts,
-            x='date',
-            y='count',
-            title='Daily Backup Frequency',
-            labels={'count': 'Number of Backups', 'date': 'Date'}
-        )
-        fig_freq.update_layout(height=300)
-        safe_plotly_chart(fig_freq, use_container_width=True)
-    
-    with col2:
-        # Backup size over time
-        fig_size = px.line(
-            df.sort_values('timestamp'),
-            x='timestamp',
-            y='file_size_mb',
-            color='backup_type',
-            title='Backup Size Trend',
-            labels={'file_size_mb': 'Size (MB)', 'timestamp': 'Time'}
-        )
-        fig_size.update_layout(height=300)
-        safe_plotly_chart(fig_size, use_container_width=True)
-    
-    # Backup type distribution
-    type_counts = df['backup_type'].value_counts()
-    
-    fig_pie = px.pie(
-        values=type_counts.values,
-        names=type_counts.index,
-        title='Backup Types Distribution'
-    )
-    fig_pie.update_layout(height=300)
-    safe_plotly_chart(fig_pie, use_container_width=True)
-
-def show_backup_settings(fund_manager):
-    """Display backup settings panel"""
+def show_backup_settings():
+    """Show backup system settings"""
     st.subheader("⚙️ Backup Settings")
     
-    status = fund_manager.get_backup_status()
-    
-    if not status['enabled']:
-        st.error("Backup system is disabled")
+    if not AUTO_BACKUP_AVAILABLE:
+        st.error("🚫 Auto backup system not available")
         return
     
-    col1, col2 = st.columns(2)
+    if 'fund_manager' not in st.session_state:
+        st.error("❌ Fund manager not initialized")
+        return
     
-    with col1:
-        st.info("**Current Settings:**")
-        
-        # Check if cloud environment
-        storage_type = status['storage'].get('storage_type', 'local')
-        environment = status['storage'].get('environment', 'Local')
-        
-        if storage_type == 'supabase_database':
-            st.write(f"☁️ Environment: **{environment}**")
-            st.write(f"🗄️ Storage: **{status['storage'].get('backup_location', 'Supabase Database')}**")
-            st.write(f"🗜️ Compression: {'✅ Enabled' if status['storage']['compression_enabled'] else '❌ Disabled'}")
-            st.write(f"📊 Database Backups: {status.get('database_backups', {}).get('total', 0)}")
-        else:
-            st.write(f"📁 Backup Directory: `{status['storage'].get('backup_dir', 'N/A')}`")
-            st.write(f"🗜️ Compression: {'✅ Enabled' if status['storage']['compression_enabled'] else '❌ Disabled'}")
-            st.write(f"📅 Schedule: {status['auto_backup']['next_backup']}")
-        
-        st.write(f"🤖 Auto Backup: {'✅ Enabled' if status['auto_backup']['enabled'] else '❌ Disabled'}")
-        st.write(f"⚡ Max Operation Snapshots: {status['operation_snapshots']['max_count']}")
+    fund_manager = st.session_state.fund_manager
+    backup_manager = get_auto_backup_manager(fund_manager)
     
-    with col2:
-        st.info("**Storage Info:**")
-        
-        # Use appropriate stats based on backup type
-        if storage_type == 'supabase_database':
-            db_stats = status.get('database_backups', {})
-            st.write(f"💾 Total Backups: {db_stats.get('total', 0)}")
-            st.write(f"📊 Total Size: {db_stats.get('total_size_mb', 0):.2f} MB")
-            st.write(f"🕐 Last Backup: {db_stats.get('last_backup_date') or 'Never'}")
-            st.write(f"📈 Recent (7 days): {db_stats.get('recent_7_days', 0)}")
-            
-            # Storage usage breakdown
-            if db_stats.get('total', 0) > 0:
-                avg_size = db_stats.get('total_size_mb', 0) / db_stats.get('total', 1)
-                st.write(f"📏 Average Size: {avg_size:.2f} MB/backup")
-        else:
-            daily_stats = status.get('daily_backups', {})
-            st.write(f"💾 Total Backups: {daily_stats.get('total', 0)}")
-            st.write(f"📊 Total Size: {daily_stats.get('total_size_mb', 0):.2f} MB")
-            st.write(f"🕐 Last Backup: {daily_stats.get('last_backup_date') or 'Never'}")
-            
-            # Storage usage breakdown
-            if daily_stats.get('total', 0) > 0:
-                avg_size = daily_stats.get('total_size_mb', 0) / daily_stats.get('total', 1)
-                st.write(f"📏 Average Size: {avg_size:.2f} MB/backup")
+    # Show current configuration
+    st.json({
+        "Local Backup": "Always enabled",
+        "Cloud Backup": "OAuth-based (personal account)",
+        "Daily Schedule": "23:00 (11 PM)",
+        "Max Daily Backups": "5 backups",
+        "Backup Interval": "6 hours minimum",
+        "Local Retention": "20 newest files",
+        "Storage Cost": "$0/month (personal Google Drive)"
+    })
+    
+    # Show backup statistics
+    status = backup_manager.get_backup_status()
+    
+    st.subheader("📊 Statistics")
+    stats_data = {
+        "Total Backups Created": status['stats']['total_backups'],
+        "Successful Local": status['stats']['successful_local'],
+        "Successful Cloud": status['stats']['successful_cloud'],
+        "Failed Backups": status['stats']['failed_backups'],
+        "Service Uptime": "Running" if status['service_running'] else "Stopped"
+    }
+    
+    if status['stats']['last_error']:
+        stats_data["Last Error"] = status['stats']['last_error']
 
-def show_operation_snapshots(fund_manager):
-    """Display operation snapshots info"""
-    st.subheader("⚡ Operation Snapshots")
-    
-    if not fund_manager.backup_manager:
-        st.error("Backup manager not available")
+    st.json(stats_data)
+
+def show_drive_backup_controls():
+    """Show manual backup controls for Drive-backed storage"""
+    st.subheader("☁️ Google Drive Backup Controls")
+
+    # Check if using Drive handler
+    if 'fund_manager' not in st.session_state:
+        st.info("ℹ️ Fund manager chưa được khởi tạo")
         return
-    
-    snapshots = fund_manager.backup_manager.list_operation_snapshots()
-    
-    if not snapshots:
-        st.info("No operation snapshots available")
+
+    fund_manager = st.session_state.fund_manager
+    data_handler = fund_manager.data_handler
+
+    # Check if it's Drive handler
+    is_drive_handler = type(data_handler).__name__ == 'DriveBackedDataManager'
+
+    if not is_drive_handler:
+        st.info("ℹ️ Đang sử dụng CSV local storage - không cần Drive backup")
         return
-    
-    # Display snapshots
-    snapshot_data = []
-    for snap in snapshots[:20]:  # Show last 20
-        timestamp = datetime.fromisoformat(snap['timestamp'])
-        snapshot_data.append({
-            'ID': snap['id'],
-            'Operation': snap['operation_type'],
-            'Time': timestamp.strftime('%H:%M:%S'),
-            'Date': timestamp.strftime('%Y-%m-%d'),
-            'Description': snap.get('description', ''),
-            'Size (MB)': f"{snap.get('size_mb', 0):.2f}"
-        })
-    
-    df = pd.DataFrame(snapshot_data)
-    st.dataframe(df, use_container_width=True, hide_index=True)
-    
-    if len(snapshots) > 20:
-        st.info(f"Showing latest 20 of {len(snapshots)} operation snapshots")
+
+    # Show Drive connection status
+    col1, col2, col3 = st.columns(3)
+
+    with col1:
+        if data_handler.connected:
+            st.success("✅ Google Drive đã kết nối")
+        else:
+            st.error("❌ Google Drive chưa kết nối")
+
+    with col2:
+        if f'{data_handler.session_key_prefix}last_backup' in st.session_state:
+            last_backup = st.session_state[f'{data_handler.session_key_prefix}last_backup']
+            time_ago = datetime.now() - last_backup
+            minutes_ago = int(time_ago.total_seconds() / 60)
+            st.metric("Backup cuối", f"{minutes_ago} phút trước")
+        else:
+            st.metric("Backup cuối", "Chưa có")
+
+    with col3:
+        if f'{data_handler.session_key_prefix}last_load' in st.session_state:
+            last_load = st.session_state[f'{data_handler.session_key_prefix}last_load']
+            time_ago = datetime.now() - last_load
+            minutes_ago = int(time_ago.total_seconds() / 60)
+            st.metric("Load cuối", f"{minutes_ago} phút trước")
+        else:
+            st.metric("Load cuối", "Chưa có")
+
+    st.divider()
+
+    # Manual backup button
+    col1, col2, col3 = st.columns([1, 1, 2])
+
+    with col1:
+        if st.button("💾 Backup Ngay", type="primary", key="manual_drive_backup", use_container_width=True):
+            if data_handler.connected:
+                success = data_handler.backup_to_drive()
+                if success:
+                    st.success("✅ Backup thành công!")
+                    st.balloons()
+                else:
+                    st.error("❌ Backup thất bại")
+            else:
+                st.error("❌ Google Drive chưa kết nối")
+
+    with col2:
+        if st.button("🔄 Reload từ Drive", key="reload_from_drive", use_container_width=True):
+            if data_handler.connected:
+                with st.spinner("📥 Đang tải dữ liệu từ Drive..."):
+                    success = data_handler.load_from_drive()
+                    if success:
+                        # Reload fund manager
+                        fund_manager.load_data()
+                        st.success("✅ Đã reload dữ liệu!")
+                        st.rerun()
+                    else:
+                        st.error("❌ Reload thất bại")
+            else:
+                st.error("❌ Google Drive chưa kết nối")
 
 def main():
-    """Main backup dashboard page"""
+    """Main backup dashboard function"""
+    st.set_page_config(
+        page_title="Backup Management",
+        page_icon="💾",
+        layout="wide"
+    )
+    
     st.title("💾 Backup Management Dashboard")
-    
-    # Show admin authentication status with logout option (authenticated by main app already)
-    show_admin_status()
-    
-    st.markdown("---")
-    
-    # Get fund manager from session state (set by main app)
-    fund_manager = st.session_state.get('fund_manager')
-    
-    if not fund_manager:
-        st.error("🚫 Fund Manager not initialized. Please go to main page first.")
-        st.info("💡 This usually happens if you accessed this page directly. Please go through the main application.")
-        return
-    
-    if not hasattr(fund_manager, 'backup_manager') or not fund_manager.backup_manager:
-        st.error("🚫 Backup system not enabled.")
-        st.info("💡 Backup system may be disabled in the fund manager configuration.")
+
+    # Check authentication (but don't require it since auth is disabled)
+    if is_admin_authenticated():
+        show_admin_status()
+    else:
+        st.success("🏠 Local System - Full Access Enabled")
+
+    # Drive backup controls (for cloud deployment)
+    show_drive_backup_controls()
+
+    st.divider()
+
+    # Main backup dashboard
+    if AUTO_BACKUP_AVAILABLE:
+        # Status cards
+        show_backup_status_cards()
+
+        st.divider()
+
+        # Controls
+        show_backup_controls()
         
-        # Debug information
+        st.divider()
+        
+        # Two column layout for details
+        col1, col2 = st.columns(2)
+        
+        with col1:
+            show_backup_history()
+        
+        with col2:
+            show_cloud_backup_status()
+        
+        st.divider()
+        
+        # Settings
+        show_backup_settings()
+        
+    else:
+        st.error("🚫 Auto backup system not available")
+        st.info("💡 Make sure auto_backup_personal.py is properly installed")
+        
+        # Show debug info
         with st.expander("🔍 Debug Information"):
-            st.write("**Fund Manager Type:**", type(fund_manager).__name__)
-            st.write("**Has backup_manager attribute:**", hasattr(fund_manager, 'backup_manager'))
-            if hasattr(fund_manager, 'backup_manager'):
-                st.write("**backup_manager value:**", fund_manager.backup_manager)
-            
-            # Check data handler
-            if hasattr(fund_manager, 'data_handler'):
-                data_handler = fund_manager.data_handler
-                st.write("**Data Handler Type:**", type(data_handler).__name__)
-                st.write("**Data Handler connected:**", getattr(data_handler, 'connected', 'No connected attribute'))
-                st.write("**Data Handler has engine:**", hasattr(data_handler, 'engine'))
-                if hasattr(data_handler, 'engine'):
-                    st.write("**Engine value:**", data_handler.engine)
-        return
-    
-    # Auto-refresh every 30 seconds
-    if st.button("🔄 Auto Refresh (30s)", help="Auto refresh the dashboard"):
-        st.rerun()
-    
-    # Main dashboard sections
-    show_backup_status_cards(fund_manager)
-    
-    st.markdown("---")
-    
-    # Create tabs for different sections
-    tab1, tab2, tab3, tab4, tab5 = st.tabs([
-        "🎛️ Controls", 
-        "📋 History", 
-        "🔄 Restore", 
-        "📊 Analytics", 
-        "⚙️ Settings"
-    ])
-    
-    with tab1:
-        show_backup_controls(fund_manager)
-        st.markdown("---")
-        show_operation_snapshots(fund_manager)
-    
-    with tab2:
-        backups = show_backup_history(fund_manager)
-    
-    with tab3:
-        backups = fund_manager.list_available_backups(30)
-        show_restore_controls(fund_manager, backups)
-    
-    with tab4:
-        show_backup_charts(fund_manager)
-    
-    with tab5:
-        show_backup_settings(fund_manager)
-    
-    # Footer
-    st.markdown("---")
-    st.markdown("*💾 Backup Dashboard - Protecting your fund data 24/7*")
+            if 'fund_manager' in st.session_state:
+                fm = st.session_state.fund_manager
+                st.json({
+                    "Fund Manager Type": type(fm).__name__,
+                    "Has backup_manager": hasattr(fm, 'backup_manager'),
+                    "backup_manager value": str(fm.backup_manager) if hasattr(fm, 'backup_manager') else "N/A",
+                    "Data Handler Type": type(fm.data_handler).__name__,
+                    "Auto Backup Available": AUTO_BACKUP_AVAILABLE
+                })
+            else:
+                st.warning("Fund manager not in session state")
 
 if __name__ == "__main__":
     main()

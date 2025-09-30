@@ -8,17 +8,25 @@ from pathlib import Path
 from datetime import datetime, date
 
 # Initialize timezone management early
-from timezone_manager import TimezoneManager
+from utils.timezone_manager import TimezoneManager
 TimezoneManager.setup_environment_timezone()
+
+# Auto backup integration
+from integrations.auto_backup_personal import start_auto_backup_service
+
+# Performance monitoring and caching
+from performance.performance_monitor import get_performance_monitor, track_page_load, establish_baseline
+from performance.cache_service_simple import warm_cache, auto_cleanup_cache
+from performance.navigation_optimizer import NavigationOptimizer
 
 # Initialize universal integer safety fixes early
 try:
-    from streamlit_widget_safety import apply_streamlit_widget_fixes
+    from utils.streamlit_widget_safety import apply_streamlit_widget_fixes
     apply_streamlit_widget_fixes()
-    from type_safety_fixes import apply_type_safety_fixes
+    from utils.type_safety_fixes import apply_type_safety_fixes
     apply_type_safety_fixes()
     # Import error tracker to apply monkey patches for integer conversion safety
-    import error_tracker  # This applies monkey patches automatically
+    import utils.error_tracker  # This applies monkey patches automatically
     print("🔧 Universal integer safety fixes applied")
 except Exception as e:
     print(f"⚠️ Warning: Could not apply universal integer safety fixes: {e}")
@@ -41,42 +49,62 @@ def load_config():
     from config import PAGE_CONFIG
     return PAGE_CONFIG
 
-@st.cache_resource  
+@st.cache_resource
 def load_data_handler():
-    """Load and cache data handler"""
+    """Load and cache data handler - Drive-backed for cloud, CSV for local"""
     try:
-        from supabase_data_handler import SupabaseDataHandler
-        data_handler = SupabaseDataHandler()
-        
-        # Kiểm tra kết nối ngay lập tức
-        if not hasattr(data_handler, 'connected') or not data_handler.connected:
-            st.error("❌ Không thể kết nối tới Database")
-            return None   
-        return data_handler
+        # Detect environment
+        is_cloud = is_cloud_environment()
+
+        if is_cloud:
+            # ✅ Cloud: Use Drive-backed data handler
+            from core.drive_data_handler import DriveBackedDataManager
+            data_handler = DriveBackedDataManager()
+
+            if not hasattr(data_handler, 'connected') or not data_handler.connected:
+                st.warning("⚠️ Google Drive chưa kết nối - cần setup OAuth")
+                st.info("📖 Xem hướng dẫn setup tại: docs/STREAMLIT_CLOUD_SETUP.md")
+                return None
+
+            # Show success message for first-time users
+            if 'drive_handler_loaded' not in st.session_state:
+                st.sidebar.success("✅ Sử dụng Google Drive Storage (Cloud)")
+                st.session_state.drive_handler_loaded = True
+
+            return data_handler
+        else:
+            # 🏠 Local: Use CSV Data Handler
+            from core.csv_data_handler import CSVDataHandler
+            data_handler = CSVDataHandler()
+
+            if not hasattr(data_handler, 'connected') or not data_handler.connected:
+                st.error("❌ Không thể khởi tạo CSV Data Handler")
+                return None
+
+            # Show success message for first-time users
+            if 'csv_handler_loaded' not in st.session_state:
+                st.sidebar.success("✅ Sử dụng CSV Local Storage")
+                st.session_state.csv_handler_loaded = True
+
+            return data_handler
+
     except Exception as e:
         st.error(f"❌ Lỗi khởi tạo Data Handler: {str(e)}")
-        # Fallback to CSV (nếu cần, thêm code từ services_enhanced.py cũ)
-        st.sidebar.warning("📄 Fallback to CSV storage")
-        from data_handler import EnhancedDataHandler
-        return EnhancedDataHandler()
+        return None
 
 @st.cache_resource
 def load_fund_manager_class():
     """Load fund manager class"""
-    try:
-        from services_enhanced import EnhancedFundManager
-        return EnhancedFundManager
-    except Exception:
-        from services import FundManager
-        return FundManager
+    from core.services_enhanced import EnhancedFundManager
+    return EnhancedFundManager
 
 @st.cache_resource
 def load_styles():
     """Load styles"""
-    from styles import apply_global_styles
-    from mobile_styles_addon import apply_complete_mobile_styles
+    from ui.styles import apply_global_styles
+    from ui.ui_improvements import apply_subtle_improvements
     apply_global_styles()
-    apply_complete_mobile_styles()
+    apply_subtle_improvements()  # Gradual UI enhancements
     return True
 
 # === OPTIMIZATIONS LOADER ===
@@ -88,16 +116,13 @@ def load_optimizations():
     }
     
     try:
-        from save_optimization import enhance_save_operations
+        from core.save_optimization import enhance_save_operations
         optimizations['save_optimization'] = enhance_save_operations
     except ImportError:
         pass
         
-    try:
-        from database_save_optimization import apply_database_save_optimization
-        optimizations['database_optimization'] = apply_database_save_optimization
-    except ImportError:
-        pass
+    # Database optimization removed - not needed for CSV storage
+    pass
         
     # Realtime sync removed - not used in current implementation
     
@@ -237,9 +262,7 @@ ALL_PAGES = [
 ]
 
 EDIT_PAGES = [
-    PAGE_ADD_INVESTOR, PAGE_EDIT_INVESTOR, PAGE_ADD_TRANSACTION,
-    PAGE_ADD_NAV, PAGE_FM_WITHDRAWAL, PAGE_MANAGE_TRANSACTIONS,
-    PAGE_CALCULATE_FEES, PAGE_BACKUP
+    # No pages require authentication - local system doesn't need password protection
 ]
 
 # === MAIN APPLICATION CLASS ===
@@ -254,15 +277,19 @@ class FundManagementApp:
         """Initialize session state variables"""
         if 'app_start_time' not in st.session_state:
             st.session_state.app_start_time = time.time()
-        
+
         if 'logged_in' not in st.session_state:
             st.session_state.logged_in = False
-        
+
         if 'menu_selection' not in st.session_state:
             st.session_state.menu_selection = PAGE_REPORTS
-            
+
         if 'show_startup_validation' not in st.session_state:
             st.session_state.show_startup_validation = True
+
+        # Initialize performance monitoring
+        establish_baseline()
+        track_page_load()
     
     def setup_app(self):
         """Setup application with optimized loading"""
@@ -338,6 +365,24 @@ class FundManagementApp:
             self.fund_manager._ensure_fund_manager_exists() # Đảm bảo có Fund Manager
             # +++++++++++++++++++++++++++++++++++++++
 
+            # Start auto backup service
+            try:
+                status.info("🚀 Starting auto backup service...")
+                start_auto_backup_service(self.fund_manager)
+                print('✅ Auto backup service started')
+            except Exception as e:
+                print(f'⚠️ Auto backup service failed: {e}')
+
+            progress.progress(45)
+
+            # Warm cache with frequently accessed data
+            status.info("💾 Warming up cache...")
+            try:
+                warm_cache(self.fund_manager)
+                print('✅ Cache warming completed')
+            except Exception as e:
+                print(f'⚠️ Cache warming failed: {e}')
+
             progress.progress(50)
 
             # Step 3: Optimizations
@@ -353,7 +398,7 @@ class FundManagementApp:
 
             # Step 5: Sidebar
             status.info("🧭 Initializing sidebar...")
-            from sidebar_manager import SidebarManager
+            from ui.sidebar_manager import SidebarManager
             self.sidebar_manager = SidebarManager(
                 self.fund_manager,
                 self.data_handler,
@@ -361,12 +406,8 @@ class FundManagementApp:
             )
             progress.progress(90)
 
-            # Step 6: Admin password
-            status.info("🔐 Loading security settings...")
-            try:
-                self.admin_password = st.secrets["ADMIN_PASSWORD"]
-            except Exception:
-                self.admin_password = os.getenv("ADMIN_PASSWORD", "1997")
+            # Step 6: Complete initialization (no authentication needed)
+            status.info("✅ Finalizing local system setup...")
             progress.progress(100)
 
             # Save to session
@@ -398,7 +439,7 @@ class FundManagementApp:
         st.session_state.data_handler = self.data_handler
         st.session_state.sidebar_manager = self.sidebar_manager
         st.session_state.pages = self.pages
-        st.session_state.admin_password = self.admin_password
+        # No admin password needed for local system
         st.session_state.last_init = time.time()
     
     def load_from_session(self):
@@ -407,7 +448,7 @@ class FundManagementApp:
         self.data_handler = st.session_state.data_handler
         self.sidebar_manager = st.session_state.sidebar_manager
         self.pages = st.session_state.pages
-        self.admin_password = st.session_state.admin_password
+        # No admin password needed for local system
     
     def render_error_recovery(self):
         """Render error recovery options"""
@@ -436,52 +477,17 @@ class FundManagementApp:
         """Clear session cache"""
         keys_to_clear = [
             'fund_manager', 'data_handler', 'sidebar_manager', 'pages',
-            'admin_password', 'last_init'
+            'last_init'
         ]
         for key in keys_to_clear:
             if key in st.session_state:
                 del st.session_state[key]
     
-    def render_login_form(self):
-        """Render login form for edit pages"""
-        st.markdown("""
-            <div style='max-width: 400px; margin: 3rem auto; padding: 2rem;
-                        background: white; border-radius: 15px; 
-                        box-shadow: 0 8px 32px rgba(0,0,0,0.1);
-                        border: 1px solid rgba(255,255,255,0.2);'>
-                <h3 style='text-align: center; color: #2c3e50; margin-bottom: 2rem;
-                           font-weight: 600;'>
-                    🔐 Xác thực quyền chỉnh sửa
-                </h3>
-            </div>
-        """, unsafe_allow_html=True)
-        
-        col1, col2, col3 = st.columns([1, 2, 1])
-        with col2:
-            password = st.text_input(
-                "Mật khẩu quản trị",
-                type="password",
-                placeholder="Nhập mật khẩu để tiếp tục...",
-                help="Cần mật khẩu admin để truy cập tính năng chỉnh sửa",
-                label_visibility="visible"
-            )
-            
-            if st.button("🚀 Xác thực", width="stretch", type="primary"):
-                if password == self.admin_password:
-                    st.session_state.logged_in = True
-                    st.success("✅ Xác thực thành công!")
-                    time.sleep(0.8)
-                    st.rerun()
-                else:
-                    st.error("❌ Mật khẩu không chính xác.")
-                    time.sleep(1)
+    # Authentication removed - local system doesn't need password protection
     
     def render_main_content(self, page: str):
         """Render main content based on selected page"""
-        # Check authentication for edit pages
-        if page in EDIT_PAGES and not st.session_state.logged_in:
-            self.render_login_form()
-            return
+        # No authentication needed for local system - all pages accessible
         
         try:
             # Render appropriate page
@@ -595,17 +601,28 @@ class FundManagementApp:
                 st.error("❌ App chưa được khởi tạo đúng cách")
                 self.render_error_recovery()
                 return
-            # Run startup validation if needed
+
+            # Navigation optimization - add loading indicator
+            NavigationOptimizer.add_navigation_loading_indicator()
+
+            # Run startup validation ONLY once (already has check inside)
             self.run_startup_validation()
-            
-            # Render sidebar and get selected page
+
+            # Render sidebar and get selected page (fast - cached)
+            nav_start = NavigationOptimizer.track_navigation_time("sidebar")
             selected_page = self.sidebar_manager.render()
-            
+            NavigationOptimizer.record_navigation_time("sidebar", nav_start)
+
             # Render main content
+            nav_start = NavigationOptimizer.track_navigation_time(selected_page)
             self.render_main_content(selected_page)
-            
+            NavigationOptimizer.record_navigation_time(selected_page, nav_start)
+
             # Handle data saving
             self.handle_data_save()
+
+            # Auto cleanup expired cache (run at end, doesn't block UI)
+            auto_cleanup_cache()
             
         except Exception as e:
             st.error("💥 Lỗi nghiêm trọng của ứng dụng!")

@@ -37,3 +37,12 @@ Thumbs.db
 *~
 *.bak
 *.backup
+
+# OAuth credentials (NEVER commit these!)
+oauth_credentials.json
+token.pickle
+token_encoded.txt
+
+# Local data (CSV files - use Drive for cloud)
+data/
+exports/nul

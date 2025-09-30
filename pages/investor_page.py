@@ -1,34 +1,72 @@
 import streamlit as st
 import pandas as pd
 from datetime import date
-from utils import format_currency, format_phone, format_percentage, parse_currency
+from helpers import format_currency, format_phone, format_percentage, parse_currency
+
+# Performance optimizations
+from performance.cache_service_simple import cache_investor_data, invalidate_investor_cache
+from performance.skeleton_components import SkeletonLoader, skeleton_investor_card, inject_skeleton_css
+from performance.performance_monitor import track_performance
+from performance.virtual_scroll import InfiniteScrollList
+
+# UX enhancements
+from ui.ux_enhancements import UXEnhancements
 
 class InvestorPage:
     """Page quản lý nhà đầu tư"""
-    
+
     def __init__(self, fund_manager):
         self.fund_manager = fund_manager
+
+    @cache_investor_data
+    @track_performance("load_investors")
+    def get_investors(_self):
+        """Load investors with caching"""
+        return _self.fund_manager.get_regular_investors()
     
     def render_add_form(self):
         """Form thêm nhà đầu tư"""
         st.title("👥 Thêm Nhà Đầu Tư")
-        
+
+        # Breadcrumb
+        UXEnhancements.breadcrumb([
+            ("🏠 Trang chủ", "/"),
+            ("👥 Thêm NĐT", "")
+        ])
+
         with st.form("investor_form"):
             col1, col2 = st.columns(2)
             name = col1.text_input("Tên *", help="Tên nhà đầu tư (bắt buộc)")
             phone = col2.text_input("SĐT", help="Số điện thoại (tùy chọn)")
-            
+
             col3, col4 = st.columns(2)
             address = col3.text_input("Địa chỉ", help="Địa chỉ (tùy chọn)")
             email = col4.text_input("Email", help="Email (tùy chọn)")
-            
-            submitted = st.form_submit_button("➕ Thêm Nhà Đầu Tư", width='stretch')
-            
+
+            # Inline validation for name
+            if name:
+                is_valid = len(name.strip()) > 0
+                if not is_valid:
+                    st.markdown('<div style="color: #dc2626; font-size: 0.875rem; margin-top: -0.5rem;">⚠️ Tên là bắt buộc</div>', unsafe_allow_html=True)
+
+            submitted = st.form_submit_button("➕ Thêm Nhà Đầu Tư", use_container_width=True)
+
             if submitted:
-                success, message = self.fund_manager.add_investor(name, phone, address, email)
+                # Validation
+                if not name or not name.strip():
+                    st.error("❌ Vui lòng nhập tên nhà đầu tư")
+                    return
+
+                with st.spinner("Đang thêm nhà đầu tư..."):
+                    success, message = self.fund_manager.add_investor(name, phone, address, email)
+
                 if success:
+                    UXEnhancements.success_animation()
                     st.success(message)
                     st.session_state.data_changed = True
+                    invalidate_investor_cache()
+                    import time
+                    time.sleep(1)
                     st.rerun()
                 else:
                     st.error(message)
@@ -36,14 +74,39 @@ class InvestorPage:
     def render_edit_page(self):
         """Page sửa thông tin nhà đầu tư"""
         st.title("✏️ Sửa Thông Tin Nhà Đầu Tư")
-        
-        if not self.fund_manager.investors:
-            st.info("📝 Chưa có nhà đầu tư nào. Hãy thêm nhà đầu tư đầu tiên.")
+
+        # Breadcrumb
+        UXEnhancements.breadcrumb([
+            ("🏠 Trang chủ", "/"),
+            ("✏️ Sửa NĐT", "")
+        ])
+
+        # Show loading skeleton
+        if 'loading_investors' not in st.session_state:
+            st.session_state.loading_investors = True
+
+        if st.session_state.loading_investors:
+            UXEnhancements.loading_skeleton(rows=5, columns=6)
+            investors = self.get_investors()
+            st.session_state.loading_investors = False
+            st.rerun()
+        else:
+            investors = self.get_investors()
+
+        # Empty state
+        if not investors:
+            UXEnhancements.empty_state(
+                icon="👥",
+                title="Chưa có nhà đầu tư nào",
+                description="Thêm nhà đầu tư đầu tiên để bắt đầu quản lý quỹ của bạn",
+                action_label="➕ Thêm nhà đầu tư",
+                action_callback=lambda: st.session_state.update({'menu_selection': "👥 Thêm Nhà Đầu Tư"})
+            )
             return
-        
+
         # Tạo DataFrame để edit
         data = []
-        for inv in self.fund_manager.investors:
+        for inv in investors:
             data.append({
                 'ID': inv.id,
                 'Name': inv.name,
@@ -52,7 +115,7 @@ class InvestorPage:
                 'Email': inv.email,
                 'JoinDate': inv.join_date
             })
-        
+
         df_display = pd.DataFrame(data)
         
         st.info("💡 Sửa trực tiếp trên bảng bên dưới và bấm 'Lưu' để cập nhật.")
@@ -77,23 +140,30 @@ class InvestorPage:
         col1, col2 = st.columns([1, 4])
         
         if col1.button("💾 Lưu Thay Đổi", use_container_width=True):
-            # Cập nhật fund_manager
-            self.fund_manager.investors.clear()
-            
-            for _, row in edited_df.iterrows():
-                from models import Investor
-                investor = Investor(
-                    id=int(row['ID']),
-                    name=str(row['Name']),
-                    phone=str(row['Phone']) if pd.notna(row['Phone']) else "",
-                    address=str(row['Address']) if pd.notna(row['Address']) else "",
-                    email=str(row['Email']) if pd.notna(row['Email']) else "",
-                    join_date=row['JoinDate'] if pd.notna(row['JoinDate']) else date.today()
-                )
-                self.fund_manager.investors.append(investor)
-            
-            st.session_state.data_changed = True
+            with st.spinner("Đang lưu thay đổi..."):
+                # Cập nhật fund_manager
+                self.fund_manager.investors.clear()
+
+                for _, row in edited_df.iterrows():
+                    from core.models import Investor
+                    investor = Investor(
+                        id=int(row['ID']),
+                        name=str(row['Name']),
+                        phone=str(row['Phone']) if pd.notna(row['Phone']) else "",
+                        address=str(row['Address']) if pd.notna(row['Address']) else "",
+                        email=str(row['Email']) if pd.notna(row['Email']) else "",
+                        join_date=row['JoinDate'] if pd.notna(row['JoinDate']) else date.today()
+                    )
+                    self.fund_manager.investors.append(investor)
+
+                st.session_state.data_changed = True
+                invalidate_investor_cache()
+
+            # Success feedback
+            UXEnhancements.success_animation()
             st.success("✅ Đã lưu thay đổi")
+            import time
+            time.sleep(1)
             st.rerun()
         
         # Phần xem tình trạng investor
@@ -115,7 +185,7 @@ class InvestorPage:
             return
         
         # Type safety: ensure investor_id is always an integer using safe selectbox handling
-        from streamlit_widget_safety import safe_investor_id_from_selectbox
+        from utils.streamlit_widget_safety import safe_investor_id_from_selectbox
         investor_id = safe_investor_id_from_selectbox(self.fund_manager, selected_display)
         if investor_id is None:
             st.error("❌ Could not get valid investor ID from selection")
