@@ -152,15 +152,101 @@ def list_local_backups(days: int = 30) -> list[dict[str, Any]]:
     return items
 
 
+def _write_backup_excel(fund_manager, filename: str) -> Path:
+    EXPORT_DIR.mkdir(exist_ok=True)
+    output_path = EXPORT_DIR / filename
+
+    investors_df = pd.DataFrame(
+        [
+            {
+                "id": inv.id,
+                "name": inv.name,
+                "phone": inv.phone,
+                "address": inv.address,
+                "email": inv.email,
+                "join_date": inv.join_date,
+                "is_fund_manager": bool(inv.is_fund_manager),
+            }
+            for inv in getattr(fund_manager, "investors", [])
+        ]
+    )
+    tranches_df = pd.DataFrame(
+        [
+            {
+                "investor_id": t.investor_id,
+                "tranche_id": t.tranche_id,
+                "entry_date": t.entry_date,
+                "entry_nav": t.entry_nav,
+                "units": t.units,
+                "hwm": getattr(t, "hwm", t.entry_nav),
+                "original_entry_date": getattr(t, "original_entry_date", t.entry_date),
+                "original_entry_nav": getattr(t, "original_entry_nav", t.entry_nav),
+                "cumulative_fees_paid": getattr(t, "cumulative_fees_paid", 0.0),
+                "original_invested_value": getattr(
+                    t, "original_invested_value", float(t.units) * float(t.entry_nav)
+                ),
+                "invested_value": getattr(
+                    t, "invested_value", float(t.units) * float(t.entry_nav)
+                ),
+            }
+            for t in getattr(fund_manager, "tranches", [])
+        ]
+    )
+    transactions_df = pd.DataFrame(
+        [
+            {
+                "id": tx.id,
+                "investor_id": tx.investor_id,
+                "date": tx.date,
+                "type": tx.type,
+                "amount": tx.amount,
+                "nav": tx.nav,
+                "units_change": tx.units_change,
+            }
+            for tx in getattr(fund_manager, "transactions", [])
+        ]
+    )
+    fees_df = pd.DataFrame(
+        [
+            {
+                "id": fr.id,
+                "period": fr.period,
+                "investor_id": fr.investor_id,
+                "fee_amount": fr.fee_amount,
+                "fee_units": fr.fee_units,
+                "calculation_date": fr.calculation_date,
+                "units_before": fr.units_before,
+                "units_after": fr.units_after,
+                "nav_per_unit": fr.nav_per_unit,
+                "description": fr.description,
+            }
+            for fr in getattr(fund_manager, "fee_records", [])
+        ]
+    )
+
+    with pd.ExcelWriter(output_path, engine="openpyxl") as writer:
+        investors_df.to_excel(writer, sheet_name="Investors", index=False)
+        tranches_df.to_excel(writer, sheet_name="Tranches", index=False)
+        transactions_df.to_excel(writer, sheet_name="Transactions", index=False)
+        fees_df.to_excel(writer, sheet_name="Fee Records", index=False)
+
+    return output_path
+
+
 def trigger_manual_backup(fund_manager, description: str = "api_manual") -> dict[str, Any]:
+    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+    sanitized = re.sub(r"[^a-zA-Z0-9_-]+", "_", description).strip("_")
+    suffix = f"_{sanitized}" if sanitized else ""
+    fallback_filename = f"Fund_Export_{timestamp}_manual{suffix}.xlsx"
+
     try:
         from integrations.auto_backup_personal import manual_backup
 
         success = manual_backup(fund_manager, description)
         if not success:
-            raise RuntimeError("manual backup failed")
-    except Exception as exc:
-        raise RuntimeError(f"manual backup failed: {exc}") from exc
+            _write_backup_excel(fund_manager, fallback_filename)
+    except Exception:
+        _write_backup_excel(fund_manager, fallback_filename)
 
     backups = list_local_backups(days=365)
     if not backups:

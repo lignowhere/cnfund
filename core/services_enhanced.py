@@ -2,7 +2,19 @@ import copy as cp
 import uuid
 from datetime import datetime, date
 from typing import List, Tuple, Optional, Dict, Any
-import streamlit as st
+try:
+    import streamlit as st
+except ImportError:
+    class _CacheDataStub:
+        @staticmethod
+        def clear():
+            return None
+
+    class _StreamlitStub:
+        session_state: Dict[str, Any] = {}
+        cache_data = _CacheDataStub()
+
+    st = _StreamlitStub()  # type: ignore
 from config import *
 from .models import Investor, Tranche, Transaction, FeeRecord
 import logging # Sử dụng logging chuyên nghiệp hơn

@@ -5,7 +5,13 @@ This module provides robust type conversion utilities and fixes common type issu
 """
 
 import pandas as pd
-import streamlit as st
+try:
+    import streamlit as st
+except ImportError:
+    class _StreamlitStub:
+        session_state = {}
+
+    st = _StreamlitStub()  # type: ignore
 from typing import Any, Union, List, Dict, Optional
 from datetime import datetime, date
 

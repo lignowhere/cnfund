@@ -17,3 +17,5 @@ COPY integrations /app/integrations
 COPY utils /app/utils
 COPY config.py /app/config.py
 COPY helpers.py /app/helpers.py
+
+RUN chmod +x /app/backend_api/start.sh

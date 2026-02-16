@@ -14,6 +14,7 @@
 !backend_api/app/
 !backend_api/app/**
 !backend_api/requirements.txt
+!backend_api/start.sh
 
 # Include only seed CSVs (do not ship backup history)
 !backend_api/data/
