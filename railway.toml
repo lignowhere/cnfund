@@ -10,9 +10,8 @@ watchPatterns = [
 ]
 
 [deploy]
-startCommand = "mkdir -p /app/storage/data /app/storage/exports && ln -sfn /app/storage/data /app/data && ln -sfn /app/storage/exports /app/exports && python -m uvicorn backend_api.app.main:app --host 0.0.0.0 --port $PORT"
+startCommand = "mkdir -p /app/storage/data /app/storage/exports && ln -sfn /app/storage/data /app/data && ln -sfn /app/storage/exports /app/exports && for f in investors.csv tranches.csv transactions.csv fee_records.csv; do if [ ! -f /app/data/$f ] && [ -f /app/backend_api/data/$f ]; then cp /app/backend_api/data/$f /app/data/$f; fi; done && python -m uvicorn backend_api.app.main:app --host 0.0.0.0 --port $PORT"
 healthcheckPath = "/health"
 healthcheckTimeout = 300
 restartPolicyType = "ON_FAILURE"
 restartPolicyMaxRetries = 10
-

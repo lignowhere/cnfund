@@ -50,7 +50,7 @@ This is the lowest-cost setup that is still stable for production-like usage.
 5. Set backend start command:
 
 ```bash
-mkdir -p /app/storage/data /app/storage/exports && ln -sfn /app/storage/data /app/data && ln -sfn /app/storage/exports /app/exports && python -m uvicorn backend_api.app.main:app --host 0.0.0.0 --port $PORT
+mkdir -p /app/storage/data /app/storage/exports && ln -sfn /app/storage/data /app/data && ln -sfn /app/storage/exports /app/exports && for f in investors.csv tranches.csv transactions.csv fee_records.csv; do if [ ! -f /app/data/$f ] && [ -f /app/backend_api/data/$f ]; then cp /app/backend_api/data/$f /app/data/$f; fi; done && python -m uvicorn backend_api.app.main:app --host 0.0.0.0 --port $PORT
 ```
 
 6. Set backend env vars:
@@ -71,7 +71,7 @@ API_FEATURE_TRANSACTIONS_LOAD_MORE=true
 ```
 
 7. Initial data migration:
-   - Upload your real CSV files (`investors.csv`, `tranches.csv`, `transactions.csv`, `fee_records.csv`) into mounted `/app/storage/data` (or `/app/data` via symlink).
+   - Seed your real CSV files (`investors.csv`, `tranches.csv`, `transactions.csv`, `fee_records.csv`) by following Section 10-C below.
    - Confirm API health and reports.
 
 ### Step B: Frontend on Vercel
@@ -198,25 +198,33 @@ API_FEATURE_TRANSACTIONS_LOAD_MORE=true
    - open backend public URL + `/health`, expect `status: ok`.
    - open backend public URL + `/docs`, Swagger should load.
 
-### C. Upload real data to persistent volume
+### C. Seed dữ liệu thật vào volume (không dùng file browser)
 
-Option 1 (preferred): deploy once with seed data committed in repo and then use app backups/restore.
+Railway volume không có upload trực tiếp kiểu file browser. Dùng một trong 2 cách sau.
 
-Option 2 (direct file upload):
-1. Open Railway volume file browser.
-2. Create folders:
-   - `/app/storage/data`
-   - `/app/storage/exports`
-3. Upload 4 CSV files into `/app/storage/data`:
+Option 1 (khuyến nghị, không commit data thật):
+1. Trên máy local, chuẩn bị 4 file CSV thật tại `backend_api/data/`:
    - `investors.csv`
    - `tranches.csv`
    - `transactions.csv`
    - `fee_records.csv`
-4. Redeploy backend.
-5. Validate in API:
-   - login works
-   - dashboard has real values
-   - investor reports are non-empty.
+2. Dùng Railway CLI deploy trực tiếp từ máy local vào service backend (1 lần seed):
+   - `railway login`
+   - `railway link` (chọn đúng project/service backend)
+   - `railway up`
+3. Start command trong `railway.toml` sẽ tự copy seed vào volume nếu volume đang trống.
+4. Sau khi seed xong, có thể quay lại deploy qua GitHub như bình thường.
+
+Option 2 (nếu chấp nhận commit data thật vào private repo):
+1. Commit 4 file CSV thật vào `backend_api/data/`.
+2. Push lên branch deploy.
+3. Railway auto deploy, start command sẽ seed vào volume nếu volume trống.
+
+Validation sau seed:
+1. `GET /health` trả `status=ok`.
+2. Login thành công.
+3. Dashboard có số liệu thật (không rỗng).
+4. Investor report có transaction/tranche/fee history.
 
 ### D. Vercel setup (frontend)
 
