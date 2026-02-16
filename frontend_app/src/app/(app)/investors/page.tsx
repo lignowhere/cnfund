@@ -12,9 +12,11 @@ import { Input } from "@/components/ui/input";
 import { EmptyState, ErrorState, LoadingState } from "@/components/ui/states";
 import { apiClient } from "@/lib/api";
 import { digitsToNumber } from "@/lib/number-input";
+import { queryKeys } from "@/lib/query-keys";
 import type { InvestorCardDTO } from "@/lib/types";
 import { formatCurrency, formatDateTime, formatPercent } from "@/lib/utils";
 import { useAuthStore } from "@/store/auth-store";
+import { useToastStore } from "@/store/toast-store";
 
 type InvestorViewMode = "card" | "table";
 
@@ -29,13 +31,14 @@ function normalizeType(type: string) {
 export default function InvestorsPage() {
   const queryClient = useQueryClient();
   const token = useAuthStore((state) => state.accessToken);
+  const safeToken = token || "";
+  const pushToast = useToastStore((state) => state.push);
 
   const [name, setName] = useState("");
   const [phone, setPhone] = useState("");
   const [email, setEmail] = useState("");
   const [address, setAddress] = useState("");
   const [editingId, setEditingId] = useState<number | null>(null);
-  const [statusMessage, setStatusMessage] = useState<string | null>(null);
   const [viewMode, setViewMode] = useState<InvestorViewMode>("card");
   const [selectedInvestor, setSelectedInvestor] = useState<InvestorCardDTO | null>(null);
   const [detailNavDigits, setDetailNavDigits] = useState("");
@@ -43,17 +46,17 @@ export default function InvestorsPage() {
   const [detailNavApplied, setDetailNavApplied] = useState<number | undefined>(undefined);
 
   const flagsQuery = useQuery({
-    queryKey: ["feature-flags"],
-    queryFn: () => apiClient.featureFlags(token || ""),
+    queryKey: queryKeys.featureFlags(safeToken),
+    queryFn: () => apiClient.featureFlags(safeToken),
     enabled: !!token,
   });
 
   const tableViewEnabled = flagsQuery.data?.table_view ?? true;
 
   const cardsQuery = useInfiniteQuery({
-    queryKey: ["investor-cards", token],
+    queryKey: queryKeys.investorCards(safeToken),
     initialPageParam: 1,
-    queryFn: ({ pageParam }) => apiClient.investorCardsPaginated(token || "", pageParam, 20),
+    queryFn: ({ pageParam }) => apiClient.investorCardsPaginated(safeToken, pageParam, 20),
     getNextPageParam: (lastPage, pages) => {
       const loaded = pages.reduce((sum, page) => sum + page.items.length, 0);
       if (loaded >= lastPage.total) {
@@ -65,8 +68,8 @@ export default function InvestorsPage() {
   });
 
   const investorDetailQuery = useQuery({
-    queryKey: ["investor-detail", token, selectedInvestor?.id, detailNavApplied],
-    queryFn: () => apiClient.investorReport(token || "", selectedInvestor!.id, detailNavApplied),
+    queryKey: queryKeys.investorDetail(safeToken, selectedInvestor?.id, detailNavApplied),
+    queryFn: () => apiClient.investorReport(safeToken, selectedInvestor!.id, detailNavApplied),
     enabled: !!token && !!selectedInvestor,
   });
 
@@ -98,7 +101,7 @@ export default function InvestorsPage() {
 
   const createMutation = useMutation({
     mutationFn: () =>
-      apiClient.createInvestor(token || "", {
+      apiClient.createInvestor(safeToken, {
         name,
         phone,
         email,
@@ -109,24 +112,42 @@ export default function InvestorsPage() {
       setPhone("");
       setEmail("");
       setAddress("");
-      setStatusMessage("Đã tạo nhà đầu tư mới.");
-      queryClient.invalidateQueries({ queryKey: ["investor-cards", token] });
+      pushToast({ title: "Đã tạo nhà đầu tư", variant: "success" });
+      queryClient.invalidateQueries({ queryKey: queryKeys.investorCards(safeToken), exact: true });
+      queryClient.invalidateQueries({ queryKey: queryKeys.dashboard(safeToken), exact: true });
+    },
+    onError: (error) => {
+      pushToast({
+        title: "Không thể tạo nhà đầu tư",
+        description: error instanceof Error ? error.message : undefined,
+        variant: "error",
+      });
     },
   });
 
   const updateMutation = useMutation({
     mutationFn: (payload: { investorId: number; name: string }) =>
-      apiClient.updateInvestor(token || "", payload.investorId, { name: payload.name }),
+      apiClient.updateInvestor(safeToken, payload.investorId, { name: payload.name }),
     onSuccess: (_, payload) => {
       setEditingId(null);
-      setStatusMessage("Đã cập nhật tên nhà đầu tư.");
-      queryClient.invalidateQueries({ queryKey: ["investor-cards", token] });
+      pushToast({ title: "Đã cập nhật tên nhà đầu tư", variant: "success" });
+      queryClient.invalidateQueries({ queryKey: queryKeys.investorCards(safeToken), exact: true });
       if (selectedInvestor?.id === payload.investorId) {
         setSelectedInvestor((current) =>
           current ? { ...current, display_name: `${payload.name} (ID: ${payload.investorId})` } : current,
         );
-        queryClient.invalidateQueries({ queryKey: ["investor-detail", token, payload.investorId] });
+        queryClient.invalidateQueries({
+          queryKey: queryKeys.investorDetail(safeToken, payload.investorId),
+          exact: false,
+        });
       }
+    },
+    onError: (error) => {
+      pushToast({
+        title: "Không thể cập nhật nhà đầu tư",
+        description: error instanceof Error ? error.message : undefined,
+        variant: "error",
+      });
     },
   });
 
@@ -153,14 +174,13 @@ export default function InvestorsPage() {
           {createMutation.isPending ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
           Tạo nhà đầu tư
         </Button>
-        {statusMessage ? <p className="status-success">{statusMessage}</p> : null}
       </Card>
 
       <Card className="space-y-3">
         <div className="flex flex-wrap items-center justify-between gap-2">
           <h2 className="section-title">Danh sách nhà đầu tư</h2>
           {tableViewEnabled ? (
-            <div className="hidden rounded-xl border border-[var(--color-border)] bg-[var(--color-surface)] p-1 md:flex">
+            <div className="flex rounded-xl border border-[var(--color-border)] bg-[var(--color-surface)] p-1">
               <button
                 className={`rounded-lg px-3 py-1 text-xs font-medium ${
                   viewMode === "card"
@@ -195,11 +215,11 @@ export default function InvestorsPage() {
           <ErrorState message="Không tải được danh sách nhà đầu tư." />
         ) : investorItems.length ? (
           tableViewEnabled && effectiveViewMode === "table" ? (
-            <div className="hidden overflow-x-auto rounded-xl border border-[var(--color-border)] md:block">
-              <table className="min-w-full text-sm">
-                <thead className="bg-[var(--color-surface-3)]">
+            <div className="overflow-x-auto rounded-xl border border-[var(--color-border)]">
+              <table className="min-w-[780px] text-sm">
+                <thead className="sticky top-0 z-20 bg-[var(--color-surface-3)]">
                   <tr>
-                    <th className="px-3 py-2 text-left">ID</th>
+                    <th className="sticky left-0 z-30 bg-[var(--color-surface-3)] px-3 py-2 text-left">ID</th>
                     <th className="px-3 py-2 text-left">Tên</th>
                     <th className="px-3 py-2 text-left">Email</th>
                     <th className="px-3 py-2 text-left">Giá trị</th>
@@ -210,7 +230,7 @@ export default function InvestorsPage() {
                 <tbody>
                   {investorItems.map((item) => (
                     <tr key={item.id} className="border-t border-[var(--color-border)] bg-[var(--color-surface)]">
-                      <td className="px-3 py-2">#{item.id}</td>
+                      <td className="sticky left-0 z-10 bg-[var(--color-surface)] px-3 py-2">#{item.id}</td>
                       <td className="px-3 py-2">{item.display_name}</td>
                       <td className="px-3 py-2">{item.email || "-"}</td>
                       <td className="px-3 py-2">{formatCurrency(item.current_value)}</td>
@@ -232,7 +252,7 @@ export default function InvestorsPage() {
         ) : null}
 
         {investorItems.length ? (
-          <div className={`list-stagger space-y-2 ${effectiveViewMode === "table" ? "md:hidden" : ""}`}>
+          <div className={`list-stagger space-y-2 ${effectiveViewMode === "table" ? "hidden" : ""}`}>
             {investorItems.map((item) => (
               <article
                 key={item.id}
@@ -326,8 +346,8 @@ export default function InvestorsPage() {
       >
         <Dialog.Portal>
           <Dialog.Overlay className="fixed inset-0 z-50 bg-black/40 data-[state=open]:animate-[overlay-in_180ms_ease-out]" />
-          <Dialog.Content className="fixed inset-x-3 bottom-3 z-50 max-h-[90vh] overflow-y-auto rounded-2xl border border-[var(--color-border)] bg-[var(--color-surface)] p-4 shadow-2xl data-[state=open]:animate-[fade-up_220ms_ease-out] md:inset-x-auto md:left-1/2 md:top-1/2 md:w-[820px] md:max-h-[88vh] md:-translate-x-1/2 md:-translate-y-1/2 md:p-5">
-            <div className="mb-3 flex items-center justify-between gap-2">
+          <Dialog.Content className="fixed inset-0 z-50 overflow-y-auto border border-[var(--color-border)] bg-[var(--color-surface)] p-4 shadow-2xl data-[state=open]:animate-[fade-up_220ms_ease-out] md:inset-x-auto md:left-1/2 md:top-1/2 md:h-auto md:max-h-[88vh] md:w-[820px] md:-translate-x-1/2 md:-translate-y-1/2 md:rounded-2xl md:p-5">
+            <div className="sticky top-0 z-10 mb-3 flex items-center justify-between gap-2 border-b border-[var(--color-border)] bg-[var(--color-surface)] pb-3">
               <Dialog.Title className="section-title">
                 Chi tiết nhà đầu tư
                 {selectedInvestor ? ` - #${selectedInvestor.id}` : ""}
@@ -348,6 +368,7 @@ export default function InvestorsPage() {
                     setDetailNavOverflow(value.isOverflow);
                   }}
                   placeholder="2,500,000,000"
+                  aria-invalid={detailNavOverflow}
                 />
                 <p className="input-helper">
                   NAV tùy chọn: {detailNavNumber ? formatCurrency(detailNavNumber) : "Theo NAV hiện tại"}
@@ -519,7 +540,7 @@ export default function InvestorsPage() {
                           </div>
                           <p className="text-xs text-[var(--color-muted)]">{formatDateTime(tx.date)}</p>
                           <p className="text-sm">
-                            Số tiền: {formatCurrency(tx.amount)} | NAV: {formatCurrency(tx.nav)} | Units: {" "}
+                            Số tiền: {formatCurrency(tx.amount)} | NAV: {formatCurrency(tx.nav)} | Units:{" "}
                             {tx.units_change.toFixed(6)}
                           </p>
                         </article>

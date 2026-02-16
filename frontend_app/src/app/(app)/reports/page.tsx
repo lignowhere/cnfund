@@ -1,19 +1,8 @@
 ﻿"use client";
 
+import dynamic from "next/dynamic";
 import { useMemo, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
-import {
-  Bar,
-  BarChart,
-  CartesianGrid,
-  Cell,
-  Pie,
-  PieChart,
-  ResponsiveContainer,
-  Tooltip,
-  XAxis,
-  YAxis,
-} from "recharts";
 
 import { InvestorCombobox } from "@/components/form/investor-combobox";
 import { MoneyInput } from "@/components/form/money-input";
@@ -23,9 +12,20 @@ import { Input } from "@/components/ui/input";
 import { EmptyState, ErrorState, LoadingState } from "@/components/ui/states";
 import { apiClient } from "@/lib/api";
 import { digitsToNumber } from "@/lib/number-input";
+import { queryKeys } from "@/lib/query-keys";
 import type { InvestorSelectOption } from "@/lib/types";
 import { formatCurrency, formatDateTime, formatPercent } from "@/lib/utils";
 import { useAuthStore } from "@/store/auth-store";
+
+const ReportsTxTypePieChart = dynamic(
+  () => import("@/components/charts/reports-charts").then((module) => module.ReportsTxTypePieChart),
+  { ssr: false },
+);
+
+const ReportsInvestorTxBarChart = dynamic(
+  () => import("@/components/charts/reports-charts").then((module) => module.ReportsInvestorTxBarChart),
+  { ssr: false },
+);
 
 const COLORS = [
   "var(--chart-1)",
@@ -55,6 +55,8 @@ function formatCompactMoney(value: number) {
 
 export default function ReportsPage() {
   const token = useAuthStore((state) => state.accessToken);
+  const safeToken = token || "";
+
   const [txPage, setTxPage] = useState(1);
   const [txTypeFilter, setTxTypeFilter] = useState("");
   const [investorFilter, setInvestorFilter] = useState<InvestorSelectOption | null>(null);
@@ -65,9 +67,9 @@ export default function ReportsPage() {
   const reportNav = digitsToNumber(reportNavDigits);
 
   const investorsQuery = useQuery({
-    queryKey: ["report-investor-options", token],
+    queryKey: queryKeys.investorOptions(safeToken),
     queryFn: async () => {
-      const investors = await apiClient.investorCards(token || "");
+      const investors = await apiClient.investorCards(safeToken);
       return investors.map((item) => toInvestorOption(item.display_name, item.id));
     },
     enabled: !!token,
@@ -76,9 +78,14 @@ export default function ReportsPage() {
   const effectiveInvestorId = reportInvestorId ?? investorsQuery.data?.[0]?.id ?? 0;
 
   const txReportQuery = useQuery({
-    queryKey: ["transactions-report", txPage, txTypeFilter, investorFilter?.id],
+    queryKey: queryKeys.transactionsReport(safeToken, {
+      page: txPage,
+      pageSize: 20,
+      txType: txTypeFilter || undefined,
+      investorId: investorFilter?.id,
+    }),
     queryFn: () =>
-      apiClient.transactionsReport(token || "", {
+      apiClient.transactionsReport(safeToken, {
         page: txPage,
         page_size: 20,
         tx_type: txTypeFilter || undefined,
@@ -88,8 +95,8 @@ export default function ReportsPage() {
   });
 
   const investorReportQuery = useQuery({
-    queryKey: ["investor-report", effectiveInvestorId, reportNav],
-    queryFn: () => apiClient.investorReport(token || "", effectiveInvestorId, reportNav || undefined),
+    queryKey: queryKeys.investorReport(safeToken, effectiveInvestorId, reportNav || undefined),
+    queryFn: () => apiClient.investorReport(safeToken, effectiveInvestorId, reportNav || undefined),
     enabled: !!token && effectiveInvestorId > 0,
   });
 
@@ -176,32 +183,7 @@ export default function ReportsPage() {
 
             <div className="grid grid-cols-1 gap-3 lg:grid-cols-2">
               <div className="h-64 rounded-xl border border-[var(--color-border)] bg-[var(--color-surface)] p-2">
-                <ResponsiveContainer width="100%" height="100%">
-                  <PieChart>
-                    <Pie
-                      data={txTypeChartData}
-                      dataKey="value"
-                      nameKey="name"
-                      cx="50%"
-                      cy="50%"
-                      innerRadius={52}
-                      outerRadius={86}
-                      paddingAngle={3}
-                    >
-                      {txTypeChartData.map((item) => (
-                        <Cell key={item.name} fill={item.color} />
-                      ))}
-                    </Pie>
-                    <Tooltip
-                      formatter={(value) => Number(value)}
-                      contentStyle={{
-                        backgroundColor: "var(--color-surface)",
-                        borderColor: "var(--color-border)",
-                        color: "var(--color-text)",
-                      }}
-                    />
-                  </PieChart>
-                </ResponsiveContainer>
+                <ReportsTxTypePieChart data={txTypeChartData} />
               </div>
 
               <div className="list-stagger space-y-2">
@@ -323,25 +305,7 @@ export default function ReportsPage() {
             </div>
 
             <div className="h-64 rounded-xl border border-[var(--color-border)] bg-[var(--color-surface)] p-2">
-              <ResponsiveContainer width="100%" height="100%">
-                <BarChart data={investorTxBars}>
-                  <CartesianGrid strokeDasharray="3 3" stroke="var(--chart-grid)" />
-                  <XAxis dataKey="time" tick={{ fontSize: 12, fill: "var(--color-muted)" }} />
-                  <YAxis
-                    tickFormatter={formatCompactMoney}
-                    tick={{ fontSize: 12, fill: "var(--color-muted)" }}
-                  />
-                  <Tooltip
-                    formatter={(value) => formatCurrency(Number(value))}
-                    contentStyle={{
-                      backgroundColor: "var(--color-surface)",
-                      borderColor: "var(--color-border)",
-                      color: "var(--color-text)",
-                    }}
-                  />
-                  <Bar dataKey="amount" fill="var(--chart-2)" radius={[8, 8, 0, 0]} />
-                </BarChart>
-              </ResponsiveContainer>
+              <ReportsInvestorTxBarChart data={investorTxBars} formatCompactMoney={formatCompactMoney} />
             </div>
 
             <div className="list-stagger space-y-2">

@@ -10,7 +10,10 @@ export function AppQueryProvider({ children }: { children: React.ReactNode }) {
         defaultOptions: {
           queries: {
             refetchOnWindowFocus: false,
+            refetchOnReconnect: false,
             retry: 1,
+            staleTime: 30_000,
+            gcTime: 5 * 60_000,
           },
         },
       }),
@@ -18,4 +21,3 @@ export function AppQueryProvider({ children }: { children: React.ReactNode }) {
 
   return <QueryClientProvider client={client}>{children}</QueryClientProvider>;
 }
-

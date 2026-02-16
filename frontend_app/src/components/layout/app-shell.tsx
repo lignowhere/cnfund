@@ -5,6 +5,7 @@ import { usePathname } from "next/navigation";
 import { BottomNav } from "@/components/layout/bottom-nav";
 import { SideDrawer } from "@/components/layout/side-drawer";
 import { ThemeToggle } from "@/components/layout/theme-toggle";
+import { ToastViewport } from "@/components/ui/toast-viewport";
 import { useAuthStore } from "@/store/auth-store";
 import { useApplyTheme } from "@/store/theme-store";
 
@@ -35,9 +36,12 @@ export function AppShell({ children }: { children: React.ReactNode }) {
         <div className="mx-auto flex h-16 max-w-6xl items-center justify-between px-4 md:px-6">
           <div className="flex items-center gap-3">
             <SideDrawer />
+            <ThemeToggle compact className="md:hidden" />
             <div>
               <p className="text-xs uppercase tracking-[0.2em] text-[var(--color-muted)]">CNFund</p>
-              <h1 className="text-base font-semibold">{titles[pathname] || "CNFund"}</h1>
+              <h1 className="sr-only md:not-sr-only md:text-base md:font-semibold">
+                {titles[pathname] || "CNFund"}
+              </h1>
             </div>
           </div>
           <div className="flex items-center gap-2">
@@ -55,6 +59,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
         {children}
       </main>
       <BottomNav />
+      <ToastViewport />
     </div>
   );
 }

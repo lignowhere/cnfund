@@ -2,7 +2,7 @@
 
 import { Loader2 } from "lucide-react";
 import { useMemo, useState } from "react";
-import { useMutation, useQuery } from "@tanstack/react-query";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 
 import { MoneyInput } from "@/components/form/money-input";
 import { Button } from "@/components/ui/button";
@@ -11,11 +11,17 @@ import { Input } from "@/components/ui/input";
 import { EmptyState, ErrorState, LoadingState } from "@/components/ui/states";
 import { apiClient } from "@/lib/api";
 import { digitsToNumber } from "@/lib/number-input";
+import { queryKeys } from "@/lib/query-keys";
 import { formatCurrency } from "@/lib/utils";
 import { useAuthStore } from "@/store/auth-store";
+import { useToastStore } from "@/store/toast-store";
 
 export default function FeesPage() {
+  const queryClient = useQueryClient();
   const token = useAuthStore((state) => state.accessToken);
+  const safeToken = token || "";
+  const pushToast = useToastStore((state) => state.push);
+
   const [year, setYear] = useState(new Date().getFullYear().toString());
   const [endDate, setEndDate] = useState(new Date().toISOString().slice(0, 10));
   const [totalNavDigits, setTotalNavDigits] = useState("");
@@ -26,35 +32,39 @@ export default function FeesPage() {
   } | null>(null);
   const [acknowledgeRisk, setAcknowledgeRisk] = useState(false);
   const [acknowledgeBackup, setAcknowledgeBackup] = useState(false);
-  const [statusMessage, setStatusMessage] = useState<string | null>(null);
 
   const totalNav = digitsToNumber(totalNavDigits);
 
   const flagsQuery = useQuery({
-    queryKey: ["feature-flags"],
-    queryFn: () => apiClient.featureFlags(token || ""),
+    queryKey: queryKeys.featureFlags(safeToken),
+    queryFn: () => apiClient.featureFlags(safeToken),
     enabled: !!token,
   });
 
   const safetyEnabled = flagsQuery.data?.fee_safety ?? true;
 
   const historyQuery = useQuery({
-    queryKey: ["fee-history"],
-    queryFn: () => apiClient.feeHistory(token || ""),
+    queryKey: queryKeys.feeHistory(safeToken),
+    queryFn: () => apiClient.feeHistory(safeToken),
     enabled: !!token,
   });
 
   const previewMutation = useMutation({
     mutationFn: () =>
-      apiClient.previewFees(token || "", {
+      apiClient.previewFees(safeToken, {
         end_date: endDate,
         total_nav: totalNav || 0,
       }),
     onSuccess: () => {
       setPreviewSnapshot({ endDate, totalNavDigits });
-      setStatusMessage("Đã cập nhật bản xem trước phí.");
+      pushToast({ title: "Đã cập nhật bản xem trước phí", variant: "success" });
     },
-    onError: () => setStatusMessage(null),
+    onError: (error) =>
+      pushToast({
+        title: "Không thể xem trước phí",
+        description: error instanceof Error ? error.message : undefined,
+        variant: "error",
+      }),
   });
 
   const applyMutation = useMutation({
@@ -63,7 +73,7 @@ export default function FeesPage() {
       if (!previewData) {
         throw new Error("Cần xem trước trước khi áp dụng phí.");
       }
-      return apiClient.applyFees(token || "", {
+      return apiClient.applyFees(safeToken, {
         year: Number(year),
         end_date: endDate,
         total_nav: totalNav || 0,
@@ -72,11 +82,19 @@ export default function FeesPage() {
         acknowledge_backup: safetyEnabled ? acknowledgeBackup : true,
       });
     },
-    onSuccess: () => {
-      setStatusMessage("Đã áp dụng phí thành công.");
-      historyQuery.refetch();
+    onSuccess: async () => {
+      pushToast({ title: "Đã áp dụng phí thành công", variant: "success" });
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: queryKeys.feeHistory(safeToken), exact: true }),
+        queryClient.invalidateQueries({ queryKey: queryKeys.dashboard(safeToken), exact: true }),
+      ]);
     },
-    onError: () => setStatusMessage(null),
+    onError: (error) =>
+      pushToast({
+        title: "Không thể áp dụng phí",
+        description: error instanceof Error ? error.message : undefined,
+        variant: "error",
+      }),
   });
 
   const hasPreview = Boolean(previewMutation.data);
@@ -117,9 +135,7 @@ export default function FeesPage() {
             aria-invalid={!totalNav || totalNav <= 0 || totalNavOverflow}
           />
         </div>
-        <p className="input-helper">
-          Giá trị NAV gửi tính phí: {totalNav ? formatCurrency(totalNav) : "Chưa có"}
-        </p>
+        <p className="input-helper">Giá trị NAV gửi tính phí: {totalNav ? formatCurrency(totalNav) : "Chưa có"}</p>
         {totalNavOverflow ? <p className="inline-error">Tổng NAV quá lớn (tối đa 15 chữ số).</p> : null}
         {!previewMatchesInput && hasPreview ? (
           <p className="status-warning">
@@ -151,7 +167,6 @@ export default function FeesPage() {
         ) : null}
 
         {mutationError ? <ErrorState message={mutationError} /> : null}
-        {statusMessage ? <p className="status-success">{statusMessage}</p> : null}
 
         <div className="grid grid-cols-2 gap-2">
           <Button variant="secondary" onClick={() => previewMutation.mutate()} disabled={!canPreview}>

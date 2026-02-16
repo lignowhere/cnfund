@@ -23,6 +23,7 @@ type InvestorComboboxProps = {
   allowClear?: boolean;
   className?: string;
   noMatchLabel?: string;
+  invalid?: boolean;
 };
 
 export function InvestorCombobox({
@@ -34,6 +35,7 @@ export function InvestorCombobox({
   allowClear = false,
   className,
   noMatchLabel = "Không tìm thấy nhà đầu tư phù hợp",
+  invalid = false,
 }: InvestorComboboxProps) {
   const [isOpen, setIsOpen] = useState(false);
   const [query, setQuery] = useState("");
@@ -79,6 +81,8 @@ export function InvestorCombobox({
           className={cn(
             "min-h-11 w-full rounded-[var(--radius-control)] border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-2 pr-16 text-base text-[var(--color-text)] shadow-sm md:text-sm",
             "placeholder:text-[var(--color-muted)] focus:border-[var(--color-primary)] focus:outline-none focus:ring-2 focus:ring-[var(--color-primary)]/20",
+            invalid &&
+              "border-[var(--color-danger)] ring-2 ring-[color-mix(in_oklab,var(--color-danger)_24%,transparent)]",
             disabled && "cursor-not-allowed opacity-70",
           )}
           onFocus={() => {

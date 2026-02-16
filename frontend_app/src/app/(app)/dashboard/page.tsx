@@ -1,25 +1,13 @@
 ﻿"use client";
 
+import dynamic from "next/dynamic";
 import { useMemo } from "react";
 import { useQuery } from "@tanstack/react-query";
-import {
-  Area,
-  AreaChart,
-  Bar,
-  BarChart,
-  CartesianGrid,
-  Cell,
-  Pie,
-  PieChart,
-  ResponsiveContainer,
-  Tooltip,
-  XAxis,
-  YAxis,
-} from "recharts";
 
 import { Card } from "@/components/ui/card";
 import { ErrorState, LoadingState } from "@/components/ui/states";
 import { apiClient } from "@/lib/api";
+import { queryKeys } from "@/lib/query-keys";
 import { formatCurrency, formatPercent } from "@/lib/utils";
 import { useAuthStore } from "@/store/auth-store";
 
@@ -32,6 +20,22 @@ const CHART_COLORS = [
   "var(--chart-6)",
 ];
 
+const DashboardNavAreaChart = dynamic(
+  () => import("@/components/charts/dashboard-charts").then((module) => module.DashboardNavAreaChart),
+  { ssr: false },
+);
+
+const DashboardTxTypePieChart = dynamic(
+  () => import("@/components/charts/dashboard-charts").then((module) => module.DashboardTxTypePieChart),
+  { ssr: false },
+);
+
+const DashboardTopInvestorsBarChart = dynamic(
+  () =>
+    import("@/components/charts/dashboard-charts").then((module) => module.DashboardTopInvestorsBarChart),
+  { ssr: false },
+);
+
 function formatCompactMoney(value: number) {
   const abs = Math.abs(value);
   if (abs >= 1_000_000_000) return `${(value / 1_000_000_000).toFixed(1)}B`;
@@ -39,24 +43,42 @@ function formatCompactMoney(value: number) {
   return `${Math.round(value / 1_000)}K`;
 }
 
+function DashboardSkeleton() {
+  return (
+    <div className="app-page animate-pulse">
+      <div className="h-36 rounded-[var(--radius-card)] bg-[var(--color-surface-3)]" />
+      <div className="grid grid-cols-2 gap-3 xl:grid-cols-4">
+        {Array.from({ length: 4 }).map((_, idx) => (
+          <div key={idx} className="h-24 rounded-[var(--radius-card)] bg-[var(--color-surface-3)]" />
+        ))}
+      </div>
+      <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
+        <div className="h-72 rounded-[var(--radius-card)] bg-[var(--color-surface-3)]" />
+        <div className="h-72 rounded-[var(--radius-card)] bg-[var(--color-surface-3)]" />
+      </div>
+    </div>
+  );
+}
+
 export default function DashboardPage() {
   const token = useAuthStore((state) => state.accessToken);
+  const safeToken = token || "";
 
   const dashboardQuery = useQuery({
-    queryKey: ["dashboard"],
-    queryFn: () => apiClient.dashboard(token || ""),
+    queryKey: queryKeys.dashboard(safeToken),
+    queryFn: () => apiClient.dashboard(safeToken),
     enabled: !!token,
   });
 
   const navHistoryQuery = useQuery({
-    queryKey: ["nav-history"],
-    queryFn: () => apiClient.navHistory(token || ""),
+    queryKey: queryKeys.navHistory(safeToken),
+    queryFn: () => apiClient.navHistory(safeToken),
     enabled: !!token,
   });
 
   const txSummaryQuery = useQuery({
-    queryKey: ["dashboard-transactions-summary"],
-    queryFn: () => apiClient.transactionsReport(token || "", { page: 1, page_size: 120 }),
+    queryKey: queryKeys.dashboardTransactionsSummary(safeToken),
+    queryFn: () => apiClient.transactionsReport(safeToken, { page: 1, page_size: 120 }),
     enabled: !!token,
   });
 
@@ -90,7 +112,7 @@ export default function DashboardPage() {
   }, [txSummaryQuery.data]);
 
   if (dashboardQuery.isLoading) {
-    return <LoadingState label="Đang tải bảng điều khiển..." />;
+    return <DashboardSkeleton />;
   }
 
   if (dashboardQuery.isError || !dashboardQuery.data) {
@@ -102,12 +124,12 @@ export default function DashboardPage() {
   return (
     <div className="app-page">
       <Card className="relative overflow-hidden border-none bg-gradient-to-r from-[var(--hero-start)] via-[var(--hero-mid)] to-[var(--hero-end)] text-[var(--color-text-inverse)] shadow-xl">
-        <div className="absolute -right-12 -top-14 h-40 w-40 rounded-full bg-white/10" />
-        <div className="absolute -bottom-10 left-8 h-28 w-28 rounded-full bg-cyan-200/10" />
+        <div className="absolute -right-12 -top-14 h-40 w-40 rounded-full bg-[var(--hero-orb-a)]" />
+        <div className="absolute -bottom-10 left-8 h-28 w-28 rounded-full bg-[var(--hero-orb-b)]" />
         <div className="relative space-y-2">
-          <p className="text-xs uppercase tracking-[0.2em] text-white/80">Tổng quan quỹ</p>
+          <p className="text-xs uppercase tracking-[0.2em] text-[var(--hero-text-muted)]">Tổng quan quỹ</p>
           <h2 className="text-2xl font-semibold">{formatCurrency(kpis.total_nav)}</h2>
-          <p className="text-sm text-white/90">
+          <p className="text-sm text-[var(--hero-text-muted)]">
             Hiệu suất gộp: <span className="font-semibold">{formatPercent(kpis.gross_return)}</span>
           </p>
         </div>
@@ -137,28 +159,7 @@ export default function DashboardPage() {
           <h3 className="section-title">Diễn biến NAV</h3>
           {navSeries.length ? (
             <div className="h-64">
-              <ResponsiveContainer width="100%" height="100%">
-                <AreaChart data={navSeries}>
-                  <defs>
-                    <linearGradient id="navGradient" x1="0" y1="0" x2="0" y2="1">
-                      <stop offset="5%" stopColor="var(--chart-1)" stopOpacity={0.35} />
-                      <stop offset="95%" stopColor="var(--chart-1)" stopOpacity={0.02} />
-                    </linearGradient>
-                  </defs>
-                  <CartesianGrid strokeDasharray="3 3" stroke="var(--chart-grid)" />
-                  <XAxis dataKey="label" tick={{ fontSize: 12, fill: "var(--color-muted)" }} />
-                  <YAxis tickFormatter={formatCompactMoney} tick={{ fontSize: 12, fill: "var(--color-muted)" }} />
-                  <Tooltip
-                    formatter={(value) => formatCurrency(Number(value))}
-                    contentStyle={{
-                      backgroundColor: "var(--color-surface)",
-                      borderColor: "var(--color-border)",
-                      color: "var(--color-text)",
-                    }}
-                  />
-                  <Area type="monotone" dataKey="nav" stroke="var(--chart-1)" strokeWidth={2} fillOpacity={1} fill="url(#navGradient)" />
-                </AreaChart>
-              </ResponsiveContainer>
+              <DashboardNavAreaChart data={navSeries} formatCompactMoney={formatCompactMoney} />
             </div>
           ) : (
             <LoadingState label="Chưa có lịch sử NAV để hiển thị biểu đồ." />
@@ -171,31 +172,7 @@ export default function DashboardPage() {
             <LoadingState label="Đang tải cơ cấu giao dịch..." />
           ) : txTypeSeries.length ? (
             <div className="h-64">
-              <ResponsiveContainer width="100%" height="100%">
-                <PieChart>
-                  <Pie
-                    data={txTypeSeries}
-                    dataKey="value"
-                    nameKey="name"
-                    cx="50%"
-                    cy="50%"
-                    innerRadius={56}
-                    outerRadius={90}
-                    paddingAngle={3}
-                  >
-                    {txTypeSeries.map((entry) => (
-                      <Cell key={entry.name} fill={entry.color} />
-                    ))}
-                  </Pie>
-                  <Tooltip
-                    contentStyle={{
-                      backgroundColor: "var(--color-surface)",
-                      borderColor: "var(--color-border)",
-                      color: "var(--color-text)",
-                    }}
-                  />
-                </PieChart>
-              </ResponsiveContainer>
+              <DashboardTxTypePieChart data={txTypeSeries} />
             </div>
           ) : (
             <LoadingState label="Chưa có dữ liệu giao dịch." />
@@ -207,22 +184,7 @@ export default function DashboardPage() {
         <h3 className="section-title">Top nhà đầu tư theo giá trị</h3>
         {topInvestorsChart.length ? (
           <div className="h-72">
-            <ResponsiveContainer width="100%" height="100%">
-              <BarChart data={topInvestorsChart}>
-                <CartesianGrid strokeDasharray="3 3" stroke="var(--chart-grid)" />
-                <XAxis dataKey="name" tick={{ fontSize: 12, fill: "var(--color-muted)" }} interval={0} angle={-10} height={48} />
-                <YAxis tickFormatter={formatCompactMoney} tick={{ fontSize: 12, fill: "var(--color-muted)" }} />
-                <Tooltip
-                  formatter={(value) => formatCurrency(Number(value))}
-                  contentStyle={{
-                    backgroundColor: "var(--color-surface)",
-                    borderColor: "var(--color-border)",
-                    color: "var(--color-text)",
-                  }}
-                />
-                <Bar dataKey="balance" fill="var(--chart-2)" radius={[8, 8, 0, 0]} />
-              </BarChart>
-            </ResponsiveContainer>
+            <DashboardTopInvestorsBarChart data={topInvestorsChart} formatCompactMoney={formatCompactMoney} />
           </div>
         ) : (
           <p className="text-sm text-[var(--color-muted)]">Chưa có dữ liệu nhà đầu tư.</p>

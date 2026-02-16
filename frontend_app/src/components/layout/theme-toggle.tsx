@@ -1,4 +1,4 @@
-"use client";
+﻿"use client";
 
 import { Laptop, Moon, Sun } from "lucide-react";
 
@@ -16,9 +16,34 @@ const options: Array<{
   { value: "dark", label: "Tối", icon: Moon },
 ];
 
-export function ThemeToggle({ className }: { className?: string }) {
+const cycleMap: Record<ThemePreference, ThemePreference> = {
+  system: "light",
+  light: "dark",
+  dark: "system",
+};
+
+export function ThemeToggle({ className, compact = false }: { className?: string; compact?: boolean }) {
   const preference = useThemeStore((state) => state.preference);
   const setPreference = useThemeStore((state) => state.setPreference);
+
+  if (compact) {
+    const activeOption = options.find((item) => item.value === preference) ?? options[0];
+    const Icon = activeOption.icon;
+    return (
+      <button
+        type="button"
+        className={cn(
+          "inline-flex h-10 w-10 items-center justify-center rounded-xl border border-[var(--color-border)] bg-[var(--color-surface)] text-[var(--color-muted)] transition hover:bg-[var(--color-surface-2)] hover:text-[var(--color-text)]",
+          className,
+        )}
+        onClick={() => setPreference(cycleMap[preference])}
+        aria-label={`Đổi giao diện: hiện tại ${activeOption.label}`}
+        title={`Giao diện: ${activeOption.label}`}
+      >
+        <Icon className="h-4 w-4" />
+      </button>
+    );
+  }
 
   return (
     <div

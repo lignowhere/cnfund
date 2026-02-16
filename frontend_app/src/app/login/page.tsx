@@ -4,10 +4,12 @@ import { Loader2 } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { FormEvent, useEffect, useState } from "react";
 
+import { ThemeToggle } from "@/components/layout/theme-toggle";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { useAuthStore } from "@/store/auth-store";
+import { useApplyTheme } from "@/store/theme-store";
 
 export default function LoginPage() {
   const router = useRouter();
@@ -19,6 +21,8 @@ export default function LoginPage() {
   const [password, setPassword] = useState("1997");
   const [error, setError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
+
+  useApplyTheme();
 
   useEffect(() => {
     if (isHydrated && token) {
@@ -42,6 +46,7 @@ export default function LoginPage() {
 
   return (
     <main className="grid min-h-screen place-items-center px-4 py-10">
+      <ThemeToggle compact className="fixed right-4 top-4 z-50" />
       <Card className="w-full max-w-md space-y-6 border-none bg-[var(--color-surface)]/90 p-6 shadow-2xl backdrop-blur">
         <header className="space-y-2 text-center">
           <p className="text-xs uppercase tracking-[0.2em] text-[var(--color-muted)]">CNFund</p>

@@ -9,51 +9,72 @@ import { Card } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { EmptyState, ErrorState, LoadingState } from "@/components/ui/states";
 import { apiClient } from "@/lib/api";
+import { queryKeys } from "@/lib/query-keys";
 import { useAuthStore } from "@/store/auth-store";
+import { useToastStore } from "@/store/toast-store";
 
 export default function BackupPage() {
   const queryClient = useQueryClient();
   const token = useAuthStore((state) => state.accessToken);
+  const safeToken = token || "";
+  const pushToast = useToastStore((state) => state.push);
   const [restoreTargetId, setRestoreTargetId] = useState<string | null>(null);
   const [confirmPhrase, setConfirmPhrase] = useState("");
   const [createSafetyBackup, setCreateSafetyBackup] = useState(true);
-  const [statusMessage, setStatusMessage] = useState<string | null>(null);
 
   const flagsQuery = useQuery({
-    queryKey: ["feature-flags"],
-    queryFn: () => apiClient.featureFlags(token || ""),
+    queryKey: queryKeys.featureFlags(safeToken),
+    queryFn: () => apiClient.featureFlags(safeToken),
     enabled: !!token,
   });
 
   const backupsQuery = useQuery({
-    queryKey: ["backups"],
-    queryFn: () => apiClient.backups(token || ""),
+    queryKey: queryKeys.backups(safeToken),
+    queryFn: () => apiClient.backups(safeToken),
     enabled: !!token,
   });
 
   const manualMutation = useMutation({
-    mutationFn: () => apiClient.manualBackup(token || ""),
+    mutationFn: () => apiClient.manualBackup(safeToken),
     onSuccess: (result) => {
-      setStatusMessage(`Đã tạo bản sao lưu thành công: ${result.backup_id}`);
-      queryClient.invalidateQueries({ queryKey: ["backups"] });
+      pushToast({
+        title: "Đã tạo bản sao lưu",
+        description: result.backup_id,
+        variant: "success",
+      });
+      queryClient.invalidateQueries({ queryKey: queryKeys.backups(safeToken), exact: true });
     },
-    onError: () => setStatusMessage(null),
+    onError: (error) =>
+      pushToast({
+        title: "Không thể tạo bản sao lưu",
+        description: error instanceof Error ? error.message : undefined,
+        variant: "error",
+      }),
   });
 
   const restoreMutation = useMutation({
     mutationFn: (backupId: string) =>
-      apiClient.restoreBackup(token || "", {
+      apiClient.restoreBackup(safeToken, {
         backup_id: backupId,
         confirm_phrase: confirmPhrase,
         create_safety_backup: createSafetyBackup,
       }),
     onSuccess: () => {
-      setStatusMessage("Khôi phục dữ liệu thành công.");
+      pushToast({ title: "Khôi phục dữ liệu thành công", variant: "success" });
       setRestoreTargetId(null);
       setConfirmPhrase("");
-      queryClient.invalidateQueries({ queryKey: ["backups"] });
+      queryClient.invalidateQueries({ queryKey: queryKeys.backups(safeToken), exact: true });
+      queryClient.invalidateQueries({ queryKey: queryKeys.dashboard(safeToken), exact: true });
+      queryClient.invalidateQueries({ queryKey: queryKeys.navHistory(safeToken), exact: true });
+      queryClient.invalidateQueries({ queryKey: queryKeys.transactionCards(safeToken), exact: true });
+      queryClient.invalidateQueries({ queryKey: queryKeys.investorCards(safeToken), exact: true });
     },
-    onError: () => setStatusMessage(null),
+    onError: (error) =>
+      pushToast({
+        title: "Không thể khôi phục dữ liệu",
+        description: error instanceof Error ? error.message : undefined,
+        variant: "error",
+      }),
   });
 
   const restoreEnabled = flagsQuery.data?.backup_restore ?? true;
@@ -71,7 +92,6 @@ export default function BackupPage() {
           {manualMutation.isPending ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
           Tạo sao lưu thủ công
         </Button>
-        {statusMessage ? <p className="status-success">{statusMessage}</p> : null}
         {actionError ? <ErrorState message={actionError} /> : null}
       </Card>
 

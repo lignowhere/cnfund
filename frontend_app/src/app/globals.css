@@ -35,6 +35,10 @@
   --hero-start: #0f4c81;
   --hero-mid: #145a94;
   --hero-end: #1b6ca8;
+  --hero-orb-a: rgb(255 255 255 / 0.14);
+  --hero-orb-b: rgb(176 226 255 / 0.18);
+  --hero-text-muted: rgb(248 251 255 / 0.88);
+  --scrollbar-thumb: #9ec6e2;
   --radius-card: 20px;
   --radius-control: 14px;
   --space-2: 0.5rem;
@@ -59,7 +63,7 @@
   --color-warning: #f7b267;
   --color-text: #e8edf4;
   --color-text-inverse: #0b1119;
-  --color-muted: #9fb0c2;
+  --color-muted: #b4c2d1;
   --color-border: #2f4154;
   --color-surface: #111b25;
   --color-surface-2: #0d151f;
@@ -83,6 +87,10 @@
   --hero-start: #11385a;
   --hero-mid: #1a4a72;
   --hero-end: #215985;
+  --hero-orb-a: rgb(153 208 255 / 0.2);
+  --hero-orb-b: rgb(95 165 222 / 0.24);
+  --hero-text-muted: rgb(235 244 255 / 0.92);
+  --scrollbar-thumb: #507494;
   --shadow-card: 0 22px 42px -26px rgb(0 0 0 / 0.6);
   --shadow-card-hover: 0 24px 48px -24px rgb(0 0 0 / 0.62);
 }
@@ -109,7 +117,23 @@ h4 {
 
 * {
   scrollbar-width: thin;
-  scrollbar-color: color-mix(in oklab, var(--color-primary) 50%, transparent) transparent;
+  scrollbar-color: var(--scrollbar-thumb) transparent;
+}
+
+*::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+
+*::-webkit-scrollbar-thumb {
+  background: var(--scrollbar-thumb);
+  border-radius: 999px;
+  border: 2px solid transparent;
+  background-clip: content-box;
+}
+
+*::-webkit-scrollbar-track {
+  background: transparent;
 }
 
 ::selection {

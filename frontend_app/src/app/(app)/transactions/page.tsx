@@ -9,13 +9,16 @@ import { InvestorCombobox } from "@/components/form/investor-combobox";
 import { MoneyInput } from "@/components/form/money-input";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
+import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import { Input } from "@/components/ui/input";
 import { EmptyState, ErrorState, LoadingState } from "@/components/ui/states";
 import { apiClient } from "@/lib/api";
 import { digitsToNumber } from "@/lib/number-input";
+import { queryKeys } from "@/lib/query-keys";
 import type { InvestorSelectOption, TransactionCardDTO } from "@/lib/types";
 import { formatCurrency, formatDateTime } from "@/lib/utils";
 import { useAuthStore } from "@/store/auth-store";
+import { useToastStore } from "@/store/toast-store";
 
 type TxType = "deposit" | "withdraw" | "nav_update";
 type TxViewMode = "card" | "table";
@@ -33,6 +36,8 @@ function toInvestorOption(displayName: string, id: number): InvestorSelectOption
 export default function TransactionsPage() {
   const queryClient = useQueryClient();
   const token = useAuthStore((state) => state.accessToken);
+  const safeToken = token || "";
+  const pushToast = useToastStore((state) => state.push);
 
   const [txType, setTxType] = useState<TxType>("deposit");
   const [selectedInvestor, setSelectedInvestor] = useState<InvestorSelectOption | null>(null);
@@ -43,18 +48,18 @@ export default function TransactionsPage() {
   const [txDate, setTxDate] = useState(new Date().toISOString().slice(0, 10));
   const [selectedTx, setSelectedTx] = useState<TransactionCardDTO | null>(null);
   const [viewMode, setViewMode] = useState<TxViewMode>("card");
-  const [statusMessage, setStatusMessage] = useState<string | null>(null);
+  const [deleteTarget, setDeleteTarget] = useState<number | null>(null);
 
   const flagsQuery = useQuery({
-    queryKey: ["feature-flags"],
-    queryFn: () => apiClient.featureFlags(token || ""),
+    queryKey: queryKeys.featureFlags(safeToken),
+    queryFn: () => apiClient.featureFlags(safeToken),
     enabled: !!token,
   });
 
   const investorsQuery = useQuery({
-    queryKey: ["investor-options", token],
+    queryKey: queryKeys.investorOptions(safeToken),
     queryFn: async () => {
-      const investors = await apiClient.investorCards(token || "");
+      const investors = await apiClient.investorCards(safeToken);
       return investors.map((item) => toInvestorOption(item.display_name, item.id));
     },
     enabled: !!token,
@@ -64,9 +69,9 @@ export default function TransactionsPage() {
   const loadMoreEnabled = flagsQuery.data?.transactions_load_more ?? true;
 
   const transactionsQuery = useInfiniteQuery({
-    queryKey: ["transaction-cards", token],
+    queryKey: queryKeys.transactionCards(safeToken),
     initialPageParam: 1,
-    queryFn: ({ pageParam }) => apiClient.transactionCards(token || "", pageParam, 20),
+    queryFn: ({ pageParam }) => apiClient.transactionCards(safeToken, pageParam, 20),
     getNextPageParam: (lastPage, pages) => {
       const loaded = pages.reduce((sum, page) => sum + page.items.length, 0);
       if (loaded >= lastPage.total) {
@@ -91,43 +96,76 @@ export default function TransactionsPage() {
   const amountInvalid = txType !== "nav_update" && (!amountValue || amountValue <= 0 || amountOverflow);
   const totalNavInvalid = !totalNavValue || totalNavValue <= 0 || totalNavOverflow;
 
+  async function invalidateAfterMutation() {
+    await Promise.all([
+      queryClient.invalidateQueries({ queryKey: queryKeys.transactionCards(safeToken), exact: true }),
+      queryClient.invalidateQueries({ queryKey: queryKeys.dashboard(safeToken), exact: true }),
+      queryClient.invalidateQueries({ queryKey: queryKeys.navHistory(safeToken), exact: true }),
+      queryClient.invalidateQueries({
+        queryKey: queryKeys.dashboardTransactionsSummary(safeToken),
+        exact: true,
+      }),
+      queryClient.invalidateQueries({ queryKey: queryKeys.investorCards(safeToken), exact: true }),
+      queryClient.invalidateQueries({ queryKey: ["transactions-report", safeToken], exact: false }),
+      queryClient.invalidateQueries({ queryKey: ["investor-report", safeToken], exact: false }),
+      queryClient.invalidateQueries({ queryKey: ["investor-detail", safeToken], exact: false }),
+    ]);
+  }
+
   const createMutation = useMutation({
     mutationFn: () =>
-      apiClient.createTransaction(token || "", {
+      apiClient.createTransaction(safeToken, {
         transaction_type: txType,
         investor_id: txType === "nav_update" ? undefined : selectedInvestor?.id,
         amount: txType === "nav_update" ? undefined : amountValue || undefined,
         total_nav: totalNavValue || 0,
         transaction_date: txDate,
       }),
-    onSuccess: () => {
+    onSuccess: async () => {
       setAmountDigits("");
       setAmountOverflow(false);
       setTotalNavDigits("");
       setTotalNavOverflow(false);
-      setStatusMessage("Đã cập nhật giao dịch thành công.");
-      queryClient.invalidateQueries({ queryKey: ["transaction-cards", token] });
-      queryClient.invalidateQueries({ queryKey: ["dashboard"] });
-      queryClient.invalidateQueries({ queryKey: ["nav-history"] });
+      pushToast({ title: "Đã cập nhật giao dịch", variant: "success" });
+      await invalidateAfterMutation();
     },
-    onError: () => setStatusMessage(null),
+    onError: (error) => {
+      pushToast({
+        title: "Không thể tạo giao dịch",
+        description: error instanceof Error ? error.message : undefined,
+        variant: "error",
+      });
+    },
   });
 
   const deleteMutation = useMutation({
-    mutationFn: (id: number) => apiClient.deleteTransaction(token || "", id),
-    onSuccess: () => {
-      setStatusMessage("Đã xóa giao dịch.");
-      queryClient.invalidateQueries({ queryKey: ["transaction-cards", token] });
-      queryClient.invalidateQueries({ queryKey: ["dashboard"] });
+    mutationFn: (id: number) => apiClient.deleteTransaction(safeToken, id),
+    onSuccess: async () => {
+      setDeleteTarget(null);
+      pushToast({ title: "Đã xóa giao dịch", variant: "success" });
+      await invalidateAfterMutation();
+    },
+    onError: (error) => {
+      pushToast({
+        title: "Không thể xóa giao dịch",
+        description: error instanceof Error ? error.message : undefined,
+        variant: "error",
+      });
     },
   });
 
   const undoMutation = useMutation({
-    mutationFn: (id: number) => apiClient.undoTransaction(token || "", id),
-    onSuccess: () => {
-      setStatusMessage("Đã hoàn tác giao dịch.");
-      queryClient.invalidateQueries({ queryKey: ["transaction-cards", token] });
-      queryClient.invalidateQueries({ queryKey: ["dashboard"] });
+    mutationFn: (id: number) => apiClient.undoTransaction(safeToken, id),
+    onSuccess: async () => {
+      pushToast({ title: "Đã hoàn tác giao dịch", variant: "success" });
+      await invalidateAfterMutation();
+    },
+    onError: (error) => {
+      pushToast({
+        title: "Không thể hoàn tác",
+        description: error instanceof Error ? error.message : undefined,
+        variant: "error",
+      });
     },
   });
 
@@ -154,7 +192,6 @@ export default function TransactionsPage() {
             onChange={(e) => {
               const nextType = e.target.value as TxType;
               setTxType(nextType);
-              setStatusMessage(null);
               if (nextType === "nav_update") {
                 setSelectedInvestor(null);
                 setAmountDigits("");
@@ -182,6 +219,7 @@ export default function TransactionsPage() {
               onChange={setSelectedInvestor}
               placeholder="Tìm theo tên hoặc ID nhà đầu tư"
               disabled={investorsQuery.isLoading}
+              invalid={investorInvalid}
             />
             {investorInvalid ? <p className="inline-error">Vui lòng chọn đúng nhà đầu tư.</p> : null}
           </div>
@@ -198,9 +236,7 @@ export default function TransactionsPage() {
               placeholder="50,000,000"
               aria-invalid={amountInvalid}
             />
-            <p className="input-helper">
-              Giá trị sẽ gửi: {amountValue ? formatCurrency(amountValue) : "Chưa có"}
-            </p>
+            <p className="input-helper">Giá trị sẽ gửi: {amountValue ? formatCurrency(amountValue) : "Chưa có"}</p>
             {amountOverflow ? <p className="inline-error">Số tiền quá lớn (tối đa 15 chữ số).</p> : null}
             {!amountOverflow && amountInvalid ? <p className="inline-error">Số tiền phải lớn hơn 0.</p> : null}
           </div>
@@ -224,7 +260,6 @@ export default function TransactionsPage() {
         </div>
 
         {errorText ? <ErrorState message={errorText} /> : null}
-        {statusMessage ? <p className="status-success">{statusMessage}</p> : null}
 
         <Button className="w-full" onClick={() => createMutation.mutate()} disabled={!canSubmit}>
           {createMutation.isPending ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
@@ -236,7 +271,7 @@ export default function TransactionsPage() {
         <div className="flex flex-wrap items-center justify-between gap-2">
           <h2 className="section-title">Lịch sử giao dịch</h2>
           {tableViewEnabled ? (
-            <div className="hidden rounded-xl border border-[var(--color-border)] bg-[var(--color-surface)] p-1 md:flex">
+            <div className="flex rounded-xl border border-[var(--color-border)] bg-[var(--color-surface)] p-1">
               <button
                 className={`rounded-lg px-3 py-1 text-xs font-medium ${
                   viewMode === "card"
@@ -271,11 +306,11 @@ export default function TransactionsPage() {
           <ErrorState message="Không tải được lịch sử giao dịch." />
         ) : txItems.length ? (
           tableViewEnabled && effectiveViewMode === "table" ? (
-            <div className="hidden overflow-x-auto rounded-xl border border-[var(--color-border)] md:block">
-              <table className="min-w-full text-sm">
-                <thead className="bg-[var(--color-surface-3)]">
+            <div className="overflow-x-auto rounded-xl border border-[var(--color-border)]">
+              <table className="min-w-[760px] text-sm">
+                <thead className="sticky top-0 z-20 bg-[var(--color-surface-3)]">
                   <tr>
-                    <th className="px-3 py-2 text-left">ID</th>
+                    <th className="sticky left-0 z-30 bg-[var(--color-surface-3)] px-3 py-2 text-left">ID</th>
                     <th className="px-3 py-2 text-left">Nhà đầu tư</th>
                     <th className="px-3 py-2 text-left">Loại</th>
                     <th className="px-3 py-2 text-left">Số tiền</th>
@@ -287,7 +322,7 @@ export default function TransactionsPage() {
                 <tbody>
                   {txItems.map((tx) => (
                     <tr key={tx.id} className="border-t border-[var(--color-border)] bg-[var(--color-surface)]">
-                      <td className="px-3 py-2">#{tx.id}</td>
+                      <td className="sticky left-0 z-10 bg-[var(--color-surface)] px-3 py-2">#{tx.id}</td>
                       <td className="px-3 py-2">{tx.investor_name}</td>
                       <td className="px-3 py-2">{tx.type}</td>
                       <td className="px-3 py-2">{formatCurrency(tx.amount)}</td>
@@ -300,14 +335,16 @@ export default function TransactionsPage() {
                             className="h-9 px-3 py-1 text-xs"
                             onClick={() => undoMutation.mutate(tx.id)}
                             disabled={undoMutation.isPending}
+                            aria-label={`Hoàn tác giao dịch ${tx.id}`}
                           >
                             Hoàn tác
                           </Button>
                           <Button
                             variant="danger"
                             className="h-9 px-3 py-1 text-xs"
-                            onClick={() => deleteMutation.mutate(tx.id)}
+                            onClick={() => setDeleteTarget(tx.id)}
                             disabled={deleteMutation.isPending}
+                            aria-label={`Xóa giao dịch ${tx.id}`}
                           >
                             Xóa
                           </Button>
@@ -322,7 +359,7 @@ export default function TransactionsPage() {
         ) : null}
 
         {txItems.length ? (
-          <div className={`list-stagger space-y-2 ${effectiveViewMode === "table" ? "md:hidden" : ""}`}>
+          <div className={`list-stagger space-y-2 ${effectiveViewMode === "table" ? "hidden" : ""}`}>
             {txItems.map((tx) => (
               <article
                 key={tx.id}
@@ -342,14 +379,16 @@ export default function TransactionsPage() {
                     className="flex-1"
                     onClick={() => undoMutation.mutate(tx.id)}
                     disabled={undoMutation.isPending}
+                    aria-label={`Hoàn tác giao dịch ${tx.id}`}
                   >
                     Hoàn tác
                   </Button>
                   <Button
                     variant="danger"
                     className="flex-1"
-                    onClick={() => deleteMutation.mutate(tx.id)}
+                    onClick={() => setDeleteTarget(tx.id)}
                     disabled={deleteMutation.isPending}
+                    aria-label={`Xóa giao dịch ${tx.id}`}
                   >
                     Xóa
                   </Button>
@@ -382,8 +421,8 @@ export default function TransactionsPage() {
       <Dialog.Root open={!!selectedTx} onOpenChange={(open) => !open && setSelectedTx(null)}>
         <Dialog.Portal>
           <Dialog.Overlay className="fixed inset-0 z-50 bg-black/40 data-[state=open]:animate-[overlay-in_180ms_ease-out]" />
-          <Dialog.Content className="fixed inset-x-4 bottom-4 z-50 rounded-2xl border border-[var(--color-border)] bg-[var(--color-surface)] p-4 shadow-2xl data-[state=open]:animate-[fade-up_220ms_ease-out] md:inset-x-auto md:left-1/2 md:top-1/2 md:w-[520px] md:-translate-x-1/2 md:-translate-y-1/2">
-            <div className="mb-3 flex items-center justify-between">
+          <Dialog.Content className="fixed inset-0 z-50 overflow-y-auto border border-[var(--color-border)] bg-[var(--color-surface)] p-4 shadow-2xl data-[state=open]:animate-[fade-up_220ms_ease-out] md:inset-x-auto md:left-1/2 md:top-1/2 md:h-auto md:max-h-[90vh] md:w-[520px] md:-translate-x-1/2 md:-translate-y-1/2 md:rounded-2xl">
+            <div className="sticky top-0 mb-3 flex items-center justify-between border-b border-[var(--color-border)] bg-[var(--color-surface)] pb-3">
               <Dialog.Title className="text-base font-semibold">Chi tiết giao dịch</Dialog.Title>
               <Dialog.Close asChild>
                 <Button variant="secondary" className="h-9 w-9 p-0" aria-label="Đóng">
@@ -405,6 +444,22 @@ export default function TransactionsPage() {
           </Dialog.Content>
         </Dialog.Portal>
       </Dialog.Root>
+
+      <ConfirmDialog
+        open={deleteTarget !== null}
+        onOpenChange={(open) => {
+          if (!open) setDeleteTarget(null);
+        }}
+        title="Xác nhận xóa giao dịch"
+        description="Hành động này có thể ảnh hưởng số liệu quỹ. Bạn có chắc muốn tiếp tục?"
+        confirmLabel="Xóa giao dịch"
+        confirmVariant="danger"
+        onConfirm={() => {
+          if (deleteTarget === null) return;
+          deleteMutation.mutate(deleteTarget);
+        }}
+        isPending={deleteMutation.isPending}
+      />
     </div>
   );
 }
