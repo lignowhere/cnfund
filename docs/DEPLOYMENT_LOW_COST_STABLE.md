@@ -6,6 +6,7 @@
 - Backend API: Railway Hobby (FastAPI service)  
 - Auth/Audit DB: Railway PostgreSQL (inside same Railway project)  
 - Business data store: Railway Volume mounted for `data/` + `exports/`  
+- Important: PostgreSQL is currently for auth/audit only; fund business data remains CSV-based via `core/services_enhanced.py` handlers.
 - Backup layer:
   - Railway Postgres backups (native, scheduled)
   - Railway Volume backups (native, scheduled)
@@ -50,7 +51,7 @@ This is the lowest-cost setup that is still stable for production-like usage.
 5. Set backend start command:
 
 ```bash
-mkdir -p /app/storage/data /app/storage/exports && ln -sfn /app/storage/data /app/data && ln -sfn /app/storage/exports /app/exports && for f in investors.csv tranches.csv transactions.csv fee_records.csv; do if [ ! -f /app/data/$f ] && [ -f /app/backend_api/data/$f ]; then cp /app/backend_api/data/$f /app/data/$f; fi; done && python -m uvicorn backend_api.app.main:app --host 0.0.0.0 --port $PORT
+mkdir -p /app/storage/data /app/storage/exports && ln -sfn /app/storage/data /app/data && ln -sfn /app/storage/exports /app/exports && if [ "${API_SEED_FORCE:-false}" = "true" ]; then for f in investors.csv tranches.csv transactions.csv fee_records.csv; do if [ -f /app/backend_api/data/$f ]; then cp -f /app/backend_api/data/$f /app/data/$f; fi; done; fi && for f in investors.csv tranches.csv transactions.csv fee_records.csv; do if [ ! -f /app/data/$f ] && [ -f /app/backend_api/data/$f ]; then cp -f /app/backend_api/data/$f /app/data/$f; fi; done && python -m uvicorn backend_api.app.main:app --host 0.0.0.0 --port $PORT
 ```
 
 6. Set backend env vars:
@@ -68,11 +69,19 @@ API_FEATURE_TABLE_VIEW=true
 API_FEATURE_BACKUP_RESTORE=true
 API_FEATURE_FEE_SAFETY=true
 API_FEATURE_TRANSACTIONS_LOAD_MORE=true
+API_SEED_FORCE=false
 ```
 
 7. Initial data migration:
    - Seed your real CSV files (`investors.csv`, `tranches.csv`, `transactions.csv`, `fee_records.csv`) by following Section 10-C below.
    - Confirm API health and reports.
+8. One-time forced seed (recommended when volume was initialized with empty CSVs):
+   - `powershell -ExecutionPolicy Bypass -File .\scripts\railway_seed_once.ps1 -ServiceId <backend-service-id>`
+   - This script will:
+     - set `API_SEED_FORCE=true`
+     - deploy once with local CSV files
+     - set `API_SEED_FORCE=false`
+     - redeploy once to return to normal mode
 
 ### Step B: Frontend on Vercel
 
@@ -220,6 +229,15 @@ Nếu gặp lỗi `413 Payload Too Large` khi chạy `railway up --no-gitignore`
 2. Chạy lại đúng tại repo root:
    - `railway up --no-gitignore --service <backend-service-name>`
 3. File `.railwayignore` sẽ loại bỏ `.venv`, `frontend_app`, backups cũ... và chỉ gửi phần backend cần thiết + 4 CSV seed.
+
+Nếu gặp lỗi build `sh: 1: python: not found`:
+1. Đảm bảo service đang dùng `Config as Code` với file `railway.toml` mới nhất.
+2. `railway.toml` phải có:
+   - `[build]`
+   - `builder = "DOCKERFILE"`
+   - `dockerfilePath = "Dockerfile"`
+3. Redeploy lại backend:
+   - `railway redeploy -s <backend-service-id> -y`
 
 Option 2 (nếu chấp nhận commit data thật vào private repo):
 1. Commit 4 file CSV thật vào `backend_api/data/`.

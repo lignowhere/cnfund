@@ -5,6 +5,7 @@
 
 # Required runtime/config files
 !railway.toml
+!Dockerfile
 !config.py
 !helpers.py
 
