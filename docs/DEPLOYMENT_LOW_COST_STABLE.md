@@ -159,15 +159,16 @@ Use this checklist exactly in order.
 
 ### B. Railway setup (backend + database + persistent data)
 
+0. Enable Config as Code:
+   - service -> `Settings` -> `Config as Code`.
+   - enable and select file: `/railway.toml`.
+   - commit this file in repo so every deploy uses the same config.
+
 1. Open Railway dashboard -> `New Project`.
 2. Click `Deploy from GitHub repo` and select this repository.
 3. In the created service:
    - `Settings` -> set `Root Directory` to repository root (leave empty/default if root).
-   - `Settings` -> `Start Command` paste:
-
-```bash
-mkdir -p /app/storage/data /app/storage/exports && ln -sfn /app/storage/data /app/data && ln -sfn /app/storage/exports /app/exports && python -m uvicorn backend_api.app.main:app --host 0.0.0.0 --port $PORT
-```
+   - do not manually override Start Command if Config as Code is enabled (it is defined in `railway.toml`).
 
 4. Add PostgreSQL:
    - Project -> `New` -> `Database` -> `Add PostgreSQL`.
@@ -265,6 +266,10 @@ NEXT_PUBLIC_API_BASE_URL=https://<your-railway-backend-domain>/api/v1
 
 ## 11) Official references
 
+- Railway Config as Code:
+  https://docs.railway.com/guides/config-as-code
+- Railway config reference:
+  https://docs.railway.com/reference/config-as-code-reference
 - Railway Volumes reference (including caveat: one volume per service):  
   https://docs.railway.com/volumes/reference
 - Railway Volume backups (manual + schedule + restore flow):  
