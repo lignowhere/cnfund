@@ -1,10 +1,12 @@
 from datetime import datetime, timedelta
 from pathlib import Path
+import re
 from typing import Any
 
 import pandas as pd
 
 from core.models import FeeRecord, Investor, Transaction, Tranche
+from helpers import parse_currency
 from utils.type_safety_fixes import safe_float_conversion, safe_int_conversion
 
 EXPORT_DIR = Path("exports")
@@ -25,6 +27,87 @@ def _as_datetime(value: Any):
             return as_dt.replace(tzinfo=None)
         return as_dt
     return datetime.utcnow()
+
+
+def _canonical_name(name: Any) -> str:
+    text = str(name or "").strip().lower()
+    text = re.sub(r"[^a-z0-9]+", "_", text)
+    text = re.sub(r"_+", "_", text).strip("_")
+    return text
+
+
+def _normalize_columns(df: pd.DataFrame) -> pd.DataFrame:
+    normalized = df.copy()
+    normalized.columns = [_canonical_name(col) for col in normalized.columns]
+    return normalized
+
+
+def _pick_sheet(excel_data: dict[str, pd.DataFrame], aliases: list[str]) -> pd.DataFrame | None:
+    sheet_map = {_canonical_name(name): name for name in excel_data.keys()}
+    for alias in aliases:
+        key = _canonical_name(alias)
+        if key in sheet_map:
+            return excel_data[sheet_map[key]].copy()
+    return None
+
+
+def _as_number(value: Any, default: float = 0.0) -> float:
+    if value is None:
+        return default
+    if isinstance(value, (int, float)):
+        return float(value)
+
+    text = str(value).strip()
+    if not text:
+        return default
+
+    try:
+        direct = float(text)
+        return direct
+    except Exception:
+        pass
+
+    lowered = text.lower().replace("vnd", "").replace("đ", "").replace("₫", "").strip()
+    is_percent = lowered.endswith("%")
+    if is_percent:
+        lowered = lowered[:-1].strip()
+
+    lowered = lowered.replace(" ", "")
+    if "," in lowered and "." in lowered:
+        if lowered.rfind(",") > lowered.rfind("."):
+            lowered = lowered.replace(".", "").replace(",", ".")
+        else:
+            lowered = lowered.replace(",", "")
+    elif "," in lowered:
+        parts = lowered.split(",")
+        if len(parts) > 1 and all(part.lstrip("-").isdigit() for part in parts):
+            if len(parts[-1]) == 3:
+                lowered = "".join(parts)
+            else:
+                lowered = ".".join(parts)
+        else:
+            lowered = lowered.replace(",", "")
+
+    lowered = re.sub(r"[^0-9\.\-]", "", lowered)
+    if lowered in {"", "-", ".", "-."}:
+        parsed = parse_currency(text)
+    else:
+        try:
+            parsed = float(lowered)
+        except Exception:
+            parsed = parse_currency(text)
+
+    if is_percent:
+        return parsed / 100.0
+    return parsed
+
+
+def _row_pick(row: pd.Series, *keys: str) -> Any:
+    for key in keys:
+        canonical = _canonical_name(key)
+        if canonical in row and pd.notna(row[canonical]):
+            return row[canonical]
+    return None
 
 
 def _as_bool(value: Any, fallback: bool = False) -> bool:
@@ -107,20 +190,22 @@ def restore_from_local_backup(
     restored_sheets: list[str] = []
 
     investors: list[Investor] = []
-    if "Investors" in excel_data:
-        df = excel_data["Investors"].copy()
-        df.columns = [str(col).strip().lower() for col in df.columns]
+    investors_sheet = _pick_sheet(excel_data, ["Investors", "Nha Dau Tu", "Nhà Đầu Tư"])
+    if investors_sheet is not None:
+        df = _normalize_columns(investors_sheet)
         for _, row in df.iterrows():
             try:
                 investors.append(
                     Investor(
-                        id=safe_int_conversion(row.get("id")),
-                        name=str(row.get("name", "")).strip(),
-                        phone=str(row.get("phone", "")).strip(),
-                        address=str(row.get("address", "")).strip(),
-                        email=str(row.get("email", "")).strip(),
-                        join_date=_as_date(row.get("join_date")),
-                        is_fund_manager=_as_bool(row.get("is_fund_manager", False)),
+                        id=safe_int_conversion(_row_pick(row, "id")),
+                        name=str(_row_pick(row, "name") or "").strip(),
+                        phone=str(_row_pick(row, "phone") or "").strip(),
+                        address=str(_row_pick(row, "address") or "").strip(),
+                        email=str(_row_pick(row, "email") or "").strip(),
+                        join_date=_as_date(_row_pick(row, "join_date")),
+                        is_fund_manager=_as_bool(
+                            _row_pick(row, "is_fund_manager", "is_fund_manager")
+                        ),
                     )
                 )
             except Exception:
@@ -128,36 +213,40 @@ def restore_from_local_backup(
         restored_sheets.append("Investors")
 
     tranches: list[Tranche] = []
-    if "Tranches" in excel_data:
-        df = excel_data["Tranches"].copy()
-        df.columns = [str(col).strip().lower() for col in df.columns]
+    tranches_sheet = _pick_sheet(excel_data, ["Tranches", "Dot Goi Von", "Đợt Gọi Vốn"])
+    if tranches_sheet is not None:
+        df = _normalize_columns(tranches_sheet)
         for _, row in df.iterrows():
             try:
-                entry_date = _as_datetime(row.get("entry_date"))
-                entry_nav = safe_float_conversion(row.get("entry_nav", 0.0))
-                units = safe_float_conversion(row.get("units", 0.0))
-                original_entry_raw = row.get("original_entry_date")
+                entry_date = _as_datetime(_row_pick(row, "entry_date"))
+                entry_nav = _as_number(_row_pick(row, "entry_nav"), 0.0)
+                units = _as_number(_row_pick(row, "units"), 0.0)
+                original_entry_raw = _row_pick(row, "original_entry_date")
                 original_entry_date = (
                     _as_datetime(original_entry_raw)
                     if pd.notna(original_entry_raw)
                     else entry_date
                 )
                 tranche = Tranche(
-                    investor_id=safe_int_conversion(row.get("investor_id")),
-                    tranche_id=str(row.get("tranche_id", "")),
+                    investor_id=safe_int_conversion(_row_pick(row, "investor_id")),
+                    tranche_id=str(_row_pick(row, "tranche_id") or ""),
                     entry_date=entry_date,
                     entry_nav=entry_nav,
                     units=units,
-                    hwm=safe_float_conversion(row.get("hwm", entry_nav)),
+                    hwm=_as_number(_row_pick(row, "hwm"), entry_nav),
                     original_entry_date=original_entry_date,
-                    original_entry_nav=safe_float_conversion(row.get("original_entry_nav", entry_nav)),
-                    cumulative_fees_paid=safe_float_conversion(row.get("cumulative_fees_paid", 0.0)),
-                    original_invested_value=safe_float_conversion(
-                        row.get("original_invested_value", units * entry_nav)
+                    original_entry_nav=_as_number(
+                        _row_pick(row, "original_entry_nav"), entry_nav
+                    ),
+                    cumulative_fees_paid=_as_number(
+                        _row_pick(row, "cumulative_fees_paid"), 0.0
+                    ),
+                    original_invested_value=_as_number(
+                        _row_pick(row, "original_invested_value"), units * entry_nav
                     ),
                 )
-                tranche.invested_value = safe_float_conversion(
-                    row.get("invested_value", units * entry_nav)
+                tranche.invested_value = _as_number(
+                    _row_pick(row, "invested_value"), units * entry_nav
                 )
                 tranches.append(tranche)
             except Exception:
@@ -165,20 +254,20 @@ def restore_from_local_backup(
         restored_sheets.append("Tranches")
 
     transactions: list[Transaction] = []
-    if "Transactions" in excel_data:
-        df = excel_data["Transactions"].copy()
-        df.columns = [str(col).strip().lower() for col in df.columns]
+    transactions_sheet = _pick_sheet(excel_data, ["Transactions", "Giao Dich", "Giao Dịch"])
+    if transactions_sheet is not None:
+        df = _normalize_columns(transactions_sheet)
         for _, row in df.iterrows():
             try:
                 transactions.append(
                     Transaction(
-                        id=safe_int_conversion(row.get("id")),
-                        investor_id=safe_int_conversion(row.get("investor_id")),
-                        date=_as_datetime(row.get("date")),
-                        type=str(row.get("type", "")),
-                        amount=safe_float_conversion(row.get("amount", 0.0)),
-                        nav=safe_float_conversion(row.get("nav", 0.0)),
-                        units_change=safe_float_conversion(row.get("units_change", 0.0)),
+                        id=safe_int_conversion(_row_pick(row, "id")),
+                        investor_id=safe_int_conversion(_row_pick(row, "investor_id")),
+                        date=_as_datetime(_row_pick(row, "date", "transaction_date")),
+                        type=str(_row_pick(row, "type", "transaction_type") or ""),
+                        amount=_as_number(_row_pick(row, "amount", "net_amount"), 0.0),
+                        nav=_as_number(_row_pick(row, "nav"), 0.0),
+                        units_change=_as_number(_row_pick(row, "units_change", "units"), 0.0),
                     )
                 )
             except Exception:
@@ -186,28 +275,33 @@ def restore_from_local_backup(
         restored_sheets.append("Transactions")
 
     fee_records: list[FeeRecord] = []
-    if "Fee_Records" in excel_data:
-        df = excel_data["Fee_Records"].copy()
-        df.columns = [str(col).strip().lower() for col in df.columns]
+    fees_sheet = _pick_sheet(
+        excel_data,
+        ["Fee_Records", "Fee Records", "Phi Quan Ly", "Phí Quản Lý"],
+    )
+    if fees_sheet is not None:
+        df = _normalize_columns(fees_sheet)
         for _, row in df.iterrows():
             try:
                 fee_records.append(
                     FeeRecord(
-                        id=safe_int_conversion(row.get("id")),
-                        period=str(row.get("period", "")),
-                        investor_id=safe_int_conversion(row.get("investor_id")),
-                        fee_amount=safe_float_conversion(row.get("fee_amount", 0.0)),
-                        fee_units=safe_float_conversion(row.get("fee_units", 0.0)),
-                        calculation_date=_as_datetime(row.get("calculation_date")),
-                        units_before=safe_float_conversion(row.get("units_before", 0.0)),
-                        units_after=safe_float_conversion(row.get("units_after", 0.0)),
-                        nav_per_unit=safe_float_conversion(row.get("nav_per_unit", 0.0)),
-                        description=str(row.get("description", "")),
+                        id=safe_int_conversion(_row_pick(row, "id")),
+                        period=str(_row_pick(row, "period", "fee_type") or ""),
+                        investor_id=safe_int_conversion(_row_pick(row, "investor_id")),
+                        fee_amount=_as_number(_row_pick(row, "fee_amount"), 0.0),
+                        fee_units=_as_number(_row_pick(row, "fee_units"), 0.0),
+                        calculation_date=_as_datetime(
+                            _row_pick(row, "calculation_date", "fee_date")
+                        ),
+                        units_before=_as_number(_row_pick(row, "units_before"), 0.0),
+                        units_after=_as_number(_row_pick(row, "units_after"), 0.0),
+                        nav_per_unit=_as_number(_row_pick(row, "nav_per_unit", "nav_at_fee"), 0.0),
+                        description=str(_row_pick(row, "description") or ""),
                     )
                 )
             except Exception:
                 continue
-        restored_sheets.append("Fee_Records")
+        restored_sheets.append("Fee Records")
 
     fund_manager.investors = investors
     fund_manager.tranches = tranches

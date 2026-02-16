@@ -85,6 +85,21 @@ Optional:
 - If CSV already exists in deployed source and you do not want local upload:
   - add `-SkipLocalUpload`
 
+## 4.1) Migrate trực tiếp từ file backup `.xlsx` local vào PostgreSQL
+
+Không cần tải từ Google Drive nếu bạn đã có file local, ví dụ:
+`D:\Đầu tư\CNFund\data\CNFund_Backup_20260216_110200.xlsx`
+
+```powershell
+$dbUrl = (railway variable list -s <postgres-service-id> -k | Select-String '^DATABASE_PUBLIC_URL=').ToString().Split('=',2)[1]
+.\.venv\Scripts\python scripts\migrate_drive_latest_to_postgres.py --database-url "$dbUrl" --local-file "D:\Đầu tư\CNFund\data\CNFund_Backup_20260216_110200.xlsx"
+```
+
+Script sẽ:
+1. Copy file vào `exports/` (để dùng restore flow thống nhất).
+2. Parse sheet theo nhiều format cũ/mới (`Investors`, `Tranches`, `Transactions`, `Fee Records`...).
+3. Ghi đè dữ liệu nghiệp vụ vào các bảng `fund_*` trong PostgreSQL.
+
 ## 5) Vercel click-by-click
 
 1. Import same repo into Vercel.
