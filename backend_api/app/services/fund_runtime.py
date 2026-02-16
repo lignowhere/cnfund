@@ -28,11 +28,17 @@ class FundRuntime:
             sys.path.insert(0, repo_root_str)
 
     def _build_manager(self):
-        source = (self._settings.cnfund_data_source or os.getenv("CNFUND_DATA_SOURCE", "csv")).lower()
+        source = (
+            self._settings.cnfund_data_source or os.getenv("CNFUND_DATA_SOURCE", "postgres")
+        ).lower()
         if source == "drive":
             from core.drive_data_handler import DriveBackedDataManager  # type: ignore
 
             handler = DriveBackedDataManager()
+        elif source == "postgres":
+            from core.postgres_data_handler import PostgresDataHandler  # type: ignore
+
+            handler = PostgresDataHandler(database_url=self._settings.database_url)
         else:
             from core.csv_data_handler import CSVDataHandler  # type: ignore
 
@@ -69,4 +75,3 @@ class FundRuntime:
 
 
 runtime = FundRuntime()
-

@@ -23,8 +23,10 @@ Copy-Item backend_api/.env.example .env
 
 Main env vars:
 
-- `API_DATABASE_URL` (SQLite/PostgreSQL for auth, refresh token, audit log)
-- `API_CNFUND_DATA_SOURCE=csv|drive`
+- `API_DATABASE_URL` (PostgreSQL for auth + business data)
+- `API_CNFUND_DATA_SOURCE=postgres` (recommended), or `csv|drive` for legacy mode
+- `API_POSTGRES_BOOTSTRAP_FROM_CSV=true|false` (optional one-time import when DB is empty)
+- `API_POSTGRES_SEED_DIR=<path>` (optional directory for 4 CSV seed files)
 - `API_JWT_SECRET_KEY`
 - `API_ADMIN_USERNAME`
 - `API_ADMIN_PASSWORD`

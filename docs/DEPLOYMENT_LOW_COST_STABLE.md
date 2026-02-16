@@ -1,193 +1,25 @@
-# CNFund Deploy Plan (Cheapest Stable)
+# CNFund Deploy Plan (PostgreSQL Business Data)
 
-## 1) Target architecture (recommended)
+## 1) Target architecture
 
-- Frontend: Vercel Hobby (Next.js)  
-- Backend API: Railway Hobby (FastAPI service)  
-- Auth/Audit DB: Railway PostgreSQL (inside same Railway project)  
-- Business data store: Railway Volume mounted for `data/` + `exports/`  
-- Important: PostgreSQL is currently for auth/audit only; fund business data remains CSV-based via `core/services_enhanced.py` handlers.
-- Backup layer:
-  - Railway Postgres backups (native, scheduled)
-  - Railway Volume backups (native, scheduled)
-  - App-level manual backup (`/api/v1/backups/manual`) before risky operations
+- Frontend: Vercel Hobby (Next.js)
+- Backend API: Railway (FastAPI)
+- Database: Railway PostgreSQL
+- Business data: PostgreSQL tables (`fund_investors`, `fund_tranches`, `fund_transactions`, `fund_fee_records`)
+- Auth/Audit: PostgreSQL tables (`users`, `refresh_tokens`, `audit_logs`)
+- Backups:
+  - Railway PostgreSQL backups
+  - App manual backup/restore (`/api/v1/backups/manual`, `/api/v1/backups/restore`)
+  - Optional Railway Volume only for export files (`/app/storage/exports`)
 
-This is the lowest-cost setup that is still stable for production-like usage.
-
-## 2) Why this plan
-
-- Vercel Hobby is valid for personal/non-commercial use.
-- Streamlit Community Cloud hibernates inactive apps and has tighter resource constraints; not ideal for always-available API + modern FE stack.
-- Railway Free is too constrained for reliable multi-service operation; Railway Hobby is low cost and materially more stable.
-
-## 3) Cost expectation
-
-- Vercel Hobby: $0/month (personal/non-commercial scope).
-- Railway Hobby: $5 minimum usage/month, includes $5 usage credits.
-- If monthly usage <= included credit, practical baseline is around $5/month for backend side.
-- Backup storage consumes additional Railway storage usage, usually small at this scale.
-
-## 4) Data safety policy (must-have)
-
-- RPO target: <= 24h
-- RTO target: <= 60 minutes
-- Retention:
-  - Daily backups: 7 days
-  - Weekly backups: 4 weeks
-  - Monthly backups: 3 months
-- Monthly restore drill: restore to staging and verify key reports.
-
-## 5) Deploy steps (exact for this repo)
-
-### Step A: Backend + DB on Railway
-
-1. Create Railway project.
-2. Add PostgreSQL service.
-3. Deploy backend from this repo (service root at repo root).
-4. Create 1 Volume for backend service:
-   - mount path: `/app/storage`
-   - this is required because Railway supports one volume per service.
-   - we will map runtime folders `data` and `exports` into this volume via symlink in start command.
-5. Set backend start command:
-
-```bash
-mkdir -p /app/storage/data /app/storage/exports && ln -sfn /app/storage/data /app/data && ln -sfn /app/storage/exports /app/exports && if [ "${API_SEED_FORCE:-false}" = "true" ]; then for f in investors.csv tranches.csv transactions.csv fee_records.csv; do if [ -f /app/backend_api/data/$f ]; then cp -f /app/backend_api/data/$f /app/data/$f; fi; done; fi && for f in investors.csv tranches.csv transactions.csv fee_records.csv; do if [ ! -f /app/data/$f ] && [ -f /app/backend_api/data/$f ]; then cp -f /app/backend_api/data/$f /app/data/$f; fi; done && python -m uvicorn backend_api.app.main:app --host 0.0.0.0 --port $PORT
-```
-
-6. Set backend env vars:
+## 2) Environment variables (backend)
 
 ```env
 API_ENVIRONMENT=production
 API_DATABASE_URL=${{Postgres.DATABASE_URL}}
-API_CNFUND_DATA_SOURCE=csv
-API_JWT_SECRET_KEY=<very-strong-random-secret>
-API_ADMIN_USERNAME=<your-admin-user>
-API_ADMIN_PASSWORD=<strong-password>
-API_ALLOWED_ORIGINS=https://<your-vercel-domain>,https://<your-custom-domain>
-API_ALLOWED_ORIGIN_REGEX=
-API_FEATURE_TABLE_VIEW=true
-API_FEATURE_BACKUP_RESTORE=true
-API_FEATURE_FEE_SAFETY=true
-API_FEATURE_TRANSACTIONS_LOAD_MORE=true
-API_SEED_FORCE=false
-```
-
-7. Initial data migration:
-   - Seed your real CSV files (`investors.csv`, `tranches.csv`, `transactions.csv`, `fee_records.csv`) by following Section 10-C below.
-   - Confirm API health and reports.
-8. One-time forced seed (recommended when volume was initialized with empty CSVs):
-   - `powershell -ExecutionPolicy Bypass -File .\scripts\railway_seed_once.ps1 -ServiceId <backend-service-id>`
-   - This script will:
-     - set `API_SEED_FORCE=true`
-     - deploy once with local CSV files
-     - set `API_SEED_FORCE=false`
-     - redeploy once to return to normal mode
-
-### Step B: Frontend on Vercel
-
-1. Import `frontend_app` as a Vercel project.
-2. Framework preset: Next.js.
-3. Root directory: `frontend_app`.
-4. Add env var:
-
-```env
-NEXT_PUBLIC_API_BASE_URL=https://<your-railway-backend-domain>/api/v1
-```
-
-5. Deploy and verify login + core flows.
-
-## 6) Backup configuration (Railway)
-
-### PostgreSQL backups
-
-- Open PostgreSQL service -> Backups.
-- Enable:
-  - Daily
-  - Weekly
-  - Monthly
-
-### Volume backups
-
-- Open backend service volume -> Backups.
-- Enable:
-  - Daily
-  - Weekly
-  - Monthly
-
-### App-level safety backup
-
-- Keep using existing backup endpoint:
-  - `POST /api/v1/backups/manual`
-  - `POST /api/v1/backups/restore` (requires `RESTORE` phrase)
-- Requirement: always trigger manual backup before destructive changes (bulk edits, restore, major imports).
-
-## 7) Monitoring & operation checklist
-
-- Daily:
-  - `GET /health` returns `status=ok`
-  - latest backup exists in volume backup list
-- Weekly:
-  - verify one manual backup can be created from UI/API
-- Monthly:
-  - full restore drill in staging from backup
-  - verify 3 critical outputs:
-    - dashboard totals
-    - investor report sample
-    - transaction history consistency
-
-## 8) Security baseline
-
-- Rotate `API_JWT_SECRET_KEY` every 90 days.
-- Use long random admin password (>=16 chars).
-- Restrict CORS only to production frontend domain(s).
-- Do not commit credentials/tokens/files containing secrets.
-
-## 9) Notes about Google Drive source
-
-- Current backend supports `API_CNFUND_DATA_SOURCE=drive`, but the existing Drive handler was originally built around Streamlit runtime behavior.
-- For cheapest + stable production now, prefer `csv` + Railway Volumes + Railway Backups.
-- If you still want Drive as primary store for API deployment, schedule a dedicated refactor to remove Streamlit runtime dependency from Drive adapter first.
-
-## 10) Click-by-click checklist (Railway + Vercel)
-
-Use this checklist exactly in order.
-
-### A. Prepare repository and credentials
-
-1. Ensure branch is clean and pushed to GitHub.
-2. Confirm these files exist locally:
-   - `backend_api/`
-   - `frontend_app/`
-   - `data/investors.csv`
-   - `data/tranches.csv`
-   - `data/transactions.csv`
-   - `data/fee_records.csv`
-3. Prepare production secrets:
-   - strong `API_JWT_SECRET_KEY` (random, long)
-   - strong `API_ADMIN_PASSWORD`
-
-### B. Railway setup (backend + database + persistent data)
-
-0. Enable Config as Code:
-   - service -> `Settings` -> `Config as Code`.
-   - enable and select file: `/railway.toml`.
-   - commit this file in repo so every deploy uses the same config.
-
-1. Open Railway dashboard -> `New Project`.
-2. Click `Deploy from GitHub repo` and select this repository.
-3. In the created service:
-   - `Settings` -> set `Root Directory` to repository root (leave empty/default if root).
-   - do not manually override Start Command if Config as Code is enabled (it is defined in `railway.toml`).
-
-4. Add PostgreSQL:
-   - Project -> `New` -> `Database` -> `Add PostgreSQL`.
-5. Connect backend env vars:
-   - Backend service -> `Variables` -> add:
-
-```env
-API_ENVIRONMENT=production
-API_DATABASE_URL=${{Postgres.DATABASE_URL}}
-API_CNFUND_DATA_SOURCE=csv
+API_CNFUND_DATA_SOURCE=postgres
+API_POSTGRES_BOOTSTRAP_FROM_CSV=false
+API_POSTGRES_SEED_DIR=
 API_JWT_SECRET_KEY=<very-strong-random-secret>
 API_ADMIN_USERNAME=<your-admin-user>
 API_ADMIN_PASSWORD=<strong-password>
@@ -199,112 +31,98 @@ API_FEATURE_FEE_SAFETY=true
 API_FEATURE_TRANSACTIONS_LOAD_MORE=true
 ```
 
-6. Attach persistent volume:
-   - Backend service -> `Volumes` -> `New Volume`.
-   - Mount path: `/app/storage`.
-7. Redeploy backend service.
-8. Verify backend:
-   - open backend public URL + `/health`, expect `status: ok`.
-   - open backend public URL + `/docs`, Swagger should load.
+Notes:
+- `API_CNFUND_DATA_SOURCE=postgres` is now the primary mode.
+- `API_POSTGRES_BOOTSTRAP_FROM_CSV=true` is only for one-time migration when DB is empty.
 
-### C. Seed dữ liệu thật vào volume (không dùng file browser)
+## 3) Railway click-by-click
 
-Railway volume không có upload trực tiếp kiểu file browser. Dùng một trong 2 cách sau.
+1. Create project on Railway.
+2. Deploy this repository (service at repo root).
+3. Enable `Config as Code` and select `/railway.toml`.
+4. Add PostgreSQL service in same project.
+5. Add backend variables from section 2.
+6. (Optional) Add a volume and mount at `/app/storage` to persist export files.
+7. Redeploy backend.
+8. Verify:
+   - `https://<backend-domain>/health`
+   - `https://<backend-domain>/docs`
 
-Option 1 (khuyến nghị, không commit data thật):
-1. Trên máy local, chuẩn bị 4 file CSV thật tại `backend_api/data/`:
-   - `investors.csv`
-   - `tranches.csv`
-   - `transactions.csv`
-   - `fee_records.csv`
-2. Dùng Railway CLI deploy trực tiếp từ máy local vào service backend (1 lần seed):
-   - `railway login`
-   - `railway link` (chọn đúng project/service backend)
-   - `railway up`
-3. Start command trong `railway.toml` sẽ tự copy seed vào volume nếu volume đang trống.
-4. Sau khi seed xong, có thể quay lại deploy qua GitHub như bình thường.
-
-Nếu gặp lỗi `413 Payload Too Large` khi chạy `railway up --no-gitignore`:
-1. Đảm bảo repo đã có file `.railwayignore` (đã cấu hình sẵn trong dự án này).
-2. Chạy lại đúng tại repo root:
-   - `railway up --no-gitignore --service <backend-service-name>`
-3. File `.railwayignore` sẽ loại bỏ `.venv`, `frontend_app`, backups cũ... và chỉ gửi phần backend cần thiết + 4 CSV seed.
-
-Nếu gặp lỗi build `sh: 1: python: not found`:
-1. Đảm bảo service đang dùng `Config as Code` với file `railway.toml` mới nhất.
-2. `railway.toml` phải có:
-   - `[build]`
+If you ever see `python: not found` in build:
+1. Ensure backend service uses latest `railway.toml`.
+2. Confirm `[build]` uses:
    - `builder = "DOCKERFILE"`
    - `dockerfilePath = "Dockerfile"`
-3. Redeploy lại backend:
+3. Redeploy:
    - `railway redeploy -s <backend-service-id> -y`
 
-Option 2 (nếu chấp nhận commit data thật vào private repo):
-1. Commit 4 file CSV thật vào `backend_api/data/`.
-2. Push lên branch deploy.
-3. Railway auto deploy, start command sẽ seed vào volume nếu volume trống.
+## 4) One-time CSV -> PostgreSQL migration
 
-Validation sau seed:
-1. `GET /health` trả `status=ok`.
-2. Login thành công.
-3. Dashboard có số liệu thật (không rỗng).
-4. Investor report có transaction/tranche/fee history.
+Use when you already have real CSV data and want to import once into PostgreSQL.
 
-### D. Vercel setup (frontend)
+Preconditions:
+- 4 real CSV files are in `backend_api/data/`:
+  - `investors.csv`
+  - `tranches.csv`
+  - `transactions.csv`
+  - `fee_records.csv`
+- DB is empty (or you accept overwrite by restore process later).
 
-1. Open Vercel -> `Add New...` -> `Project`.
-2. Import the same GitHub repository.
-3. Configure:
-   - Framework: `Next.js`
-   - Root Directory: `frontend_app`
-4. Add environment variable:
+Run:
+
+```powershell
+powershell -ExecutionPolicy Bypass -File .\scripts\railway_bootstrap_postgres_once.ps1 -ServiceId <backend-service-id>
+```
+
+Script flow:
+1. Set `API_CNFUND_DATA_SOURCE=postgres`
+2. Set `API_POSTGRES_BOOTSTRAP_FROM_CSV=true`
+3. Run `railway up --no-gitignore` once to upload local backend source + CSV and import into Postgres (if DB is empty)
+4. Set `API_POSTGRES_BOOTSTRAP_FROM_CSV=false`
+5. Redeploy again to lock normal mode
+
+Optional:
+- If CSV already exists in deployed source and you do not want local upload:
+  - add `-SkipLocalUpload`
+
+## 5) Vercel click-by-click
+
+1. Import same repo into Vercel.
+2. Set project root directory: `frontend_app`.
+3. Add env var:
 
 ```env
 NEXT_PUBLIC_API_BASE_URL=https://<your-railway-backend-domain>/api/v1
 ```
 
-5. Deploy.
-6. Open Vercel app URL:
-   - test `/login`
-   - login with admin account
-   - verify dashboard, investors, transactions, fees, backups.
+4. Deploy.
+5. Verify:
+   - `/login`
+   - dashboard
+   - investors
+   - transactions
+   - reports
 
-### E. Backup hardening (critical)
+## 6) Backup policy (critical)
 
-1. Railway PostgreSQL -> `Backups`:
+1. Railway PostgreSQL -> Backups:
    - enable Daily, Weekly, Monthly.
-2. Railway Volume -> `Backups`:
-   - enable Daily, Weekly, Monthly.
-3. In CNFund UI:
-   - run `Sao lưu` -> `Tạo sao lưu thủ công`.
-   - verify file appears in `/app/storage/exports`.
-4. Before any destructive action (restore, bulk update):
-   - always create manual backup first.
-5. Monthly restore drill:
-   - create staging service
-   - restore one selected backup
-   - verify 3 outputs: dashboard totals, investor report, transaction history.
+2. In app:
+   - run manual backup before destructive operations.
+3. Monthly restore drill:
+   - restore on staging
+   - verify dashboard totals, investor report, transaction history.
 
-### F. Go-live checks
+## 7) Notes
 
-1. CORS:
-   - ensure `API_ALLOWED_ORIGINS` only includes production frontend domain(s).
-2. Secrets:
-   - do not expose `API_JWT_SECRET_KEY`, admin password, OAuth files.
-3. Health checks:
-   - monitor `/health` at least daily.
-4. Incident path:
-   - if data issue occurs, freeze writes and restore from latest known-good backup.
+- Google Drive mode (`API_CNFUND_DATA_SOURCE=drive`) is still legacy and should not be primary production storage.
+- PostgreSQL is now the canonical data source for fund business data in this repo.
 
-## 11) Official references
+## 8) References
 
 - Railway Config as Code:
   https://docs.railway.com/guides/config-as-code
 - Railway config reference:
   https://docs.railway.com/reference/config-as-code-reference
-- Railway Volumes reference (including caveat: one volume per service):  
-  https://docs.railway.com/volumes/reference
-- Railway Volume backups (manual + schedule + restore flow):  
-  https://docs.railway.com/volumes/backups
-- Vercel monorepo setup with Root Directory via Dashboard:  
+- Vercel monorepo setup:
   https://vercel.com/docs/monorepos/

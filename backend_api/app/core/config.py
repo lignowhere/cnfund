@@ -17,7 +17,7 @@ class Settings(BaseSettings):
     admin_password: str = "1997"
     admin_role: str = "admin"
 
-    cnfund_data_source: str = "csv"
+    cnfund_data_source: str = "postgres"
     allowed_origins: str = "http://localhost:3000,http://127.0.0.1:3000"
     allowed_origin_regex: str = r"https?://(localhost|127\.0\.0\.1)(:\d+)?$"
     feature_table_view: bool = True
