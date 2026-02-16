@@ -5,6 +5,7 @@ Fixed Google Drive Manager - Works with Streamlit UI
 
 import os
 import io
+import re
 import pandas as pd
 from datetime import datetime
 from typing import Optional, Dict, Any, List
@@ -164,6 +165,24 @@ class GoogleDriveManager:
 
     def _get_folder_id(self) -> str:
         """Get folder ID from various sources"""
+        def normalize_folder_id(raw_value: Any) -> Optional[str]:
+            if raw_value is None:
+                return None
+
+            value = str(raw_value).strip()
+            if not value:
+                return None
+
+            match = re.search(r"/folders/([a-zA-Z0-9_-]+)", value)
+            if match:
+                return match.group(1)
+
+            match = re.search(r"[?&]id=([a-zA-Z0-9_-]+)", value)
+            if match:
+                return match.group(1)
+
+            return value
+
         folder_id = None
         
         # Try to get from Streamlit secrets
@@ -180,6 +199,11 @@ class GoogleDriveManager:
         # Use default folder ID as fallback (update this with your personal drive folder)
         if not folder_id:
             folder_id = '1BGrypQLMNmEDcmKntPMiPAgCB6GZsHno'  # Update this to your personal folder ID
+
+        normalized_folder_id = normalize_folder_id(folder_id)
+        if normalized_folder_id and normalized_folder_id != folder_id:
+            print(f"Normalized drive_folder_id from URL to ID: {normalized_folder_id}")
+            folder_id = normalized_folder_id
         
         print(f"📂 Using folder ID: {folder_id}")
         return folder_id

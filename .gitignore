@@ -49,3 +49,13 @@ data/
 exports/nul
 
 .streamlit/nul
+
+# Strangler migration workspaces
+frontend_app/node_modules/
+frontend_app/.next/
+frontend_app/out/
+backend_api.db
+backend_api/playwright.db
+backend_api/*.db
+backend_api/data/
+output/playwright/

@@ -8,6 +8,7 @@ import os
 import io
 import json
 import pickle
+import re
 from pathlib import Path
 from typing import Optional, Dict, Any, TYPE_CHECKING
 import streamlit as st
@@ -128,6 +129,29 @@ if GOOGLE_OAUTH_AVAILABLE:
                 print(f"⚠️ Could not read oauth_credentials from secrets: {e}")
 
             return None
+
+        def _normalize_folder_id(self, raw_value: Any) -> Optional[str]:
+            """Normalize folder ID from raw ID or full Google Drive URL."""
+            if raw_value is None:
+                return None
+
+            value = str(raw_value).strip()
+            if not value:
+                return None
+
+            # Support full URLs like:
+            # https://drive.google.com/drive/folders/<FOLDER_ID>
+            match = re.search(r"/folders/([a-zA-Z0-9_-]+)", value)
+            if match:
+                return match.group(1)
+
+            # Support URL patterns with ?id=<FOLDER_ID>
+            match = re.search(r"[?&]id=([a-zA-Z0-9_-]+)", value)
+            if match:
+                return match.group(1)
+
+            # Already an ID
+            return value
     
         def _load_saved_credentials(self) -> Optional['Credentials']:
             """Load saved OAuth credentials from file or Streamlit secrets"""
@@ -306,6 +330,11 @@ if GOOGLE_OAUTH_AVAILABLE:
                         print(f"💾 Cached folder ID to file for future use")
                     except Exception as e:
                         print(f"⚠️ Could not save folder cache: {e}")
+
+            normalized_folder_id = self._normalize_folder_id(folder_id)
+            if normalized_folder_id and normalized_folder_id != folder_id:
+                print(f"🔧 Normalized drive_folder_id from URL to ID: {normalized_folder_id}")
+                folder_id = normalized_folder_id
 
             print(f"📂 Using folder ID: {folder_id}")
             return folder_id

@@ -1,0 +1,9 @@
+{
+  "name": "cnfund-workspace",
+  "private": true,
+  "scripts": {
+    "dev": "powershell -ExecutionPolicy Bypass -File .\\scripts\\start_new_stack.ps1",
+    "dev:install": "powershell -ExecutionPolicy Bypass -File .\\scripts\\start_new_stack.ps1 -InstallDeps"
+  }
+}
+

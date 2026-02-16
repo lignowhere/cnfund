@@ -6,6 +6,7 @@ Perfect for ephemeral file systems like Streamlit Cloud
 """
 
 import io
+import re
 import pandas as pd
 import streamlit as st
 from pathlib import Path
@@ -61,6 +62,25 @@ class DriveBackedDataManager:
         """Reconnect to Google Drive"""
         self._init_drive_manager()
         return self.connected
+
+    def _normalize_folder_id(self, raw_value: Any) -> Optional[str]:
+        """Normalize folder ID from raw ID or full Google Drive URL."""
+        if raw_value is None:
+            return None
+
+        value = str(raw_value).strip()
+        if not value:
+            return None
+
+        match = re.search(r"/folders/([a-zA-Z0-9_-]+)", value)
+        if match:
+            return match.group(1)
+
+        match = re.search(r"[?&]id=([a-zA-Z0-9_-]+)", value)
+        if match:
+            return match.group(1)
+
+        return value
 
     # ========================================
     # Session State Management
@@ -145,7 +165,9 @@ class DriveBackedDataManager:
                 if not self.drive_manager or not self.drive_manager.service:
                     return None
 
-                folder_id = self.drive_manager.folder_id
+                folder_id = self._normalize_folder_id(self.drive_manager.folder_id)
+                if folder_id != self.drive_manager.folder_id:
+                    print(f"🔧 Normalized drive_folder_id from URL to ID: {folder_id}")
 
                 # Search for Excel backup files
                 query = f"'{folder_id}' in parents and name contains 'CNFund_Backup' and mimeType='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' and trashed=false"
@@ -401,7 +423,9 @@ class DriveBackedDataManager:
             if not self.drive_manager or not self.drive_manager.service:
                 return
 
-            folder_id = self.drive_manager.folder_id
+            folder_id = self._normalize_folder_id(self.drive_manager.folder_id)
+            if folder_id != self.drive_manager.folder_id:
+                print(f"🔧 Normalized drive_folder_id from URL to ID: {folder_id}")
 
             # Get ALL backup files
             query = f"'{folder_id}' in parents and name contains 'CNFund_Backup' and mimeType='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' and trashed=false"

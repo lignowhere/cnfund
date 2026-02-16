@@ -1,0 +1,230 @@
+"use client";
+
+import { useMemo } from "react";
+import { useQuery } from "@tanstack/react-query";
+import {
+  Area,
+  AreaChart,
+  Bar,
+  BarChart,
+  CartesianGrid,
+  Cell,
+  Pie,
+  PieChart,
+  ResponsiveContainer,
+  Tooltip,
+  XAxis,
+  YAxis,
+} from "recharts";
+
+import { Card } from "@/components/ui/card";
+import { ErrorState, LoadingState } from "@/components/ui/states";
+import { apiClient } from "@/lib/api";
+import { formatCurrency, formatPercent } from "@/lib/utils";
+import { useAuthStore } from "@/store/auth-store";
+
+const CHART_COLORS = ["#0f4c81", "#1b6ca8", "#2f86c4", "#63a4d4", "#94c3e1", "#c0dff0"];
+
+function formatCompactMoney(value: number) {
+  const abs = Math.abs(value);
+  if (abs >= 1_000_000_000) return `${(value / 1_000_000_000).toFixed(1)}B`;
+  if (abs >= 1_000_000) return `${(value / 1_000_000).toFixed(1)}M`;
+  return `${Math.round(value / 1_000)}K`;
+}
+
+export default function DashboardPage() {
+  const token = useAuthStore((state) => state.accessToken);
+
+  const dashboardQuery = useQuery({
+    queryKey: ["dashboard"],
+    queryFn: () => apiClient.dashboard(token || ""),
+    enabled: !!token,
+  });
+
+  const navHistoryQuery = useQuery({
+    queryKey: ["nav-history"],
+    queryFn: () => apiClient.navHistory(token || ""),
+    enabled: !!token,
+  });
+
+  const txSummaryQuery = useQuery({
+    queryKey: ["dashboard-transactions-summary"],
+    queryFn: () => apiClient.transactionsReport(token || "", { page: 1, page_size: 120 }),
+    enabled: !!token,
+  });
+
+  const navSeries = useMemo(() => {
+    if (!navHistoryQuery.data) return [];
+    return navHistoryQuery.data
+      .slice()
+      .sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime())
+      .map((item) => ({
+        label: new Date(item.date).toLocaleDateString("vi-VN"),
+        nav: item.nav,
+      }));
+  }, [navHistoryQuery.data]);
+
+  const topInvestorsChart = useMemo(() => {
+    if (!dashboardQuery.data) return [];
+    return dashboardQuery.data.top_investors.slice(0, 6).map((item) => ({
+      name: item.investor_name,
+      balance: item.balance,
+      profit: item.profit,
+    }));
+  }, [dashboardQuery.data]);
+
+  const txTypeSeries = useMemo(() => {
+    if (!txSummaryQuery.data) return [];
+    return Object.entries(txSummaryQuery.data.summary.by_type).map(([type, count], index) => ({
+      name: type,
+      value: count,
+      color: CHART_COLORS[index % CHART_COLORS.length],
+    }));
+  }, [txSummaryQuery.data]);
+
+  if (dashboardQuery.isLoading) {
+    return <LoadingState label="Đang tải bảng điều khiển..." />;
+  }
+
+  if (dashboardQuery.isError || !dashboardQuery.data) {
+    return <ErrorState message="Không tải được dữ liệu bảng điều khiển." />;
+  }
+
+  const { kpis, top_investors } = dashboardQuery.data;
+
+  return (
+    <div className="app-page">
+      <Card className="relative overflow-hidden border-none bg-gradient-to-r from-[#0f4c81] via-[#145a94] to-[#1b6ca8] text-white shadow-xl">
+        <div className="absolute -right-12 -top-14 h-40 w-40 rounded-full bg-white/10" />
+        <div className="absolute -bottom-10 left-8 h-28 w-28 rounded-full bg-cyan-200/10" />
+        <div className="relative space-y-2">
+          <p className="text-xs uppercase tracking-[0.2em] text-white/80">Tổng quan quỹ</p>
+          <h2 className="text-2xl font-semibold">{formatCurrency(kpis.total_nav)}</h2>
+          <p className="text-sm text-white/90">
+            Hiệu suất gộp: <span className="font-semibold">{formatPercent(kpis.gross_return)}</span>
+          </p>
+        </div>
+      </Card>
+
+      <section className="grid grid-cols-2 gap-3 xl:grid-cols-4">
+        <Card>
+          <p className="kpi-label">Nhà đầu tư</p>
+          <p className="kpi-value">{kpis.total_investors}</p>
+        </Card>
+        <Card>
+          <p className="kpi-label">Tổng đơn vị quỹ</p>
+          <p className="kpi-value">{kpis.total_units.toFixed(2)}</p>
+        </Card>
+        <Card>
+          <p className="kpi-label">Tổng phí đã thu</p>
+          <p className="kpi-value">{formatCurrency(kpis.total_fees_paid)}</p>
+        </Card>
+        <Card>
+          <p className="kpi-label">Giá trị Fund Manager</p>
+          <p className="kpi-value">{formatCurrency(kpis.fund_manager_value)}</p>
+        </Card>
+      </section>
+
+      <section className="grid grid-cols-1 gap-4 lg:grid-cols-2">
+        <Card className="space-y-3">
+          <h3 className="section-title">Diễn biến NAV</h3>
+          {navSeries.length ? (
+            <div className="h-64">
+              <ResponsiveContainer width="100%" height="100%">
+                <AreaChart data={navSeries}>
+                  <defs>
+                    <linearGradient id="navGradient" x1="0" y1="0" x2="0" y2="1">
+                      <stop offset="5%" stopColor="#0f4c81" stopOpacity={0.35} />
+                      <stop offset="95%" stopColor="#0f4c81" stopOpacity={0.02} />
+                    </linearGradient>
+                  </defs>
+                  <CartesianGrid strokeDasharray="3 3" stroke="#dbe8f2" />
+                  <XAxis dataKey="label" tick={{ fontSize: 12 }} />
+                  <YAxis tickFormatter={formatCompactMoney} tick={{ fontSize: 12 }} />
+                  <Tooltip formatter={(value) => formatCurrency(Number(value))} />
+                  <Area
+                    type="monotone"
+                    dataKey="nav"
+                    stroke="#0f4c81"
+                    strokeWidth={2}
+                    fillOpacity={1}
+                    fill="url(#navGradient)"
+                  />
+                </AreaChart>
+              </ResponsiveContainer>
+            </div>
+          ) : (
+            <LoadingState label="Chưa có lịch sử NAV để hiển thị biểu đồ." />
+          )}
+        </Card>
+
+        <Card className="space-y-3">
+          <h3 className="section-title">Cơ cấu loại giao dịch</h3>
+          {txSummaryQuery.isLoading ? (
+            <LoadingState label="Đang tải cơ cấu giao dịch..." />
+          ) : txTypeSeries.length ? (
+            <div className="h-64">
+              <ResponsiveContainer width="100%" height="100%">
+                <PieChart>
+                  <Pie
+                    data={txTypeSeries}
+                    dataKey="value"
+                    nameKey="name"
+                    cx="50%"
+                    cy="50%"
+                    innerRadius={56}
+                    outerRadius={90}
+                    paddingAngle={3}
+                  >
+                    {txTypeSeries.map((entry) => (
+                      <Cell key={entry.name} fill={entry.color} />
+                    ))}
+                  </Pie>
+                  <Tooltip />
+                </PieChart>
+              </ResponsiveContainer>
+            </div>
+          ) : (
+            <LoadingState label="Chưa có dữ liệu giao dịch." />
+          )}
+        </Card>
+      </section>
+
+      <Card className="space-y-3">
+        <h3 className="section-title">Top nhà đầu tư theo giá trị</h3>
+        {topInvestorsChart.length ? (
+          <div className="h-72">
+            <ResponsiveContainer width="100%" height="100%">
+              <BarChart data={topInvestorsChart}>
+                <CartesianGrid strokeDasharray="3 3" stroke="#dbe8f2" />
+                <XAxis dataKey="name" tick={{ fontSize: 12 }} interval={0} angle={-10} height={48} />
+                <YAxis tickFormatter={formatCompactMoney} tick={{ fontSize: 12 }} />
+                <Tooltip formatter={(value) => formatCurrency(Number(value))} />
+                <Bar dataKey="balance" fill="#1b6ca8" radius={[8, 8, 0, 0]} />
+              </BarChart>
+            </ResponsiveContainer>
+          </div>
+        ) : (
+          <p className="text-sm text-[var(--color-muted)]">Chưa có dữ liệu nhà đầu tư.</p>
+        )}
+
+        <div className="list-stagger space-y-2">
+          {top_investors.slice(0, 4).map((investor) => (
+            <article
+              key={investor.investor_id}
+              className="flex items-center justify-between rounded-xl border border-[var(--color-border)] bg-[var(--color-surface-2)] px-3 py-3"
+            >
+              <div>
+                <p className="text-sm font-medium">{investor.investor_name}</p>
+                <p className="text-xs text-[var(--color-muted)]">
+                  Lãi/lỗ: {formatCurrency(investor.profit)} ({formatPercent(investor.profit_percent)})
+                </p>
+              </div>
+              <p className="text-sm font-semibold">{formatCurrency(investor.balance)}</p>
+            </article>
+          ))}
+        </div>
+      </Card>
+    </div>
+  );
+}

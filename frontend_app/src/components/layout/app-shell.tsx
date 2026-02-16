@@ -1,0 +1,51 @@
+"use client";
+
+import { usePathname } from "next/navigation";
+
+import { BottomNav } from "@/components/layout/bottom-nav";
+import { SideDrawer } from "@/components/layout/side-drawer";
+import { useAuthStore } from "@/store/auth-store";
+
+const titles: Record<string, string> = {
+  "/dashboard": "Tổng quan",
+  "/transactions": "Giao dịch",
+  "/investors": "Nhà đầu tư",
+  "/fees": "Tính phí",
+  "/reports": "Báo cáo",
+  "/backup": "Sao lưu",
+};
+
+const roleLabel: Record<string, string> = {
+  viewer: "Người xem",
+  admin: "Quản trị viên",
+  fund_manager: "Quản lý quỹ",
+};
+
+export function AppShell({ children }: { children: React.ReactNode }) {
+  const pathname = usePathname();
+  const user = useAuthStore((state) => state.user);
+
+  return (
+    <div className="min-h-screen bg-[var(--color-surface-2)] text-[var(--color-text)]">
+      <header className="sticky top-0 z-30 border-b border-white/60 bg-[var(--color-surface)]/90 backdrop-blur-xl">
+        <div className="mx-auto flex h-16 max-w-6xl items-center justify-between px-4 md:px-6">
+          <div className="flex items-center gap-3">
+            <SideDrawer />
+            <div>
+              <p className="text-xs uppercase tracking-[0.2em] text-[var(--color-muted)]">CNFund</p>
+              <h1 className="text-base font-semibold">{titles[pathname] || "CNFund"}</h1>
+            </div>
+          </div>
+          <div className="hidden rounded-full border border-[var(--color-border)] bg-white px-3 py-1 text-xs text-[var(--color-muted)] md:block">
+            {user?.role ? roleLabel[user.role] || user.role : roleLabel.viewer}
+          </div>
+        </div>
+      </header>
+
+      <main className="mx-auto max-w-6xl px-4 pb-[calc(6.4rem+env(safe-area-inset-bottom))] pt-6 md:px-6 md:pb-10 md:pt-7">
+        {children}
+      </main>
+      <BottomNav />
+    </div>
+  );
+}
