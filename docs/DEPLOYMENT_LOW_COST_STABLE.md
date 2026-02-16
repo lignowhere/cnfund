@@ -215,6 +215,12 @@ Option 1 (khuyến nghị, không commit data thật):
 3. Start command trong `railway.toml` sẽ tự copy seed vào volume nếu volume đang trống.
 4. Sau khi seed xong, có thể quay lại deploy qua GitHub như bình thường.
 
+Nếu gặp lỗi `413 Payload Too Large` khi chạy `railway up --no-gitignore`:
+1. Đảm bảo repo đã có file `.railwayignore` (đã cấu hình sẵn trong dự án này).
+2. Chạy lại đúng tại repo root:
+   - `railway up --no-gitignore --service <backend-service-name>`
+3. File `.railwayignore` sẽ loại bỏ `.venv`, `frontend_app`, backups cũ... và chỉ gửi phần backend cần thiết + 4 CSV seed.
+
 Option 2 (nếu chấp nhận commit data thật vào private repo):
 1. Commit 4 file CSV thật vào `backend_api/data/`.
 2. Push lên branch deploy.

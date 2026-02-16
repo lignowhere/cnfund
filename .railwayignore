@@ -1,0 +1,48 @@
+# Keep deployment artifact minimal to avoid Railway upload size errors.
+# Strategy: ignore all, then include only backend runtime sources and seed CSVs.
+
+*
+
+# Required runtime/config files
+!railway.toml
+!config.py
+!helpers.py
+
+# Backend API app
+!backend_api/
+!backend_api/app/
+!backend_api/app/**
+!backend_api/requirements.txt
+
+# Include only seed CSVs (do not ship backup history)
+!backend_api/data/
+!backend_api/data/investors.csv
+!backend_api/data/tranches.csv
+!backend_api/data/transactions.csv
+!backend_api/data/fee_records.csv
+
+# Business logic modules reused by backend_api
+!core/
+!core/**
+!integrations/
+!integrations/**
+!utils/
+!utils/**
+
+# Hard exclusions for large/unnecessary files
+backend_api/data/backups/**
+backend_api/exports/**
+backend_api/*.db
+backend_api/playwright.db
+
+core/__pycache__/**
+integrations/__pycache__/**
+utils/__pycache__/**
+
+frontend_app/**
+.venv/**
+node_modules/**
+.git/**
+output/**
+exports/**
+data/**
