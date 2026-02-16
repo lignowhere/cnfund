@@ -10,5 +10,10 @@ COPY backend_api/requirements.txt /tmp/requirements.txt
 RUN python -m pip install --upgrade pip setuptools wheel \
     && pip install --no-cache-dir -r /tmp/requirements.txt
 
-# Copy application source
-COPY . /app
+# Copy only backend runtime sources (keep image small for reliable registry push)
+COPY backend_api /app/backend_api
+COPY core /app/core
+COPY integrations /app/integrations
+COPY utils /app/utils
+COPY config.py /app/config.py
+COPY helpers.py /app/helpers.py

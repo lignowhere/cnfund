@@ -1,0 +1,28 @@
+# Exclude everything by default, then include only backend runtime files.
+*
+
+!Dockerfile
+!backend_api/
+!backend_api/**
+!core/
+!core/**
+!integrations/
+!integrations/**
+!utils/
+!utils/**
+!config.py
+!helpers.py
+
+# Hard excludes for large or non-runtime artifacts
+frontend_app/**
+exports/**
+output/**
+plans/**
+tests/**
+test/**
+.venv/**
+node_modules/**
+*.db
+token.pickle
+token_encoded.txt
+oauth_credentials.json
