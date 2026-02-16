@@ -1,10 +1,11 @@
 "use client";
 
 import type { ApiResponse, TokenPair, UserInfo } from "@/lib/types";
+import { buildApiUrl, resolveApiBaseUrl } from "@/lib/api-base";
 import { buildNetworkError } from "@/lib/network-error";
 
 const API_BASE_URL =
-  process.env.NEXT_PUBLIC_API_BASE_URL || "http://localhost:8001/api/v1";
+  resolveApiBaseUrl(process.env.NEXT_PUBLIC_API_BASE_URL);
 
 async function parseApiResponse<T>(response: Response): Promise<T> {
   const payload = (await response.json()) as ApiResponse<T>;
@@ -17,13 +18,13 @@ async function getErrorDetail(response: Response): Promise<string> {
     const parsed = JSON.parse(raw) as { detail?: string };
     return parsed.detail || raw;
   } catch {
-    return raw || `Request failed with ${response.status}`;
+    return raw || `Request failed with ${response.status} at ${response.url}`;
   }
 }
 
 async function safeFetch(path: string, init: RequestInit): Promise<Response> {
   try {
-    return await fetch(`${API_BASE_URL}${path}`, init);
+    return await fetch(buildApiUrl(API_BASE_URL, path), init);
   } catch (error) {
     throw buildNetworkError(error, API_BASE_URL);
   }
