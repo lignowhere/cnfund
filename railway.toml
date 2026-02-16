@@ -1,6 +1,6 @@
 [build]
 builder = "RAILPACK"
-buildCommand = "pip install --no-cache-dir -r backend_api/requirements.txt"
+buildCommand = "python -m pip install --upgrade pip setuptools wheel && pip install --no-cache-dir -r backend_api/requirements.txt"
 watchPatterns = [
   "backend_api/**",
   "core/**",
