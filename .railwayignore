@@ -26,8 +26,6 @@
 # Business logic modules reused by backend_api
 !core/
 !core/**
-!integrations/
-!integrations/**
 !utils/
 !utils/**
 
@@ -38,7 +36,6 @@ backend_api/*.db
 backend_api/playwright.db
 
 core/__pycache__/**
-integrations/__pycache__/**
 utils/__pycache__/**
 
 frontend_app/**

@@ -1,4 +1,4 @@
-import { cn } from "@/lib/utils";
+﻿import { cn } from "@/lib/utils";
 
 export function Card({
   className,
@@ -10,7 +10,7 @@ export function Card({
   return (
     <section
       className={cn(
-        "rounded-[var(--radius-card)] border border-white/70 bg-[var(--color-surface)]/88 p-4 shadow-[var(--shadow-card)] backdrop-blur transition-all duration-200 md:p-5",
+        "rounded-[var(--radius-card)] border border-[var(--color-border)] bg-[var(--color-surface)]/90 p-4 shadow-[var(--shadow-card)] backdrop-blur transition-all duration-200 md:p-5",
         "hover:-translate-y-0.5 hover:shadow-[var(--shadow-card-hover)]",
         className,
       )}

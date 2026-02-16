@@ -6,8 +6,6 @@
 !backend_api/**
 !core/
 !core/**
-!integrations/
-!integrations/**
 !utils/
 !utils/**
 !config.py

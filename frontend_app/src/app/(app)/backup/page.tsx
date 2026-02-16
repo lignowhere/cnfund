@@ -1,4 +1,4 @@
-"use client";
+﻿"use client";
 
 import { Loader2 } from "lucide-react";
 import { useMemo, useState } from "react";
@@ -71,21 +71,16 @@ export default function BackupPage() {
           {manualMutation.isPending ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
           Tạo sao lưu thủ công
         </Button>
-        {statusMessage ? (
-          <p className="status-success">
-            {statusMessage}
-          </p>
-        ) : null}
+        {statusMessage ? <p className="status-success">{statusMessage}</p> : null}
         {actionError ? <ErrorState message={actionError} /> : null}
       </Card>
 
       <Card className="space-y-3">
         <h2 className="section-title">Danh sách bản sao lưu</h2>
         {!restoreEnabled ? (
-          <p className="status-warning">
-            Chức năng khôi phục đang được tắt bởi feature flag.
-          </p>
+          <p className="status-warning">Chức năng khôi phục đang được tắt bởi feature flag.</p>
         ) : null}
+
         {backupsQuery.isLoading ? (
           <LoadingState label="Đang tải danh sách sao lưu..." />
         ) : backupsQuery.isError ? (
@@ -98,35 +93,26 @@ export default function BackupPage() {
                 className="rounded-xl border border-[var(--color-border)] bg-[var(--color-surface-2)] p-3"
               >
                 <p className="text-sm font-semibold">{item.backup_type}</p>
-                <p className="text-xs text-[var(--color-muted)] break-all">
-                  ID: {item.backup_id || "N/A"}
-                </p>
+                <p className="text-xs text-[var(--color-muted)] break-all">ID: {item.backup_id || "N/A"}</p>
                 <p className="text-xs text-[var(--color-muted)]">Tạo lúc: {item.created_at || "N/A"}</p>
+
                 {item.backup_id && restoreEnabled ? (
                   <Button
                     variant="secondary"
                     className="mt-2"
-                    onClick={() =>
-                      setRestoreTargetId((current) =>
-                        current === item.backup_id ? null : item.backup_id,
-                      )
-                    }
+                    onClick={() => setRestoreTargetId((current) => (current === item.backup_id ? null : item.backup_id))}
                     disabled={restoreMutation.isPending}
                   >
                     {restoreTargetId === item.backup_id ? "Đóng xác nhận" : "Khôi phục"}
                   </Button>
                 ) : null}
+
                 {restoreTargetId === item.backup_id ? (
-                  <div className="mt-3 space-y-2 rounded-xl border border-[var(--color-border)] bg-white px-3 py-3">
+                  <div className="mt-3 space-y-2 rounded-xl border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-3">
                     <p className="text-xs text-[var(--color-muted)]">
-                      Nhập <span className="font-semibold text-[var(--color-text)]">RESTORE</span>{" "}
-                      để xác nhận khôi phục dữ liệu.
+                      Nhập <span className="font-semibold text-[var(--color-text)]">RESTORE</span> để xác nhận khôi phục dữ liệu.
                     </p>
-                    <Input
-                      value={confirmPhrase}
-                      onChange={(e) => setConfirmPhrase(e.target.value)}
-                      placeholder="Nhập RESTORE"
-                    />
+                    <Input value={confirmPhrase} onChange={(e) => setConfirmPhrase(e.target.value)} placeholder="Nhập RESTORE" />
                     <label className="flex cursor-pointer items-center gap-2 text-sm">
                       <input
                         type="checkbox"
@@ -141,13 +127,9 @@ export default function BackupPage() {
                         variant="danger"
                         className="flex-1"
                         onClick={() => restoreMutation.mutate(item.backup_id)}
-                        disabled={
-                          restoreMutation.isPending || confirmPhrase.trim().toUpperCase() !== "RESTORE"
-                        }
+                        disabled={restoreMutation.isPending || confirmPhrase.trim().toUpperCase() !== "RESTORE"}
                       >
-                        {restoreMutation.isPending ? (
-                          <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                        ) : null}
+                        {restoreMutation.isPending ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
                         Xác nhận khôi phục
                       </Button>
                       <Button

@@ -13,7 +13,6 @@ try {
     $setArgs = @(
         "variable",
         "set",
-        "API_CNFUND_DATA_SOURCE=postgres",
         "API_POSTGRES_BOOTSTRAP_FROM_CSV=true",
         "--skip-deploys"
     )

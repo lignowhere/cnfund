@@ -1,4 +1,3 @@
-import os
 import sys
 import threading
 from datetime import date, datetime
@@ -28,21 +27,15 @@ class FundRuntime:
             sys.path.insert(0, repo_root_str)
 
     def _build_manager(self):
-        source = (
-            self._settings.cnfund_data_source or os.getenv("CNFUND_DATA_SOURCE", "postgres")
-        ).lower()
-        if source == "drive":
-            from core.drive_data_handler import DriveBackedDataManager  # type: ignore
+        database_url = (self._settings.database_url or "").strip()
+        if not database_url:
+            raise RuntimeError(
+                "Missing API_DATABASE_URL. Runtime is PostgreSQL-only and requires a database URL."
+            )
 
-            handler = DriveBackedDataManager()
-        elif source == "postgres":
-            from core.postgres_data_handler import PostgresDataHandler  # type: ignore
+        from core.postgres_data_handler import PostgresDataHandler  # type: ignore
 
-            handler = PostgresDataHandler(database_url=self._settings.database_url)
-        else:
-            from core.csv_data_handler import CSVDataHandler  # type: ignore
-
-            handler = CSVDataHandler()
+        handler = PostgresDataHandler(database_url=database_url)
 
         from core.services_enhanced import EnhancedFundManager  # type: ignore
 

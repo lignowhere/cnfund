@@ -1,24 +1,3 @@
-# Core dependencies
-streamlit>=1.28.0
-pandas>=2.0.0
-numpy>=1.24.0
-altair>=5.0.0
-openpyxl>=3.1.0
-python-dateutil>=2.8.2
-
-# Database
-sqlalchemy>=2.0.0
-psycopg2-binary>=2.9.0
-supabase>=2.0.0
-python-dotenv>=1.0.0
-
-# Google Drive integration
-google-api-python-client>=2.100.0
-google-auth>=2.23.0
-google-auth-oauthlib>=1.1.0
-google-auth-httplib2>=0.1.1
-
-# Optional for enhanced features
-plotly>=5.17.0
-xlsxwriter>=3.1.0
-Pillow>=10.0.0
+﻿# Root requirements for CNFund (backend + migration scripts)
+-r backend_api/requirements.txt
+pytest>=8.0.0

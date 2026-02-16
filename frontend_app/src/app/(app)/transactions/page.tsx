@@ -1,29 +1,45 @@
-"use client";
+﻿"use client";
 
 import * as Dialog from "@radix-ui/react-dialog";
 import { Loader2, X } from "lucide-react";
 import { useMemo, useState } from "react";
 import { useInfiniteQuery, useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 
+import { InvestorCombobox } from "@/components/form/investor-combobox";
+import { MoneyInput } from "@/components/form/money-input";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { EmptyState, ErrorState, LoadingState } from "@/components/ui/states";
 import { apiClient } from "@/lib/api";
-import type { TransactionCardDTO } from "@/lib/types";
+import { digitsToNumber } from "@/lib/number-input";
+import type { InvestorSelectOption, TransactionCardDTO } from "@/lib/types";
 import { formatCurrency, formatDateTime } from "@/lib/utils";
 import { useAuthStore } from "@/store/auth-store";
 
 type TxType = "deposit" | "withdraw" | "nav_update";
 type TxViewMode = "card" | "table";
 
+function toInvestorOption(displayName: string, id: number): InvestorSelectOption {
+  const plainName = displayName.replace(/\s*\(ID:\s*\d+\)\s*$/i, "").trim();
+  const label = `${plainName || displayName} · ID ${id}`;
+  return {
+    id,
+    displayName: label,
+    searchText: `${displayName} ${plainName} ${id}`,
+  };
+}
+
 export default function TransactionsPage() {
   const queryClient = useQueryClient();
   const token = useAuthStore((state) => state.accessToken);
+
   const [txType, setTxType] = useState<TxType>("deposit");
-  const [investorId, setInvestorId] = useState("");
-  const [amount, setAmount] = useState("");
-  const [totalNav, setTotalNav] = useState("");
+  const [selectedInvestor, setSelectedInvestor] = useState<InvestorSelectOption | null>(null);
+  const [amountDigits, setAmountDigits] = useState("");
+  const [amountOverflow, setAmountOverflow] = useState(false);
+  const [totalNavDigits, setTotalNavDigits] = useState("");
+  const [totalNavOverflow, setTotalNavOverflow] = useState(false);
   const [txDate, setTxDate] = useState(new Date().toISOString().slice(0, 10));
   const [selectedTx, setSelectedTx] = useState<TransactionCardDTO | null>(null);
   const [viewMode, setViewMode] = useState<TxViewMode>("card");
@@ -32,6 +48,15 @@ export default function TransactionsPage() {
   const flagsQuery = useQuery({
     queryKey: ["feature-flags"],
     queryFn: () => apiClient.featureFlags(token || ""),
+    enabled: !!token,
+  });
+
+  const investorsQuery = useQuery({
+    queryKey: ["investor-options", token],
+    queryFn: async () => {
+      const investors = await apiClient.investorCards(token || "");
+      return investors.map((item) => toInvestorOption(item.display_name, item.id));
+    },
     enabled: !!token,
   });
 
@@ -59,20 +84,31 @@ export default function TransactionsPage() {
   const txTotal = transactionsQuery.data?.pages[0]?.total ?? 0;
   const effectiveViewMode: TxViewMode = tableViewEnabled ? viewMode : "card";
 
+  const amountValue = digitsToNumber(amountDigits);
+  const totalNavValue = digitsToNumber(totalNavDigits);
+  const investorRequired = txType !== "nav_update";
+  const investorInvalid = investorRequired && !selectedInvestor;
+  const amountInvalid = txType !== "nav_update" && (!amountValue || amountValue <= 0 || amountOverflow);
+  const totalNavInvalid = !totalNavValue || totalNavValue <= 0 || totalNavOverflow;
+
   const createMutation = useMutation({
     mutationFn: () =>
       apiClient.createTransaction(token || "", {
         transaction_type: txType,
-        investor_id: txType === "nav_update" ? undefined : Number(investorId),
-        amount: txType === "nav_update" ? undefined : Number(amount),
-        total_nav: Number(totalNav),
+        investor_id: txType === "nav_update" ? undefined : selectedInvestor?.id,
+        amount: txType === "nav_update" ? undefined : amountValue || undefined,
+        total_nav: totalNavValue || 0,
         transaction_date: txDate,
       }),
     onSuccess: () => {
-      setAmount("");
-      setTotalNav("");
+      setAmountDigits("");
+      setAmountOverflow(false);
+      setTotalNavDigits("");
+      setTotalNavOverflow(false);
       setStatusMessage("Đã cập nhật giao dịch thành công.");
       queryClient.invalidateQueries({ queryKey: ["transaction-cards", token] });
+      queryClient.invalidateQueries({ queryKey: ["dashboard"] });
+      queryClient.invalidateQueries({ queryKey: ["nav-history"] });
     },
     onError: () => setStatusMessage(null),
   });
@@ -80,8 +116,9 @@ export default function TransactionsPage() {
   const deleteMutation = useMutation({
     mutationFn: (id: number) => apiClient.deleteTransaction(token || "", id),
     onSuccess: () => {
-      setStatusMessage("Đã xoá giao dịch.");
+      setStatusMessage("Đã xóa giao dịch.");
       queryClient.invalidateQueries({ queryKey: ["transaction-cards", token] });
+      queryClient.invalidateQueries({ queryKey: ["dashboard"] });
     },
   });
 
@@ -90,6 +127,7 @@ export default function TransactionsPage() {
     onSuccess: () => {
       setStatusMessage("Đã hoàn tác giao dịch.");
       queryClient.invalidateQueries({ queryKey: ["transaction-cards", token] });
+      queryClient.invalidateQueries({ queryKey: ["dashboard"] });
     },
   });
 
@@ -97,6 +135,13 @@ export default function TransactionsPage() {
     if (createMutation.error instanceof Error) return createMutation.error.message;
     return null;
   }, [createMutation.error]);
+
+  const canSubmit =
+    !!token &&
+    !!txDate &&
+    !totalNavInvalid &&
+    (txType === "nav_update" || (!investorInvalid && !amountInvalid)) &&
+    !createMutation.isPending;
 
   return (
     <div className="app-page">
@@ -106,7 +151,16 @@ export default function TransactionsPage() {
           <select
             className="control-select"
             value={txType}
-            onChange={(e) => setTxType(e.target.value as TxType)}
+            onChange={(e) => {
+              const nextType = e.target.value as TxType;
+              setTxType(nextType);
+              setStatusMessage(null);
+              if (nextType === "nav_update") {
+                setSelectedInvestor(null);
+                setAmountDigits("");
+                setAmountOverflow(false);
+              }
+            }}
           >
             <option value="deposit">Nạp tiền</option>
             <option value="withdraw">Rút tiền</option>
@@ -119,38 +173,60 @@ export default function TransactionsPage() {
             className="sm:col-span-2"
           />
         </div>
+
         {txType !== "nav_update" ? (
-          <div className="grid gap-2 sm:grid-cols-2">
-            <Input
-              placeholder="ID nhà đầu tư"
-              value={investorId}
-              onChange={(e) => setInvestorId(e.target.value)}
+          <div className="space-y-2">
+            <InvestorCombobox
+              options={investorsQuery.data ?? []}
+              value={selectedInvestor?.id ?? null}
+              onChange={setSelectedInvestor}
+              placeholder="Tìm theo tên hoặc ID nhà đầu tư"
+              disabled={investorsQuery.isLoading}
             />
-            <Input
-              placeholder="Số tiền"
-              value={amount}
-              onChange={(e) => setAmount(e.target.value)}
-            />
+            {investorInvalid ? <p className="inline-error">Vui lòng chọn đúng nhà đầu tư.</p> : null}
           </div>
         ) : null}
-        <Input
-          placeholder="Tổng NAV sau giao dịch"
-          value={totalNav}
-          onChange={(e) => setTotalNav(e.target.value)}
-        />
-        {errorText ? (
-          <ErrorState message={errorText} />
+
+        {txType !== "nav_update" ? (
+          <div className="space-y-1">
+            <MoneyInput
+              value={amountDigits}
+              onValueChange={(value) => {
+                setAmountDigits(value.rawDigits);
+                setAmountOverflow(value.isOverflow);
+              }}
+              placeholder="50,000,000"
+              aria-invalid={amountInvalid}
+            />
+            <p className="input-helper">
+              Giá trị sẽ gửi: {amountValue ? formatCurrency(amountValue) : "Chưa có"}
+            </p>
+            {amountOverflow ? <p className="inline-error">Số tiền quá lớn (tối đa 15 chữ số).</p> : null}
+            {!amountOverflow && amountInvalid ? <p className="inline-error">Số tiền phải lớn hơn 0.</p> : null}
+          </div>
         ) : null}
-        {statusMessage ? (
-          <p className="status-success">
-            {statusMessage}
+
+        <div className="space-y-1">
+          <MoneyInput
+            value={totalNavDigits}
+            onValueChange={(value) => {
+              setTotalNavDigits(value.rawDigits);
+              setTotalNavOverflow(value.isOverflow);
+            }}
+            placeholder="2,500,000,000"
+            aria-invalid={totalNavInvalid}
+          />
+          <p className="input-helper">
+            Tổng NAV gửi lên hệ thống: {totalNavValue ? formatCurrency(totalNavValue) : "Chưa có"}
           </p>
-        ) : null}
-        <Button
-          className="w-full"
-          onClick={() => createMutation.mutate()}
-          disabled={createMutation.isPending}
-        >
+          {totalNavOverflow ? <p className="inline-error">Tổng NAV quá lớn (tối đa 15 chữ số).</p> : null}
+          {!totalNavOverflow && totalNavInvalid ? <p className="inline-error">Tổng NAV phải lớn hơn 0.</p> : null}
+        </div>
+
+        {errorText ? <ErrorState message={errorText} /> : null}
+        {statusMessage ? <p className="status-success">{statusMessage}</p> : null}
+
+        <Button className="w-full" onClick={() => createMutation.mutate()} disabled={!canSubmit}>
           {createMutation.isPending ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
           Thực hiện
         </Button>
@@ -160,16 +236,24 @@ export default function TransactionsPage() {
         <div className="flex flex-wrap items-center justify-between gap-2">
           <h2 className="section-title">Lịch sử giao dịch</h2>
           {tableViewEnabled ? (
-            <div className="hidden rounded-xl border border-[var(--color-border)] bg-white p-1 md:flex">
+            <div className="hidden rounded-xl border border-[var(--color-border)] bg-[var(--color-surface)] p-1 md:flex">
               <button
-                className={`rounded-lg px-3 py-1 text-xs font-medium ${viewMode === "card" ? "bg-[var(--color-primary-50)] text-[var(--color-primary)]" : "text-[var(--color-muted)]"}`}
+                className={`rounded-lg px-3 py-1 text-xs font-medium ${
+                  viewMode === "card"
+                    ? "bg-[var(--color-primary-50)] text-[var(--color-primary)]"
+                    : "text-[var(--color-muted)]"
+                }`}
                 onClick={() => setViewMode("card")}
                 type="button"
               >
                 Thẻ
               </button>
               <button
-                className={`rounded-lg px-3 py-1 text-xs font-medium ${viewMode === "table" ? "bg-[var(--color-primary-50)] text-[var(--color-primary)]" : "text-[var(--color-muted)]"}`}
+                className={`rounded-lg px-3 py-1 text-xs font-medium ${
+                  viewMode === "table"
+                    ? "bg-[var(--color-primary-50)] text-[var(--color-primary)]"
+                    : "text-[var(--color-muted)]"
+                }`}
                 onClick={() => setViewMode("table")}
                 type="button"
               >
@@ -180,6 +264,7 @@ export default function TransactionsPage() {
             <p className="text-xs text-[var(--color-muted)]">Chế độ dạng thẻ</p>
           )}
         </div>
+
         {transactionsQuery.isLoading ? (
           <LoadingState label="Đang tải giao dịch..." />
         ) : transactionsQuery.isError ? (
@@ -201,7 +286,7 @@ export default function TransactionsPage() {
                 </thead>
                 <tbody>
                   {txItems.map((tx) => (
-                    <tr key={tx.id} className="border-t border-[var(--color-border)] bg-white">
+                    <tr key={tx.id} className="border-t border-[var(--color-border)] bg-[var(--color-surface)]">
                       <td className="px-3 py-2">#{tx.id}</td>
                       <td className="px-3 py-2">{tx.investor_name}</td>
                       <td className="px-3 py-2">{tx.type}</td>
@@ -224,7 +309,7 @@ export default function TransactionsPage() {
                             onClick={() => deleteMutation.mutate(tx.id)}
                             disabled={deleteMutation.isPending}
                           >
-                            Xoá
+                            Xóa
                           </Button>
                         </div>
                       </td>
@@ -243,11 +328,7 @@ export default function TransactionsPage() {
                 key={tx.id}
                 className="rounded-xl border border-[var(--color-border)] bg-[var(--color-surface-2)] p-3"
               >
-                <button
-                  className="w-full text-left"
-                  onClick={() => setSelectedTx(tx)}
-                  type="button"
-                >
+                <button className="w-full text-left" onClick={() => setSelectedTx(tx)} type="button">
                   <div className="flex items-center justify-between gap-2">
                     <p className="text-sm font-semibold">{tx.investor_name}</p>
                     <p className="text-xs text-[var(--color-muted)]">#{tx.id}</p>
@@ -270,7 +351,7 @@ export default function TransactionsPage() {
                     onClick={() => deleteMutation.mutate(tx.id)}
                     disabled={deleteMutation.isPending}
                   >
-                    Xoá
+                    Xóa
                   </Button>
                 </div>
               </article>
@@ -288,9 +369,7 @@ export default function TransactionsPage() {
               onClick={() => transactionsQuery.fetchNextPage()}
               disabled={transactionsQuery.isFetchingNextPage}
             >
-              {transactionsQuery.isFetchingNextPage ? (
-                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-              ) : null}
+              {transactionsQuery.isFetchingNextPage ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
               Tải thêm giao dịch
             </Button>
             <p className="text-center text-xs text-[var(--color-muted)]">
@@ -303,7 +382,7 @@ export default function TransactionsPage() {
       <Dialog.Root open={!!selectedTx} onOpenChange={(open) => !open && setSelectedTx(null)}>
         <Dialog.Portal>
           <Dialog.Overlay className="fixed inset-0 z-50 bg-black/40 data-[state=open]:animate-[overlay-in_180ms_ease-out]" />
-          <Dialog.Content className="fixed inset-x-4 bottom-4 z-50 rounded-2xl border border-[var(--color-border)] bg-white p-4 shadow-2xl data-[state=open]:animate-[fade-up_220ms_ease-out] md:inset-x-auto md:left-1/2 md:top-1/2 md:w-[520px] md:-translate-x-1/2 md:-translate-y-1/2">
+          <Dialog.Content className="fixed inset-x-4 bottom-4 z-50 rounded-2xl border border-[var(--color-border)] bg-[var(--color-surface)] p-4 shadow-2xl data-[state=open]:animate-[fade-up_220ms_ease-out] md:inset-x-auto md:left-1/2 md:top-1/2 md:w-[520px] md:-translate-x-1/2 md:-translate-y-1/2">
             <div className="mb-3 flex items-center justify-between">
               <Dialog.Title className="text-base font-semibold">Chi tiết giao dịch</Dialog.Title>
               <Dialog.Close asChild>

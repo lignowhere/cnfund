@@ -1,4 +1,4 @@
-"use client";
+﻿"use client";
 
 import { useMemo, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
@@ -15,15 +15,36 @@ import {
   YAxis,
 } from "recharts";
 
+import { InvestorCombobox } from "@/components/form/investor-combobox";
+import { MoneyInput } from "@/components/form/money-input";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { EmptyState, ErrorState, LoadingState } from "@/components/ui/states";
 import { apiClient } from "@/lib/api";
+import { digitsToNumber } from "@/lib/number-input";
+import type { InvestorSelectOption } from "@/lib/types";
 import { formatCurrency, formatDateTime, formatPercent } from "@/lib/utils";
 import { useAuthStore } from "@/store/auth-store";
 
-const COLORS = ["#0f4c81", "#1b6ca8", "#2f86c4", "#5ba5d5", "#8dc3e4", "#b8daef"];
+const COLORS = [
+  "var(--chart-1)",
+  "var(--chart-2)",
+  "var(--chart-3)",
+  "var(--chart-4)",
+  "var(--chart-5)",
+  "var(--chart-6)",
+];
+
+function toInvestorOption(displayName: string, id: number): InvestorSelectOption {
+  const plainName = displayName.replace(/\s*\(ID:\s*\d+\)\s*$/i, "").trim();
+  const label = `${plainName || displayName} · ID ${id}`;
+  return {
+    id,
+    displayName: label,
+    searchText: `${displayName} ${plainName} ${id}`,
+  };
+}
 
 function formatCompactMoney(value: number) {
   const abs = Math.abs(value);
@@ -36,41 +57,39 @@ export default function ReportsPage() {
   const token = useAuthStore((state) => state.accessToken);
   const [txPage, setTxPage] = useState(1);
   const [txTypeFilter, setTxTypeFilter] = useState("");
-  const [investorFilter, setInvestorFilter] = useState("");
-  const [reportInvestorId, setReportInvestorId] = useState("");
-  const [reportNav, setReportNav] = useState("");
+  const [investorFilter, setInvestorFilter] = useState<InvestorSelectOption | null>(null);
+  const [reportInvestorId, setReportInvestorId] = useState<number | null>(null);
+  const [reportNavDigits, setReportNavDigits] = useState("");
+  const [reportNavOverflow, setReportNavOverflow] = useState(false);
+
+  const reportNav = digitsToNumber(reportNavDigits);
 
   const investorsQuery = useQuery({
-    queryKey: ["report-investor-options"],
-    queryFn: () => apiClient.investorCards(token || ""),
+    queryKey: ["report-investor-options", token],
+    queryFn: async () => {
+      const investors = await apiClient.investorCards(token || "");
+      return investors.map((item) => toInvestorOption(item.display_name, item.id));
+    },
     enabled: !!token,
   });
 
-  const effectiveInvestorId = useMemo(() => {
-    if (reportInvestorId) return Number(reportInvestorId);
-    return investorsQuery.data?.[0]?.id ?? 0;
-  }, [investorsQuery.data, reportInvestorId]);
+  const effectiveInvestorId = reportInvestorId ?? investorsQuery.data?.[0]?.id ?? 0;
 
   const txReportQuery = useQuery({
-    queryKey: ["transactions-report", txPage, txTypeFilter, investorFilter],
+    queryKey: ["transactions-report", txPage, txTypeFilter, investorFilter?.id],
     queryFn: () =>
       apiClient.transactionsReport(token || "", {
         page: txPage,
         page_size: 20,
         tx_type: txTypeFilter || undefined,
-        investor_id: investorFilter ? Number(investorFilter) : undefined,
+        investor_id: investorFilter?.id,
       }),
     enabled: !!token,
   });
 
   const investorReportQuery = useQuery({
     queryKey: ["investor-report", effectiveInvestorId, reportNav],
-    queryFn: () =>
-      apiClient.investorReport(
-        token || "",
-        effectiveInvestorId,
-        reportNav.trim() ? Number(reportNav) : undefined,
-      ),
+    queryFn: () => apiClient.investorReport(token || "", effectiveInvestorId, reportNav || undefined),
     enabled: !!token && effectiveInvestorId > 0,
   });
 
@@ -101,37 +120,31 @@ export default function ReportsPage() {
       <Card className="space-y-3">
         <div className="flex items-center justify-between gap-2">
           <h2 className="section-title">Báo cáo giao dịch</h2>
-          <p className="section-note">Trang {txPage}/{txTotalPages}</p>
+          <p className="section-note">
+            Trang {txPage}/{txTotalPages}
+          </p>
         </div>
+
         <div className="grid gap-2 sm:grid-cols-3">
           <Input
-            placeholder="Lọc theo loại (nạp, rút, phí...)"
+            placeholder="Lọc theo loại (deposit, withdraw, fee...)"
             value={txTypeFilter}
             onChange={(e) => {
               setTxPage(1);
               setTxTypeFilter(e.target.value);
             }}
           />
-          <select
-            className="control-select"
-            value={investorFilter}
-            onChange={(e) => {
+          <InvestorCombobox
+            options={investorsQuery.data ?? []}
+            value={investorFilter?.id ?? null}
+            onChange={(option) => {
               setTxPage(1);
-              setInvestorFilter(e.target.value);
+              setInvestorFilter(option);
             }}
-          >
-            <option value="">Tất cả nhà đầu tư</option>
-            {investorsQuery.data?.map((item) => (
-              <option key={item.id} value={item.id}>
-                {item.display_name}
-              </option>
-            ))}
-          </select>
-          <Button
-            variant="secondary"
-            onClick={() => txReportQuery.refetch()}
-            disabled={txReportQuery.isFetching}
-          >
+            placeholder="Lọc nhà đầu tư theo tên hoặc ID"
+            allowClear
+          />
+          <Button variant="secondary" onClick={() => txReportQuery.refetch()} disabled={txReportQuery.isFetching}>
             Làm mới
           </Button>
         </div>
@@ -149,15 +162,11 @@ export default function ReportsPage() {
               </div>
               <div className="rounded-xl bg-[var(--color-surface-2)] px-3 py-2">
                 <p className="kpi-label">Tổng giá trị</p>
-                <p className="kpi-value">
-                  {formatCurrency(txReportQuery.data.summary.total_volume)}
-                </p>
+                <p className="kpi-value">{formatCurrency(txReportQuery.data.summary.total_volume)}</p>
               </div>
               <div className="rounded-xl bg-[var(--color-surface-2)] px-3 py-2">
                 <p className="kpi-label">Dòng tiền ròng</p>
-                <p className="kpi-value">
-                  {formatCurrency(txReportQuery.data.summary.net_cash_flow)}
-                </p>
+                <p className="kpi-value">{formatCurrency(txReportQuery.data.summary.net_cash_flow)}</p>
               </div>
               <div className="rounded-xl bg-[var(--color-surface-2)] px-3 py-2">
                 <p className="kpi-label">Số loại giao dịch</p>
@@ -166,7 +175,7 @@ export default function ReportsPage() {
             </div>
 
             <div className="grid grid-cols-1 gap-3 lg:grid-cols-2">
-              <div className="h-64 rounded-xl border border-[var(--color-border)] bg-white p-2">
+              <div className="h-64 rounded-xl border border-[var(--color-border)] bg-[var(--color-surface)] p-2">
                 <ResponsiveContainer width="100%" height="100%">
                   <PieChart>
                     <Pie
@@ -183,10 +192,18 @@ export default function ReportsPage() {
                         <Cell key={item.name} fill={item.color} />
                       ))}
                     </Pie>
-                    <Tooltip />
+                    <Tooltip
+                      formatter={(value) => Number(value)}
+                      contentStyle={{
+                        backgroundColor: "var(--color-surface)",
+                        borderColor: "var(--color-border)",
+                        color: "var(--color-text)",
+                      }}
+                    />
                   </PieChart>
                 </ResponsiveContainer>
               </div>
+
               <div className="list-stagger space-y-2">
                 {txReportQuery.data.items.length ? (
                   txReportQuery.data.items.slice(0, 6).map((tx) => (
@@ -237,26 +254,30 @@ export default function ReportsPage() {
       <Card className="space-y-3">
         <h2 className="section-title">Báo cáo nhà đầu tư</h2>
         <div className="grid gap-2 sm:grid-cols-3">
-          <select
-            className="control-select"
-            value={reportInvestorId || (effectiveInvestorId ? String(effectiveInvestorId) : "")}
-            onChange={(e) => setReportInvestorId(e.target.value)}
-          >
-            {investorsQuery.data?.map((item) => (
-              <option key={item.id} value={item.id}>
-                {item.display_name}
-              </option>
-            ))}
-          </select>
-          <Input
-            placeholder="NAV (tuỳ chọn)"
-            value={reportNav}
-            onChange={(e) => setReportNav(e.target.value)}
+          <InvestorCombobox
+            options={investorsQuery.data ?? []}
+            value={reportInvestorId ?? investorsQuery.data?.[0]?.id ?? null}
+            onChange={(option) => setReportInvestorId(option?.id ?? null)}
+            placeholder="Chọn nhà đầu tư theo tên hoặc ID"
           />
+          <div>
+            <MoneyInput
+              value={reportNavDigits}
+              onValueChange={(value) => {
+                setReportNavDigits(value.rawDigits);
+                setReportNavOverflow(value.isOverflow);
+              }}
+              placeholder="NAV tùy chọn"
+            />
+            <p className="input-helper">
+              NAV dùng tính thử: {reportNav ? formatCurrency(reportNav) : "Theo NAV hiện tại"}
+            </p>
+            {reportNavOverflow ? <p className="inline-error">NAV quá lớn (tối đa 15 chữ số).</p> : null}
+          </div>
           <Button
             variant="secondary"
             onClick={() => investorReportQuery.refetch()}
-            disabled={investorReportQuery.isFetching || effectiveInvestorId <= 0}
+            disabled={investorReportQuery.isFetching || effectiveInvestorId <= 0 || reportNavOverflow}
           >
             Tải báo cáo
           </Button>
@@ -278,9 +299,7 @@ export default function ReportsPage() {
             <div className="grid grid-cols-1 gap-2 sm:grid-cols-2 lg:grid-cols-4">
               <div className="rounded-xl bg-[var(--color-surface-2)] px-3 py-2">
                 <p className="text-xs text-[var(--color-muted)]">Giá trị hiện tại</p>
-                <p className="text-sm font-semibold">
-                  {formatCurrency(investorReportQuery.data.current_balance)}
-                </p>
+                <p className="text-sm font-semibold">{formatCurrency(investorReportQuery.data.current_balance)}</p>
               </div>
               <div className="rounded-xl bg-[var(--color-surface-2)] px-3 py-2">
                 <p className="text-xs text-[var(--color-muted)]">Lãi/lỗ hiện tại</p>
@@ -303,14 +322,24 @@ export default function ReportsPage() {
               </div>
             </div>
 
-            <div className="h-64 rounded-xl border border-[var(--color-border)] bg-white p-2">
+            <div className="h-64 rounded-xl border border-[var(--color-border)] bg-[var(--color-surface)] p-2">
               <ResponsiveContainer width="100%" height="100%">
                 <BarChart data={investorTxBars}>
-                  <CartesianGrid strokeDasharray="3 3" stroke="#dbe8f2" />
-                  <XAxis dataKey="time" tick={{ fontSize: 12 }} />
-                  <YAxis tickFormatter={formatCompactMoney} tick={{ fontSize: 12 }} />
-                  <Tooltip formatter={(value) => formatCurrency(Number(value))} />
-                  <Bar dataKey="amount" fill="#1b6ca8" radius={[8, 8, 0, 0]} />
+                  <CartesianGrid strokeDasharray="3 3" stroke="var(--chart-grid)" />
+                  <XAxis dataKey="time" tick={{ fontSize: 12, fill: "var(--color-muted)" }} />
+                  <YAxis
+                    tickFormatter={formatCompactMoney}
+                    tick={{ fontSize: 12, fill: "var(--color-muted)" }}
+                  />
+                  <Tooltip
+                    formatter={(value) => formatCurrency(Number(value))}
+                    contentStyle={{
+                      backgroundColor: "var(--color-surface)",
+                      borderColor: "var(--color-border)",
+                      color: "var(--color-text)",
+                    }}
+                  />
+                  <Bar dataKey="amount" fill="var(--chart-2)" radius={[8, 8, 0, 0]} />
                 </BarChart>
               </ResponsiveContainer>
             </div>

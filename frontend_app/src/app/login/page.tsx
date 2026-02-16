@@ -1,4 +1,4 @@
-"use client";
+﻿"use client";
 
 import { Loader2 } from "lucide-react";
 import { useRouter } from "next/navigation";
@@ -42,13 +42,11 @@ export default function LoginPage() {
 
   return (
     <main className="grid min-h-screen place-items-center px-4 py-10">
-      <Card className="w-full max-w-md space-y-6 border-none bg-[var(--color-surface)]/80 p-6 shadow-2xl backdrop-blur">
+      <Card className="w-full max-w-md space-y-6 border-none bg-[var(--color-surface)]/90 p-6 shadow-2xl backdrop-blur">
         <header className="space-y-2 text-center">
           <p className="text-xs uppercase tracking-[0.2em] text-[var(--color-muted)]">CNFund</p>
           <h1 className="text-2xl font-semibold">Đăng nhập hệ thống</h1>
-          <p className="text-sm text-[var(--color-muted)]">
-            Nền tảng quản lý quỹ đầu tư, tối ưu cho mobile
-          </p>
+          <p className="text-sm text-[var(--color-muted)]">Nền tảng quản lý quỹ đầu tư, tối ưu cho mobile</p>
         </header>
 
         <form className="space-y-4" onSubmit={onSubmit}>
@@ -78,7 +76,7 @@ export default function LoginPage() {
             />
           </div>
           {error ? (
-            <p className="rounded-xl border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">
+            <p className="rounded-xl border border-[var(--color-danger-border)] bg-[var(--color-danger-bg)] px-3 py-2 text-sm text-[var(--color-danger-text)]">
               {error}
             </p>
           ) : null}

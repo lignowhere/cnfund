@@ -1,10 +1,10 @@
-import { AlertCircle, Inbox, Loader2 } from "lucide-react";
+﻿import { AlertCircle, Inbox, Loader2 } from "lucide-react";
 
 import { cn } from "@/lib/utils";
 
 export function LoadingState({ label = "Đang tải dữ liệu..." }: { label?: string }) {
   return (
-    <div className="flex min-h-24 items-center justify-center gap-2 rounded-xl border border-dashed border-[var(--color-border)] bg-white px-4 py-6 text-sm text-[var(--color-muted)]">
+    <div className="flex min-h-24 items-center justify-center gap-2 rounded-xl border border-dashed border-[var(--color-border)] bg-[var(--color-surface)] px-4 py-6 text-sm text-[var(--color-muted)]">
       <Loader2 className="h-4 w-4 animate-spin" />
       <span>{label}</span>
     </div>
@@ -23,7 +23,7 @@ export function EmptyState({
   return (
     <div
       className={cn(
-        "rounded-xl border border-dashed border-[var(--color-border)] bg-white px-4 py-8 text-center",
+        "rounded-xl border border-dashed border-[var(--color-border)] bg-[var(--color-surface)] px-4 py-8 text-center",
         className,
       )}
     >
@@ -36,7 +36,7 @@ export function EmptyState({
 
 export function ErrorState({ message }: { message: string }) {
   return (
-    <div className="rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
+    <div className="rounded-xl border border-[var(--color-danger-border)] bg-[var(--color-danger-bg)] px-4 py-3 text-sm text-[var(--color-danger-text)]">
       <div className="flex items-center gap-2">
         <AlertCircle className="h-4 w-4" />
         <span>{message}</span>

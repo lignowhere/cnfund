@@ -1,10 +1,11 @@
-"use client";
+﻿"use client";
 
 import * as Dialog from "@radix-ui/react-dialog";
 import { LogOut, Menu, X } from "lucide-react";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 
+import { ThemeToggle } from "@/components/layout/theme-toggle";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 import { useAuthStore } from "@/store/auth-store";
@@ -20,30 +21,28 @@ export function SideDrawer() {
   return (
     <Dialog.Root>
       <Dialog.Trigger asChild>
-        <Button
-          variant="secondary"
-          className="h-11 w-11 rounded-xl p-0 md:h-10 md:w-10"
-          aria-label="Mở menu"
-        >
+        <Button variant="secondary" className="h-11 w-11 rounded-xl p-0 md:h-10 md:w-10" aria-label="Mở menu">
           <Menu className="h-5 w-5" />
         </Button>
       </Dialog.Trigger>
       <Dialog.Portal>
         <Dialog.Overlay className="fixed inset-0 z-50 bg-black/35 data-[state=open]:animate-[overlay-in_160ms_ease-out]" />
-        <Dialog.Content className="fixed inset-y-0 left-0 z-50 w-[85vw] max-w-[340px] border-r border-[var(--color-border)] bg-white p-4 shadow-2xl focus:outline-none data-[state=open]:animate-[drawer-in_220ms_ease-out]">
+        <Dialog.Content className="fixed inset-y-0 left-0 z-50 w-[85vw] max-w-[340px] border-r border-[var(--color-border)] bg-[var(--color-surface)] p-4 shadow-2xl focus:outline-none data-[state=open]:animate-[drawer-in_220ms_ease-out]">
           <Dialog.Title className="sr-only">Menu điều hướng</Dialog.Title>
           <div className="mb-5 flex items-center justify-between">
             <div>
               <p className="text-sm text-[var(--color-muted)]">CNFund Mobile</p>
-              <p className="text-base font-semibold text-[var(--color-text)]">
-                {user?.username || "Khách"}
-              </p>
+              <p className="text-base font-semibold text-[var(--color-text)]">{user?.username || "Khách"}</p>
             </div>
             <Dialog.Close asChild>
               <Button variant="secondary" className="h-10 w-10 rounded-xl p-0" aria-label="Đóng menu">
                 <X className="h-5 w-5" />
               </Button>
             </Dialog.Close>
+          </div>
+
+          <div className="mb-4">
+            <ThemeToggle className="w-full justify-between" />
           </div>
 
           <ul className="space-y-1">

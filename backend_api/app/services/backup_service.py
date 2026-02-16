@@ -381,21 +381,21 @@ def trigger_manual_backup(fund_manager, description: str = "api_manual") -> dict
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
     sanitized = re.sub(r"[^a-zA-Z0-9_-]+", "_", description).strip("_")
     suffix = f"_{sanitized}" if sanitized else ""
-    fallback_filename = f"Fund_Export_{timestamp}_manual{suffix}.xlsx"
+    filename = f"Fund_Export_{timestamp}_manual{suffix}.xlsx"
 
-    try:
-        from integrations.auto_backup_personal import manual_backup
+    local_path = _write_backup_excel(fund_manager, filename)
+    drive_result = _upload_backup_to_google_drive(local_path)
 
-        success = manual_backup(fund_manager, description)
-        if not success:
-            _write_backup_excel(fund_manager, fallback_filename)
-    except Exception:
-        _write_backup_excel(fund_manager, fallback_filename)
-
-    backups = list_local_backups(days=365)
-    if not backups:
-        raise RuntimeError("backup completed but no local backup file found")
-    return backups[0]
+    return {
+        "backup_id": local_path.name,
+        "backup_type": "manual",
+        "created_at": datetime.now().isoformat(),
+        "local_backup": True,
+        "google_drive_uploaded": bool(drive_result.get("uploaded")),
+        "google_drive_file_id": drive_result.get("file_id"),
+        "google_drive_link": drive_result.get("web_view_link"),
+        "google_drive_reason": drive_result.get("reason"),
+    }
 
 
 def restore_from_local_backup(

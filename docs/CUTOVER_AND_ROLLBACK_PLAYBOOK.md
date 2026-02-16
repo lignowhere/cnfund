@@ -1,16 +1,18 @@
-# CNFund Cutover And Rollback Playbook
+﻿# CNFund Cutover And Rollback Playbook
 
-This playbook defines release steps from Streamlit UI to the new Next.js frontend.
+Playbook cho release pipeline hiện tại: Next.js + FastAPI + PostgreSQL.
 
 ## Cutover prerequisites
 
-- Backend API and frontend passed:
+- Frontend passed:
+  - `cd frontend_app`
   - `npm run lint`
   - `npm run build`
-  - `npm run test:e2e`
-  - `python -m compileall backend_api/app`
-- Internal UAT score >= 4.2/5 for current phase.
-- Feature flags verified in target environment.
+- Backend passed:
+  - `.\.venv\Scripts\python -m compileall backend_api/app`
+  - `.\.venv\Scripts\python -m pytest tests/test_math_audit.py`
+  - `.\.venv\Scripts\python -m pytest tests/test_backend_smoke.py`
+- UAT nội bộ đạt ngưỡng.
 
 ## Feature flags (backend env)
 
@@ -18,41 +20,40 @@ This playbook defines release steps from Streamlit UI to the new Next.js fronten
 - `API_FEATURE_BACKUP_RESTORE`
 - `API_FEATURE_FEE_SAFETY`
 - `API_FEATURE_TRANSACTIONS_LOAD_MORE`
+- `API_AUTO_BACKUP_ON_NEW_TRANSACTION`
 
 ## Deployment order
 
 1. Deploy backend API (Railway).
-2. Validate health and OpenAPI.
+2. Verify `/health` và `/docs`.
 3. Deploy frontend (Vercel).
-4. Smoke test critical paths on mobile + desktop.
-5. Route internal users to new frontend by default.
-6. Keep Streamlit as read-only fallback for 1 week.
+4. Smoke test mobile + desktop các luồng chính.
+5. Mở traffic production sang frontend mới.
 
 ## Smoke checklist (release gate)
 
-1. Login and refresh token flow works.
-2. Create investor works.
-3. Add transaction (deposit/withdraw/nav_update) works.
-4. Fee preview/apply works with safety controls.
-5. Backup manual + restore confirmation works.
-6. Reports page loads (transaction + investor report).
+1. Login + refresh token hoạt động.
+2. Create investor hoạt động.
+3. Add transaction (deposit/withdraw/nav_update) hoạt động.
+4. Fee preview/apply hoạt động với safety controls.
+5. Backup manual + restore confirmation hoạt động.
+6. Reports page load ổn định.
 
 ## Rollback (<15 minutes)
 
-1. Switch users back to Streamlit URL immediately.
-2. Keep backend API running (no schema rollback required).
-3. Disable risky flags if needed:
+1. Rollback frontend về deployment trước trên Vercel.
+2. Nếu cần, rollback backend về deployment trước trên Railway.
+3. Tạm tắt các flag rủi ro cao:
    - `API_FEATURE_BACKUP_RESTORE=false`
-   - `API_FEATURE_FEE_SAFETY=true` (keep on)
-4. Investigate issue using:
-   - API audit logs table
+   - giữ `API_FEATURE_FEE_SAFETY=true`
+4. Điều tra qua:
+   - API audit logs
    - Railway logs
    - Vercel logs
-5. Fix in hotpatch branch and redeploy.
+5. Fix ở hotpatch branch và redeploy.
 
-## Decommission checklist (post-stability)
+## Post-release stability checklist
 
-1. No blocker defects for 7 consecutive days.
-2. All core workflows executed only on new frontend.
-3. Streamlit routes disabled for end users.
-4. Keep Python core services and data handlers for API runtime.
+1. Không có blocker defect trong 7 ngày liên tiếp.
+2. Backup/restore drill pass.
+3. Mọi workflow cốt lõi chạy ổn định trên stack mới.

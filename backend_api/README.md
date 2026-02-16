@@ -1,11 +1,11 @@
-# CNFund Backend API (FastAPI)
+﻿# CNFund Backend API (FastAPI)
 
-FastAPI backend for the CNFund strangler migration, reusing business logic from `core/services_enhanced.py`.
+Backend API cho CNFund, dùng nghiệp vụ từ `core/services_enhanced.py` và lưu dữ liệu nghiệp vụ trên PostgreSQL.
 
 ## Prerequisites
 
 - Python 3.11+
-- Existing CNFund project files (`core/`, `integrations/`, `data/`)
+- PostgreSQL
 
 ## Install
 
@@ -15,73 +15,59 @@ FastAPI backend for the CNFund strangler migration, reusing business logic from 
 
 ## Configure
 
-Copy env file:
+Copy env mẫu:
 
 ```powershell
 Copy-Item backend_api/.env.example .env
 ```
 
-Main env vars:
+Các biến chính:
 
-- `API_DATABASE_URL` (PostgreSQL for auth + business data)
-- `API_CNFUND_DATA_SOURCE=postgres` (recommended), or `csv|drive` for legacy mode
-- `API_POSTGRES_BOOTSTRAP_FROM_CSV=true|false` (optional one-time import when DB is empty)
-- `API_POSTGRES_SEED_DIR=<path>` (optional directory for 4 CSV seed files)
+- `API_DATABASE_URL` (bắt buộc, PostgreSQL)
 - `API_JWT_SECRET_KEY`
 - `API_ADMIN_USERNAME`
 - `API_ADMIN_PASSWORD`
 - `API_ALLOWED_ORIGINS=http://localhost:3000,http://127.0.0.1:3000`
-- `API_ALLOWED_ORIGIN_REGEX=https?://(localhost|127\\.0\\.0\\.1)(:\\d+)?$` (cho phép dev port linh hoạt như `3001`, `3002`)
+- `API_ALLOWED_ORIGIN_REGEX=https?://(localhost|127\\.0\\.0\\.1)(:\\d+)?$`
 - `API_FEATURE_TABLE_VIEW=true`
 - `API_FEATURE_BACKUP_RESTORE=true`
 - `API_FEATURE_FEE_SAFETY=true`
 - `API_FEATURE_TRANSACTIONS_LOAD_MORE=true`
-- `API_AUTO_BACKUP_ON_NEW_TRANSACTION=true` (auto backup when creating new transaction)
+- `API_AUTO_BACKUP_ON_NEW_TRANSACTION=true`
 - `GOOGLE_DRIVE_FOLDER_ID=<drive-folder-id-or-url>`
 - `GOOGLE_OAUTH_TOKEN_BASE64=<base64-token-from-token.pickle>`
 
+Bootstrap dữ liệu CSV một lần khi DB rỗng:
+
+- `API_POSTGRES_BOOTSTRAP_FROM_CSV=true|false`
+- `API_POSTGRES_SEED_DIR=<path-optional>`
+
 ## Run
-
-```powershell
-cd backend_api
-..\.venv\Scripts\python -m uvicorn app.main:app --reload --host 127.0.0.1 --port 8001
-```
-
-Note: if the above path spacing is inconvenient, run from repo root:
 
 ```powershell
 .\.venv\Scripts\python -m uvicorn backend_api.app.main:app --reload --host 127.0.0.1 --port 8001
 ```
 
 API docs:
-
 - Swagger: `http://127.0.0.1:8001/docs`
 - OpenAPI: `http://127.0.0.1:8001/openapi.json`
 
-### One-command run for full stack
-
-From repo root:
+## One-command full stack
 
 ```powershell
 npm run dev
 ```
 
-## Core modules
-
-- Auth JWT + RBAC (`viewer`, `admin`, `fund_manager`)
-- Investors, transactions, NAV, fees, reports, backups
-- Feature flags: `GET /api/v1/system/feature-flags`
-
 ## Safety controls
 
-- Mutating operations are serialized with runtime lock.
-- `POST /fees/apply` requires:
-  - `confirm_token` from `POST /fees/preview`
+- Mutating operations được serialize bằng runtime lock.
+- `POST /fees/apply` yêu cầu:
+  - `confirm_token` từ `POST /fees/preview`
   - `acknowledge_risk=true`
   - `acknowledge_backup=true`
-- `POST /backups/restore` requires:
+- `POST /backups/restore` yêu cầu:
   - `confirm_phrase="RESTORE"`
-  - `create_safety_backup` (recommended: `true`)
+  - `create_safety_backup` (khuyến nghị: `true`)
 
 ## Quick checks
 
@@ -89,6 +75,6 @@ npm run dev
 .\.venv\Scripts\python -m compileall backend_api/app
 ```
 
-## Production deployment recommendation
+## Deployment
 
-See `docs/DEPLOYMENT_LOW_COST_STABLE.md` for the lowest-cost stable deployment plan with backup policy.
+Xem `docs/DEPLOYMENT_LOW_COST_STABLE.md`.

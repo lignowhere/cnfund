@@ -7,7 +7,7 @@ class Settings(BaseSettings):
     environment: str = "development"
     api_prefix: str = "/api/v1"
 
-    database_url: str = "sqlite:///./backend_api.db"
+    database_url: str = ""
     jwt_secret_key: str = "change-this-in-production"
     jwt_algorithm: str = "HS256"
     access_token_expire_minutes: int = 30
@@ -17,7 +17,6 @@ class Settings(BaseSettings):
     admin_password: str = "1997"
     admin_role: str = "admin"
 
-    cnfund_data_source: str = "postgres"
     allowed_origins: str = "http://localhost:3000,http://127.0.0.1:3000"
     allowed_origin_regex: str = r"https?://(localhost|127\.0\.0\.1)(:\d+)?$"
     feature_table_view: bool = True

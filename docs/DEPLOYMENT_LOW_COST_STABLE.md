@@ -1,23 +1,21 @@
-# CNFund Deploy Plan (PostgreSQL Business Data)
+﻿# CNFund Deployment Plan (Low Cost + Stable)
 
-## 1) Target architecture
+## 1) Kiến trúc đích
 
-- Frontend: Vercel Hobby (Next.js)
-- Backend API: Railway (FastAPI)
+- Frontend: Vercel Hobby (`frontend_app`)
+- Backend API: Railway (`backend_api`)
 - Database: Railway PostgreSQL
-- Business data: PostgreSQL tables (`fund_investors`, `fund_tranches`, `fund_transactions`, `fund_fee_records`)
-- Auth/Audit: PostgreSQL tables (`users`, `refresh_tokens`, `audit_logs`)
-- Backups:
-  - Railway PostgreSQL backups
-  - App manual backup/restore (`/api/v1/backups/manual`, `/api/v1/backups/restore`)
-  - Optional Railway Volume only for export files (`/app/storage/exports`)
+- Dữ liệu nghiệp vụ: PostgreSQL (`fund_investors`, `fund_tranches`, `fund_transactions`, `fund_fee_records`)
+- Backup:
+  - PostgreSQL backups trên Railway
+  - Backup thủ công / restore qua API
+  - Auto backup sau giao dịch mới (local + upload Google Drive nếu có cấu hình)
 
-## 2) Environment variables (backend)
+## 2) Biến môi trường backend
 
 ```env
 API_ENVIRONMENT=production
 API_DATABASE_URL=${{Postgres.DATABASE_URL}}
-API_CNFUND_DATA_SOURCE=postgres
 API_POSTGRES_BOOTSTRAP_FROM_CSV=false
 API_POSTGRES_SEED_DIR=
 API_JWT_SECRET_KEY=<very-strong-random-secret>
@@ -34,111 +32,77 @@ GOOGLE_DRIVE_FOLDER_ID=<drive-folder-id-or-url>
 GOOGLE_OAUTH_TOKEN_BASE64=<base64-token-from-token.pickle>
 ```
 
-Notes:
-- `API_CNFUND_DATA_SOURCE=postgres` is now the primary mode.
-- `API_POSTGRES_BOOTSTRAP_FROM_CSV=true` is only for one-time migration when DB is empty.
-- If `GOOGLE_DRIVE_FOLDER_ID` and `GOOGLE_OAUTH_TOKEN_BASE64` are configured, every new transaction (`POST /api/v1/transactions`) triggers automatic backup upload to Google Drive.
-- If you already have `token_encoded.txt`, copy its full content into `GOOGLE_OAUTH_TOKEN_BASE64`.
+Ghi chú:
+- Runtime chính thức là PostgreSQL-only.
+- `API_POSTGRES_BOOTSTRAP_FROM_CSV=true` chỉ dùng một lần khi DB đang rỗng.
 
 ## 3) Railway click-by-click
 
-1. Create project on Railway.
-2. Deploy this repository (service at repo root).
-3. Enable `Config as Code` and select `/railway.toml`.
-4. Add PostgreSQL service in same project.
-5. Add backend variables from section 2.
-6. (Optional) Add a volume and mount at `/app/storage` to persist export files.
+1. Tạo project trên Railway.
+2. Deploy repo này (service ở repo root).
+3. Bật Config as Code, dùng `railway.toml`.
+4. Thêm PostgreSQL service trong cùng project.
+5. Set biến môi trường backend như mục 2.
+6. (Tùy chọn) thêm volume mount `/app/storage` để giữ export file lâu dài.
 7. Redeploy backend.
 8. Verify:
    - `https://<backend-domain>/health`
    - `https://<backend-domain>/docs`
 
-If you ever see `python: not found` in build:
-1. Ensure backend service uses latest `railway.toml`.
-2. Confirm `[build]` uses:
-   - `builder = "DOCKERFILE"`
-   - `dockerfilePath = "Dockerfile"`
-3. Redeploy:
-   - `railway redeploy -s <backend-service-id> -y`
+Nếu build lỗi `python: not found`:
+1. Kiểm tra service đang dùng `railway.toml` mới nhất.
+2. `[build]` phải là Dockerfile builder.
+3. Redeploy lại:
 
-## 4) One-time CSV -> PostgreSQL migration
+```powershell
+railway redeploy -s <backend-service-id> -y
+```
 
-Use when you already have real CSV data and want to import once into PostgreSQL.
+## 4) One-time CSV -> PostgreSQL bootstrap
 
-Preconditions:
-- 4 real CSV files are in `backend_api/data/`:
-  - `investors.csv`
-  - `tranches.csv`
-  - `transactions.csv`
-  - `fee_records.csv`
-- DB is empty (or you accept overwrite by restore process later).
-
-Run:
+Khi đã có 4 file CSV ở `backend_api/data/` và DB rỗng:
 
 ```powershell
 powershell -ExecutionPolicy Bypass -File .\scripts\railway_bootstrap_postgres_once.ps1 -ServiceId <backend-service-id>
 ```
 
-Script flow:
-1. Set `API_CNFUND_DATA_SOURCE=postgres`
-2. Set `API_POSTGRES_BOOTSTRAP_FROM_CSV=true`
-3. Run `railway up --no-gitignore` once to upload local backend source + CSV and import into Postgres (if DB is empty)
-4. Set `API_POSTGRES_BOOTSTRAP_FROM_CSV=false`
-5. Redeploy again to lock normal mode
+Flow script:
+1. Set `API_POSTGRES_BOOTSTRAP_FROM_CSV=true`
+2. Upload/deploy để bootstrap dữ liệu
+3. Set lại `API_POSTGRES_BOOTSTRAP_FROM_CSV=false`
+4. Redeploy chế độ thường
 
-Optional:
-- If CSV already exists in deployed source and you do not want local upload:
-  - add `-SkipLocalUpload`
-
-## 4.1) Migrate trực tiếp từ file backup `.xlsx` local vào PostgreSQL
-
-Không cần tải từ Google Drive nếu bạn đã có file local, ví dụ:
-`D:\Đầu tư\CNFund\data\CNFund_Backup_20260216_110200.xlsx`
+## 5) Migrate trực tiếp từ file backup `.xlsx` local
 
 ```powershell
-$dbUrl = (railway variable list -s <postgres-service-id> -k | Select-String '^DATABASE_PUBLIC_URL=').ToString().Split('=',2)[1]
-.\.venv\Scripts\python scripts\migrate_drive_latest_to_postgres.py --database-url "$dbUrl" --local-file "D:\Đầu tư\CNFund\data\CNFund_Backup_20260216_110200.xlsx"
+.\.venv\Scripts\python scripts/migrate_drive_latest_to_postgres.py --database-url "<postgres-url>" --local-file "D:\Đầu tư\CNFund\data\CNFund_Backup_20260216_110200.xlsx"
 ```
 
 Script sẽ:
-1. Copy file vào `exports/` (để dùng restore flow thống nhất).
-2. Parse sheet theo nhiều format cũ/mới (`Investors`, `Tranches`, `Transactions`, `Fee Records`...).
-3. Ghi đè dữ liệu nghiệp vụ vào các bảng `fund_*` trong PostgreSQL.
+1. Copy file vào `exports/`
+2. Parse sheet backup
+3. Ghi dữ liệu vào bảng `fund_*` trong PostgreSQL
 
-## 5) Vercel click-by-click
+## 6) Vercel click-by-click
 
-1. Import same repo into Vercel.
-2. Set project root directory: `frontend_app`.
-3. Add env var:
+1. Import cùng repo lên Vercel.
+2. Root directory: `frontend_app`.
+3. Set env var:
 
 ```env
 NEXT_PUBLIC_API_BASE_URL=https://<your-railway-backend-domain>/api/v1
 ```
 
 4. Deploy.
-5. Verify:
-   - `/login`
-   - dashboard
-   - investors
-   - transactions
-   - reports
+5. Verify các route chính: `/login`, dashboard, investors, transactions, reports.
 
-## 6) Backup policy (critical)
+## 7) Chính sách backup tối thiểu
 
-1. Railway PostgreSQL -> Backups:
-   - enable Daily, Weekly, Monthly.
-2. In app:
-   - run manual backup before destructive operations.
-3. Monthly restore drill:
-   - restore on staging
-   - verify dashboard totals, investor report, transaction history.
+1. Railway PostgreSQL: bật backup Daily/Weekly/Monthly.
+2. Trước thao tác rủi ro cao: tạo manual backup qua API.
+3. Mỗi tháng: chạy restore drill trên môi trường staging.
 
-## 7) Notes
-
-- Google Drive mode (`API_CNFUND_DATA_SOURCE=drive`) is still legacy and should not be primary production storage.
-- PostgreSQL is now the canonical data source for fund business data in this repo.
-
-## 8) References
+## 8) Tài liệu tham chiếu
 
 - Railway Config as Code:
   https://docs.railway.com/guides/config-as-code

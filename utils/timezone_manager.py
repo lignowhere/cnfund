@@ -73,8 +73,8 @@ class TimezoneManager:
     def is_cloud_environment(cls) -> bool:
         """Detect if running in cloud environment"""
         return (
-            os.getenv('STREAMLIT_CLOUD') is not None or 
-            'streamlit.io' in os.getenv('HOSTNAME', '') or
+            os.getenv('RAILWAY_ENVIRONMENT') is not None or
+            os.getenv('VERCEL') is not None or
             '/mount/src' in os.getcwd()
         )
     

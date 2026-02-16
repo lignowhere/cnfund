@@ -46,7 +46,6 @@ export default defineConfig({
       env: {
         ...process.env,
         API_DATABASE_URL: "sqlite:///./playwright.db",
-        API_CNFUND_DATA_SOURCE: "csv",
       },
     },
     {
@@ -62,4 +61,3 @@ export default defineConfig({
     },
   ],
 });
-

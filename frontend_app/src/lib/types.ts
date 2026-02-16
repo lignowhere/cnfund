@@ -1,5 +1,21 @@
 export type UserRole = "viewer" | "admin" | "fund_manager";
 
+export type ThemePreference = "system" | "light" | "dark";
+export type ResolvedTheme = "light" | "dark";
+
+export type InvestorSelectOption = {
+  id: number;
+  displayName: string;
+  searchText: string;
+};
+
+export type MoneyInputValue = {
+  rawDigits: string;
+  numericValue: number | null;
+  formatted: string;
+  isOverflow: boolean;
+};
+
 export type ApiResponse<T> = {
   success: boolean;
   message?: string;

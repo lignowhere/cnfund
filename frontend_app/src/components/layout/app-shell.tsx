@@ -1,10 +1,12 @@
-"use client";
+﻿"use client";
 
 import { usePathname } from "next/navigation";
 
 import { BottomNav } from "@/components/layout/bottom-nav";
 import { SideDrawer } from "@/components/layout/side-drawer";
+import { ThemeToggle } from "@/components/layout/theme-toggle";
 import { useAuthStore } from "@/store/auth-store";
+import { useApplyTheme } from "@/store/theme-store";
 
 const titles: Record<string, string> = {
   "/dashboard": "Tổng quan",
@@ -25,9 +27,11 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
   const user = useAuthStore((state) => state.user);
 
+  useApplyTheme();
+
   return (
     <div className="min-h-screen bg-[var(--color-surface-2)] text-[var(--color-text)]">
-      <header className="sticky top-0 z-30 border-b border-white/60 bg-[var(--color-surface)]/90 backdrop-blur-xl">
+      <header className="sticky top-0 z-30 border-b border-[var(--color-border)] bg-[var(--color-surface)]/90 backdrop-blur-xl">
         <div className="mx-auto flex h-16 max-w-6xl items-center justify-between px-4 md:px-6">
           <div className="flex items-center gap-3">
             <SideDrawer />
@@ -36,8 +40,13 @@ export function AppShell({ children }: { children: React.ReactNode }) {
               <h1 className="text-base font-semibold">{titles[pathname] || "CNFund"}</h1>
             </div>
           </div>
-          <div className="hidden rounded-full border border-[var(--color-border)] bg-white px-3 py-1 text-xs text-[var(--color-muted)] md:block">
-            {user?.role ? roleLabel[user.role] || user.role : roleLabel.viewer}
+          <div className="flex items-center gap-2">
+            <div className="hidden md:block">
+              <ThemeToggle />
+            </div>
+            <div className="hidden rounded-full border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-1 text-xs text-[var(--color-muted)] md:block">
+              {user?.role ? roleLabel[user.role] || user.role : roleLabel.viewer}
+            </div>
           </div>
         </div>
       </header>

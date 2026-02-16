@@ -1,6 +1,6 @@
 # CNFund Frontend (Next.js)
 
-Mobile-first frontend for CNFund strangler migration (replacing Streamlit UI gradually).
+Mobile-first frontend for CNFund production UI.
 
 ## Prerequisites
 

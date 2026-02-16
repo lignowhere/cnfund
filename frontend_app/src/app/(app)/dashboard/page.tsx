@@ -1,4 +1,4 @@
-"use client";
+﻿"use client";
 
 import { useMemo } from "react";
 import { useQuery } from "@tanstack/react-query";
@@ -23,7 +23,14 @@ import { apiClient } from "@/lib/api";
 import { formatCurrency, formatPercent } from "@/lib/utils";
 import { useAuthStore } from "@/store/auth-store";
 
-const CHART_COLORS = ["#0f4c81", "#1b6ca8", "#2f86c4", "#63a4d4", "#94c3e1", "#c0dff0"];
+const CHART_COLORS = [
+  "var(--chart-1)",
+  "var(--chart-2)",
+  "var(--chart-3)",
+  "var(--chart-4)",
+  "var(--chart-5)",
+  "var(--chart-6)",
+];
 
 function formatCompactMoney(value: number) {
   const abs = Math.abs(value);
@@ -94,7 +101,7 @@ export default function DashboardPage() {
 
   return (
     <div className="app-page">
-      <Card className="relative overflow-hidden border-none bg-gradient-to-r from-[#0f4c81] via-[#145a94] to-[#1b6ca8] text-white shadow-xl">
+      <Card className="relative overflow-hidden border-none bg-gradient-to-r from-[var(--hero-start)] via-[var(--hero-mid)] to-[var(--hero-end)] text-[var(--color-text-inverse)] shadow-xl">
         <div className="absolute -right-12 -top-14 h-40 w-40 rounded-full bg-white/10" />
         <div className="absolute -bottom-10 left-8 h-28 w-28 rounded-full bg-cyan-200/10" />
         <div className="relative space-y-2">
@@ -134,22 +141,22 @@ export default function DashboardPage() {
                 <AreaChart data={navSeries}>
                   <defs>
                     <linearGradient id="navGradient" x1="0" y1="0" x2="0" y2="1">
-                      <stop offset="5%" stopColor="#0f4c81" stopOpacity={0.35} />
-                      <stop offset="95%" stopColor="#0f4c81" stopOpacity={0.02} />
+                      <stop offset="5%" stopColor="var(--chart-1)" stopOpacity={0.35} />
+                      <stop offset="95%" stopColor="var(--chart-1)" stopOpacity={0.02} />
                     </linearGradient>
                   </defs>
-                  <CartesianGrid strokeDasharray="3 3" stroke="#dbe8f2" />
-                  <XAxis dataKey="label" tick={{ fontSize: 12 }} />
-                  <YAxis tickFormatter={formatCompactMoney} tick={{ fontSize: 12 }} />
-                  <Tooltip formatter={(value) => formatCurrency(Number(value))} />
-                  <Area
-                    type="monotone"
-                    dataKey="nav"
-                    stroke="#0f4c81"
-                    strokeWidth={2}
-                    fillOpacity={1}
-                    fill="url(#navGradient)"
+                  <CartesianGrid strokeDasharray="3 3" stroke="var(--chart-grid)" />
+                  <XAxis dataKey="label" tick={{ fontSize: 12, fill: "var(--color-muted)" }} />
+                  <YAxis tickFormatter={formatCompactMoney} tick={{ fontSize: 12, fill: "var(--color-muted)" }} />
+                  <Tooltip
+                    formatter={(value) => formatCurrency(Number(value))}
+                    contentStyle={{
+                      backgroundColor: "var(--color-surface)",
+                      borderColor: "var(--color-border)",
+                      color: "var(--color-text)",
+                    }}
                   />
+                  <Area type="monotone" dataKey="nav" stroke="var(--chart-1)" strokeWidth={2} fillOpacity={1} fill="url(#navGradient)" />
                 </AreaChart>
               </ResponsiveContainer>
             </div>
@@ -180,7 +187,13 @@ export default function DashboardPage() {
                       <Cell key={entry.name} fill={entry.color} />
                     ))}
                   </Pie>
-                  <Tooltip />
+                  <Tooltip
+                    contentStyle={{
+                      backgroundColor: "var(--color-surface)",
+                      borderColor: "var(--color-border)",
+                      color: "var(--color-text)",
+                    }}
+                  />
                 </PieChart>
               </ResponsiveContainer>
             </div>
@@ -196,11 +209,18 @@ export default function DashboardPage() {
           <div className="h-72">
             <ResponsiveContainer width="100%" height="100%">
               <BarChart data={topInvestorsChart}>
-                <CartesianGrid strokeDasharray="3 3" stroke="#dbe8f2" />
-                <XAxis dataKey="name" tick={{ fontSize: 12 }} interval={0} angle={-10} height={48} />
-                <YAxis tickFormatter={formatCompactMoney} tick={{ fontSize: 12 }} />
-                <Tooltip formatter={(value) => formatCurrency(Number(value))} />
-                <Bar dataKey="balance" fill="#1b6ca8" radius={[8, 8, 0, 0]} />
+                <CartesianGrid strokeDasharray="3 3" stroke="var(--chart-grid)" />
+                <XAxis dataKey="name" tick={{ fontSize: 12, fill: "var(--color-muted)" }} interval={0} angle={-10} height={48} />
+                <YAxis tickFormatter={formatCompactMoney} tick={{ fontSize: 12, fill: "var(--color-muted)" }} />
+                <Tooltip
+                  formatter={(value) => formatCurrency(Number(value))}
+                  contentStyle={{
+                    backgroundColor: "var(--color-surface)",
+                    borderColor: "var(--color-border)",
+                    color: "var(--color-text)",
+                  }}
+                />
+                <Bar dataKey="balance" fill="var(--chart-2)" radius={[8, 8, 0, 0]} />
               </BarChart>
             </ResponsiveContainer>
           </div>

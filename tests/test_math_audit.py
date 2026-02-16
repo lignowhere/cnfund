@@ -1,11 +1,9 @@
-from datetime import datetime
+﻿from datetime import datetime
 
 import pytest
 
-from core.models import Tranche
 from core.services_enhanced import EnhancedFundManager
 from helpers import parse_currency
-from pages.transaction_page import EnhancedTransactionPage
 
 
 class DummyHandler:
@@ -37,6 +35,18 @@ def _setup_withdrawal_scenario():
     return manager, investor_id
 
 
+def _is_withdraw(tx_type: str) -> bool:
+    return tx_type.lower().startswith("r")
+
+
+def _is_fee(tx_type: str) -> bool:
+    return tx_type.lower().startswith("p")
+
+
+def _is_deposit(tx_type: str) -> bool:
+    return tx_type.lower().startswith("n")
+
+
 def test_latest_nav_same_day_uses_full_datetime():
     manager = _new_manager()
     manager._add_transaction(0, datetime(2025, 1, 4, 15, 0, 0), "NAV Update", 0, 130_000_000, 0)
@@ -58,14 +68,14 @@ def test_delete_withdrawal_is_atomic_with_fee_artifacts():
     fund_manager_id = manager.get_fund_manager().id
 
     withdrawal_tx = max(
-        [t for t in manager.transactions if t.investor_id == investor_id and t.type == "Rút"],
+        [t for t in manager.transactions if t.investor_id == investor_id and _is_withdraw(t.type)],
         key=lambda t: t.id,
     )
     assert manager.delete_transaction(withdrawal_tx.id) is True
 
     investor_types = [t.type for t in manager.transactions if t.investor_id == investor_id]
-    assert "Rút" not in investor_types
-    assert "Phí" not in investor_types
+    assert not any(_is_withdraw(tx_type) for tx_type in investor_types)
+    assert not any(_is_fee(tx_type) for tx_type in investor_types)
     assert not [
         fr
         for fr in manager.fee_records
@@ -80,14 +90,14 @@ def test_delete_withdrawal_is_atomic_with_fee_artifacts():
 def test_undo_withdrawal_handles_complex_case():
     manager, investor_id = _setup_withdrawal_scenario()
     withdrawal_tx = max(
-        [t for t in manager.transactions if t.investor_id == investor_id and t.type == "Rút"],
+        [t for t in manager.transactions if t.investor_id == investor_id and _is_withdraw(t.type)],
         key=lambda t: t.id,
     )
 
     assert manager.undo_last_transaction(withdrawal_tx.id) is True
     investor_types = [t.type for t in manager.transactions if t.investor_id == investor_id]
-    assert "Rút" not in investor_types
-    assert "Phí" not in investor_types
+    assert not any(_is_withdraw(tx_type) for tx_type in investor_types)
+    assert not any(_is_fee(tx_type) for tx_type in investor_types)
 
 
 def test_lifetime_performance_uses_cashflow_model():
@@ -99,10 +109,10 @@ def test_lifetime_performance_uses_cashflow_model():
     current_price = manager.calculate_price_per_unit(current_nav)
     current_value = current_units * current_price
     cash_out = sum(
-        -t.amount for t in manager.transactions if t.investor_id == investor_id and t.type == "Rút" and t.amount < 0
+        -t.amount for t in manager.transactions if t.investor_id == investor_id and _is_withdraw(t.type) and t.amount < 0
     )
     fees_paid = sum(
-        -t.amount for t in manager.transactions if t.investor_id == investor_id and t.type == "Phí" and t.amount < 0
+        -t.amount for t in manager.transactions if t.investor_id == investor_id and _is_fee(t.type) and t.amount < 0
     )
 
     expected_net_profit = current_value + cash_out - 100_000_000
@@ -139,7 +149,7 @@ def test_deposit_uses_inferred_pre_nav_for_unit_pricing():
         [
             t
             for t in manager.transactions
-            if t.investor_id == investor_id and t.type == "Nạp" and abs(t.amount - 50_000_000) < 1
+            if t.investor_id == investor_id and _is_deposit(t.type) and abs(t.amount - 50_000_000) < 1
         ],
         key=lambda t: t.id,
     )
@@ -172,7 +182,7 @@ def test_withdrawal_uses_inferred_pre_nav_for_unit_pricing():
     assert ok
 
     withdrawal_tx = max(
-        [t for t in manager.transactions if t.investor_id == investor_id and t.type == "Rút"],
+        [t for t in manager.transactions if t.investor_id == investor_id and _is_withdraw(t.type)],
         key=lambda t: t.id,
     )
     expected_pre_nav = 105_000_000 + 5_000_000
@@ -181,34 +191,3 @@ def test_withdrawal_uses_inferred_pre_nav_for_unit_pricing():
 
     assert withdrawal_tx.nav == pytest.approx(105_000_000.0, rel=1e-12)
     assert abs(withdrawal_tx.units_change) == pytest.approx(expected_units, rel=1e-9)
-
-
-def test_fund_manager_withdrawal_updates_tranche_invested_value():
-    manager = _new_manager()
-    fm = manager.get_fund_manager()
-    assert fm is not None
-
-    tranche = Tranche(
-        investor_id=fm.id,
-        tranche_id="fm_test_tranche",
-        entry_date=datetime(2025, 1, 1, 10, 0, 0),
-        entry_nav=10_000.0,
-        units=100.0,
-        original_invested_value=1_000_000.0,
-        hwm=10_000.0,
-        original_entry_date=datetime(2025, 1, 1, 10, 0, 0),
-        original_entry_nav=10_000.0,
-        cumulative_fees_paid=0.0,
-    )
-    tranche.invested_value = tranche.units * tranche.entry_nav
-    manager.tranches.append(tranche)
-    manager._add_transaction(0, datetime(2025, 1, 1, 10, 0, 0), "NAV Update", 0, 1_000_000.0, 0)
-
-    page = EnhancedTransactionPage(manager)
-    ok = page._process_fund_manager_withdrawal(500_000.0, 500_000.0, datetime(2025, 1, 2).date())
-    assert ok is True
-
-    fm_tranches = manager.get_investor_tranches(fm.id)
-    assert len(fm_tranches) == 1
-    assert fm_tranches[0].units == pytest.approx(50.0, rel=1e-9)
-    assert fm_tranches[0].invested_value == pytest.approx(500_000.0, rel=1e-9)

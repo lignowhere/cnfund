@@ -1,15 +1,17 @@
-"use client";
+﻿"use client";
 
 import * as Dialog from "@radix-ui/react-dialog";
 import { Eye, Loader2, Pencil, X } from "lucide-react";
 import { useMemo, useState } from "react";
 import { useInfiniteQuery, useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 
+import { MoneyInput } from "@/components/form/money-input";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { EmptyState, ErrorState, LoadingState } from "@/components/ui/states";
 import { apiClient } from "@/lib/api";
+import { digitsToNumber } from "@/lib/number-input";
 import type { InvestorCardDTO } from "@/lib/types";
 import { formatCurrency, formatDateTime, formatPercent } from "@/lib/utils";
 import { useAuthStore } from "@/store/auth-store";
@@ -27,6 +29,7 @@ function normalizeType(type: string) {
 export default function InvestorsPage() {
   const queryClient = useQueryClient();
   const token = useAuthStore((state) => state.accessToken);
+
   const [name, setName] = useState("");
   const [phone, setPhone] = useState("");
   const [email, setEmail] = useState("");
@@ -35,7 +38,8 @@ export default function InvestorsPage() {
   const [statusMessage, setStatusMessage] = useState<string | null>(null);
   const [viewMode, setViewMode] = useState<InvestorViewMode>("card");
   const [selectedInvestor, setSelectedInvestor] = useState<InvestorCardDTO | null>(null);
-  const [detailNavInput, setDetailNavInput] = useState("");
+  const [detailNavDigits, setDetailNavDigits] = useState("");
+  const [detailNavOverflow, setDetailNavOverflow] = useState(false);
   const [detailNavApplied, setDetailNavApplied] = useState<number | undefined>(undefined);
 
   const flagsQuery = useQuery({
@@ -128,9 +132,12 @@ export default function InvestorsPage() {
 
   function openInvestorDetail(item: InvestorCardDTO) {
     setSelectedInvestor(item);
-    setDetailNavInput("");
+    setDetailNavDigits("");
+    setDetailNavOverflow(false);
     setDetailNavApplied(undefined);
   }
+
+  const detailNavNumber = digitsToNumber(detailNavDigits);
 
   return (
     <div className="app-page">
@@ -142,11 +149,7 @@ export default function InvestorsPage() {
           <Input placeholder="Email" value={email} onChange={(e) => setEmail(e.target.value)} />
           <Input placeholder="Địa chỉ" value={address} onChange={(e) => setAddress(e.target.value)} />
         </div>
-        <Button
-          className="w-full"
-          onClick={() => createMutation.mutate()}
-          disabled={!name.trim() || createMutation.isPending}
-        >
+        <Button className="w-full" onClick={() => createMutation.mutate()} disabled={!name.trim() || createMutation.isPending}>
           {createMutation.isPending ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
           Tạo nhà đầu tư
         </Button>
@@ -157,7 +160,7 @@ export default function InvestorsPage() {
         <div className="flex flex-wrap items-center justify-between gap-2">
           <h2 className="section-title">Danh sách nhà đầu tư</h2>
           {tableViewEnabled ? (
-            <div className="hidden rounded-xl border border-[var(--color-border)] bg-white p-1 md:flex">
+            <div className="hidden rounded-xl border border-[var(--color-border)] bg-[var(--color-surface)] p-1 md:flex">
               <button
                 className={`rounded-lg px-3 py-1 text-xs font-medium ${
                   viewMode === "card"
@@ -206,7 +209,7 @@ export default function InvestorsPage() {
                 </thead>
                 <tbody>
                   {investorItems.map((item) => (
-                    <tr key={item.id} className="border-t border-[var(--color-border)] bg-white">
+                    <tr key={item.id} className="border-t border-[var(--color-border)] bg-[var(--color-surface)]">
                       <td className="px-3 py-2">#{item.id}</td>
                       <td className="px-3 py-2">{item.display_name}</td>
                       <td className="px-3 py-2">{item.email || "-"}</td>
@@ -215,11 +218,7 @@ export default function InvestorsPage() {
                         {formatCurrency(item.pnl)} ({formatPercent(item.pnl_percent)})
                       </td>
                       <td className="px-3 py-2">
-                        <Button
-                          variant="secondary"
-                          className="h-9 px-3 py-1 text-xs"
-                          onClick={() => openInvestorDetail(item)}
-                        >
+                        <Button variant="secondary" className="h-9 px-3 py-1 text-xs" onClick={() => openInvestorDetail(item)}>
                           <Eye className="mr-1 h-4 w-4" />
                           Chi tiết
                         </Button>
@@ -257,18 +256,11 @@ export default function InvestorsPage() {
                     ) : (
                       <p className="text-sm font-semibold">{item.display_name}</p>
                     )}
-                    <p className="text-xs text-[var(--color-muted)]">
-                      {item.phone || "Chưa có số điện thoại"}
-                    </p>
+                    <p className="text-xs text-[var(--color-muted)]">{item.phone || "Chưa có số điện thoại"}</p>
                     <p className="text-xs text-[var(--color-muted)]">{item.email || "Chưa có email"}</p>
                   </div>
                   <div className="flex gap-2">
-                    <Button
-                      variant="secondary"
-                      className="h-9 w-9 p-0"
-                      onClick={() => openInvestorDetail(item)}
-                      aria-label="Xem chi tiết"
-                    >
+                    <Button variant="secondary" className="h-9 w-9 p-0" onClick={() => openInvestorDetail(item)} aria-label="Xem chi tiết">
                       <Eye className="h-4 w-4" />
                     </Button>
                     <Button
@@ -282,11 +274,11 @@ export default function InvestorsPage() {
                   </div>
                 </div>
                 <div className="mt-3 grid grid-cols-2 gap-2 text-xs">
-                  <div className="rounded-lg bg-white px-2 py-2">
+                  <div className="rounded-lg bg-[var(--color-surface)] px-2 py-2">
                     <p className="text-[var(--color-muted)]">Giá trị hiện tại</p>
                     <p className="font-semibold">{formatCurrency(item.current_value)}</p>
                   </div>
-                  <div className="rounded-lg bg-white px-2 py-2">
+                  <div className="rounded-lg bg-[var(--color-surface)] px-2 py-2">
                     <p className="text-[var(--color-muted)]">Lãi / Lỗ</p>
                     <p className="font-semibold">
                       {formatCurrency(item.pnl)} ({formatPercent(item.pnl_percent)})
@@ -326,14 +318,15 @@ export default function InvestorsPage() {
         onOpenChange={(open) => {
           if (!open) {
             setSelectedInvestor(null);
-            setDetailNavInput("");
+            setDetailNavDigits("");
+            setDetailNavOverflow(false);
             setDetailNavApplied(undefined);
           }
         }}
       >
         <Dialog.Portal>
           <Dialog.Overlay className="fixed inset-0 z-50 bg-black/40 data-[state=open]:animate-[overlay-in_180ms_ease-out]" />
-          <Dialog.Content className="fixed inset-x-3 bottom-3 z-50 max-h-[90vh] overflow-y-auto rounded-2xl border border-[var(--color-border)] bg-white p-4 shadow-2xl data-[state=open]:animate-[fade-up_220ms_ease-out] md:inset-x-auto md:left-1/2 md:top-1/2 md:w-[820px] md:max-h-[88vh] md:-translate-x-1/2 md:-translate-y-1/2 md:p-5">
+          <Dialog.Content className="fixed inset-x-3 bottom-3 z-50 max-h-[90vh] overflow-y-auto rounded-2xl border border-[var(--color-border)] bg-[var(--color-surface)] p-4 shadow-2xl data-[state=open]:animate-[fade-up_220ms_ease-out] md:inset-x-auto md:left-1/2 md:top-1/2 md:w-[820px] md:max-h-[88vh] md:-translate-x-1/2 md:-translate-y-1/2 md:p-5">
             <div className="mb-3 flex items-center justify-between gap-2">
               <Dialog.Title className="section-title">
                 Chi tiết nhà đầu tư
@@ -347,17 +340,27 @@ export default function InvestorsPage() {
             </div>
 
             <div className="mb-3 grid gap-2 md:grid-cols-[1fr_auto]">
-              <Input
-                placeholder="NAV tùy chọn để tái tính báo cáo (ví dụ: 2500000000)"
-                value={detailNavInput}
-                onChange={(event) => setDetailNavInput(event.target.value)}
-              />
+              <div>
+                <MoneyInput
+                  value={detailNavDigits}
+                  onValueChange={(value) => {
+                    setDetailNavDigits(value.rawDigits);
+                    setDetailNavOverflow(value.isOverflow);
+                  }}
+                  placeholder="2,500,000,000"
+                />
+                <p className="input-helper">
+                  NAV tùy chọn: {detailNavNumber ? formatCurrency(detailNavNumber) : "Theo NAV hiện tại"}
+                </p>
+                {detailNavOverflow ? <p className="inline-error">NAV quá lớn (tối đa 15 chữ số).</p> : null}
+              </div>
               <Button
                 variant="secondary"
                 onClick={() => {
-                  const parsed = Number(detailNavInput);
-                  setDetailNavApplied(Number.isFinite(parsed) && parsed > 0 ? parsed : undefined);
+                  if (detailNavOverflow) return;
+                  setDetailNavApplied(detailNavNumber && detailNavNumber > 0 ? detailNavNumber : undefined);
                 }}
+                disabled={detailNavOverflow}
               >
                 Áp dụng NAV
               </Button>
@@ -457,9 +460,7 @@ export default function InvestorsPage() {
                       </p>
                       <p className="rounded-lg bg-[var(--color-surface-2)] px-2 py-2">
                         Báo cáo lúc:{" "}
-                        <span className="font-semibold">
-                          {formatDateTime(investorDetailQuery.data.report_date)}
-                        </span>
+                        <span className="font-semibold">{formatDateTime(investorDetailQuery.data.report_date)}</span>
                       </p>
                     </div>
                   </Card>
@@ -504,9 +505,7 @@ export default function InvestorsPage() {
                 </div>
 
                 <Card className="space-y-2">
-                  <h3 className="section-title">
-                    Lịch sử giao dịch ({investorDetailQuery.data.transactions.length})
-                  </h3>
+                  <h3 className="section-title">Lịch sử giao dịch ({investorDetailQuery.data.transactions.length})</h3>
                   {investorDetailQuery.data.transactions.length ? (
                     <div className="list-stagger space-y-2">
                       {investorDetailQuery.data.transactions.slice(0, 12).map((tx) => (
@@ -520,7 +519,7 @@ export default function InvestorsPage() {
                           </div>
                           <p className="text-xs text-[var(--color-muted)]">{formatDateTime(tx.date)}</p>
                           <p className="text-sm">
-                            Số tiền: {formatCurrency(tx.amount)} | NAV: {formatCurrency(tx.nav)} | Units:{" "}
+                            Số tiền: {formatCurrency(tx.amount)} | NAV: {formatCurrency(tx.nav)} | Units: {" "}
                             {tx.units_change.toFixed(6)}
                           </p>
                         </article>
@@ -542,8 +541,7 @@ export default function InvestorsPage() {
                         >
                           <p className="font-semibold">Tranche {tranche.tranche_id}</p>
                           <p className="text-xs text-[var(--color-muted)]">
-                            Ngày vào: {formatDateTime(tranche.entry_date)} | NAV vào:{" "}
-                            {formatCurrency(tranche.entry_nav)}
+                            Ngày vào: {formatDateTime(tranche.entry_date)} | NAV vào: {formatCurrency(tranche.entry_nav)}
                           </p>
                           <p className="text-xs text-[var(--color-muted)]">
                             Units: {tranche.units.toFixed(6)} | HWM: {formatCurrency(tranche.hwm)} | Vốn ban đầu:{" "}
@@ -589,4 +587,3 @@ export default function InvestorsPage() {
     </div>
   );
 }
-
