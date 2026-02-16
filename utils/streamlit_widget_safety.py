@@ -30,8 +30,8 @@ def safe_selectbox_int_value(options_dict: Dict[str, int], selected_display: str
     try:
         return safe_int_conversion(raw_value)
     except Exception as e:
-        st.error(f"⚠️ Selectbox value conversion error: {e}")
-        st.write(f"Debug: selected_display={repr(selected_display)}, raw_value={repr(raw_value)}")
+        st.error(f"⚠️ Lỗi chuyển đổi giá trị hộp chọn: {e}")
+        st.write(f"Gỡ lỗi: giá trị_hiển_thị={repr(selected_display)}, giá_trị_thô={repr(raw_value)}")
         return None
 
 
@@ -57,22 +57,22 @@ def safe_investor_id_from_selectbox(fund_manager, selected_display: str) -> Opti
         investor_id = safe_selectbox_int_value(options, selected_display)
         
         if investor_id is None or investor_id < 0:
-            st.error(f"❌ Invalid investor ID from selectbox: {repr(investor_id)}")
+            st.error(f"❌ ID nhà đầu tư không hợp lệ từ hộp chọn: {repr(investor_id)}")
             return None
             
         return investor_id
         
     except Exception as e:
-        st.error(f"🚨 Error getting investor ID from selectbox: {e}")
-        st.write("**Debug Information:**")
-        st.write(f"  - selected_display: {repr(selected_display)} (type: {type(selected_display).__name__})")
+        st.error(f"🚨 Lỗi lấy ID nhà đầu tư từ hộp chọn: {e}")
+        st.write("**Thông tin gỡ lỗi:**")
+        st.write(f"  - giá trị_hiển_thị: {repr(selected_display)} (kiểu: {type(selected_display).__name__})")
         try:
             options = fund_manager.get_investor_options()
-            st.write(f"  - options available: {list(options.keys())[:3]}...")  # Show first 3
+            st.write(f"  - các tùy chọn sẵn có: {list(options.keys())[:3]}...")  # Show first 3
             if selected_display in options:
-                st.write(f"  - raw value from options: {repr(options[selected_display])} (type: {type(options[selected_display]).__name__})")
+                st.write(f"  - giá trị thô từ tùy chọn: {repr(options[selected_display])} (kiểu: {type(options[selected_display]).__name__})")
         except Exception as debug_e:
-            st.write(f"  - Debug error: {debug_e}")
+            st.write(f"  - Lỗi gỡ lỗi: {debug_e}")
         return None
 
 
@@ -110,25 +110,25 @@ def debug_selectbox_behavior(options_dict: Dict[str, int], selected_display: str
     """
     Debug selectbox behavior in browser vs headless mode
     """
-    st.write("### 🔍 Selectbox Debug Information:")
-    st.write(f"**Selected display:** {repr(selected_display)} (type: {type(selected_display).__name__})")
+    st.write("### 🔍 Thông tin gỡ lỗi hộp chọn:")
+    st.write(f"**Giá trị hiển thị đã chọn:** {repr(selected_display)} (kiểu: {type(selected_display).__name__})")
     
     if selected_display in options_dict:
         raw_value = options_dict[selected_display]
-        st.write(f"**Raw value from dict:** {repr(raw_value)} (type: {type(raw_value).__name__})")
+        st.write(f"**Giá trị thô từ từ điển:** {repr(raw_value)} (kiểu: {type(raw_value).__name__})")
         
         converted_value = safe_int_conversion(raw_value)
-        st.write(f"**Converted value:** {repr(converted_value)} (type: {type(converted_value).__name__})")
+        st.write(f"**Giá trị sau chuyển đổi:** {repr(converted_value)} (kiểu: {type(converted_value).__name__})")
         
         # Test comparison operations
         try:
             test_result = converted_value == 1
-            st.write(f"**Test comparison (== 1):** {test_result}")
+            st.write(f"**Kiểm tra so sánh (== 1):** {test_result}")
         except Exception as e:
-            st.error(f"**Comparison failed:** {e}")
+            st.error(f"**So sánh thất bại:** {e}")
     else:
-        st.error(f"Selected display not found in options!")
-        st.write(f"Available options: {list(options_dict.keys())}")
+        st.error(f"Không tìm thấy giá trị hiển thị đã chọn trong danh sách tùy chọn!")
+        st.write(f"Các tùy chọn khả dụng: {list(options_dict.keys())}")
 
 
 def apply_streamlit_widget_fixes():

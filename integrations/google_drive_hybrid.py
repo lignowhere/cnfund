@@ -23,7 +23,7 @@ class HybridGoogleDriveManager:
         elif self.auth_method == "service_account":
             self._init_service_account_manager()
         else:
-            st.warning("⚠️ No Google Drive credentials found")
+            st.warning("⚠️ Không tìm thấy thông tin xác thực Google Drive")
     
     def _detect_auth_method(self) -> str:
         """Detect which authentication method to use"""
@@ -58,15 +58,15 @@ class HybridGoogleDriveManager:
             self.connected = self.manager.is_authenticated()
             
             if self.connected:
-                st.success("🏠 Personal Google Drive (OAuth) - Connected")
+                st.success("🏠 Google Drive cá nhân (OAuth) - Đã kết nối")
             else:
-                st.warning("🔐 Personal Google Drive - Authentication required")
-                st.info("📋 See oauth_setup_instructions.md for setup")
+                st.warning("🔐 Google Drive cá nhân - Cần xác thực")
+                st.info("📋 Xem oauth_setup_instructions.md để thiết lập")
                 
         except ImportError:
-            st.error("❌ OAuth libraries not installed. Run: pip install google-auth-oauthlib")
+            st.error("❌ Chưa cài thư viện OAuth. Chạy: pip install google-auth-oauthlib")
         except Exception as e:
-            st.error(f"❌ OAuth manager failed: {e}")
+            st.error(f"❌ Trình quản lý OAuth lỗi: {e}")
     
     def _init_service_account_manager(self):
         """Initialize service account manager for business account"""
@@ -76,12 +76,12 @@ class HybridGoogleDriveManager:
             self.connected = self.manager.connected
             
             if self.connected:
-                st.success("🏢 Business Google Drive (Service Account) - Connected")
+                st.success("🏢 Google Drive doanh nghiệp (Tài khoản dịch vụ) - Đã kết nối")
             else:
-                st.error("❌ Business Google Drive - Connection failed")
+                st.error("❌ Google Drive doanh nghiệp - Kết nối thất bại")
                 
         except Exception as e:
-            st.error(f"❌ Service account manager failed: {e}")
+            st.error(f"❌ Trình quản lý tài khoản dịch vụ lỗi: {e}")
     
     def test_connection(self):
         """Test connection using active manager"""
@@ -90,19 +90,19 @@ class HybridGoogleDriveManager:
         
         return {
             'connected': False,
-            'errors': ['No manager available']
+            'errors': ['Không có trình quản lý khả dụng']
         }
     
     def upload_to_drive(self, file_buffer, filename: str) -> bool:
         """Upload file using active manager"""
         if not self.connected or not self.manager:
-            st.error(f"❌ Google Drive not connected (method: {self.auth_method})")
+            st.error(f"❌ Google Drive chưa kết nối (phương thức: {self.auth_method})")
             return False
         
         try:
             return self.manager.upload_to_drive(file_buffer, filename)
         except Exception as e:
-            st.error(f"❌ Upload failed: {e}")
+            st.error(f"❌ Tải lên thất bại: {e}")
             return False
     
     def export_to_excel_buffer(self):
@@ -136,7 +136,7 @@ class HybridGoogleDriveManager:
             with open(local_file, 'wb') as f:
                 f.write(buffer.getvalue())
             
-            st.success(f"💾 Local backup: {local_file}")
+            st.success(f"💾 Sao lưu cục bộ: {local_file}")
             
             # Try cloud backup
             if self.connected:
@@ -144,17 +144,17 @@ class HybridGoogleDriveManager:
                 cloud_success = self.upload_to_drive(buffer, filename)
                 
                 if cloud_success:
-                    st.success(f"☁️ Cloud backup successful ({self.auth_method})")
+                    st.success(f"☁️ Sao lưu đám mây thành công ({self.auth_method})")
                     return True
                 else:
-                    st.warning(f"⚠️ Cloud backup failed, but local backup saved")
+                    st.warning(f"⚠️ Sao lưu đám mây thất bại, nhưng đã lưu bản sao cục bộ")
                     return True  # Still success because local backup worked
             else:
-                st.info("📁 Local backup only - cloud connection not available")
+                st.info("📁 Chỉ sao lưu cục bộ - kết nối đám mây không khả dụng")
                 return True
                 
         except Exception as e:
-            st.error(f"❌ Export failed: {e}")
+            st.error(f"❌ Xuất dữ liệu thất bại: {e}")
             return False
     
     def get_status_info(self) -> dict:

@@ -1,0 +1,21 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(python test_csv_system.py:*)",
+      "Bash(python:*)",
+      "Bash(pip install:*)",
+      "Bash(timeout:*)",
+      "Bash(find:*)",
+      "Read(//d/Đầu tư/**)",
+      "Bash(dir:*)",
+      "Read(//d/AI/rd_agent/**)",
+      "Read(//d/**)",
+      "Bash(git init:*)",
+      "Bash(git add:*)",
+      "Bash(git commit:*)",
+      "Bash(conda create:*)"
+    ],
+    "deny": [],
+    "ask": []
+  }
+}

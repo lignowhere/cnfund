@@ -22,7 +22,7 @@ class SaveOptimizer:
             # Step 1: Quick validation (don't do full validation if not needed)
             validation_start = time.time()
             if not self._quick_data_check():
-                return False, "Quick data validation failed", timing_info
+                return False, "Kiểm tra dữ liệu nhanh thất bại", timing_info
             timing_info['validation'] = time.time() - validation_start
             
             # Step 2: Prepare data for batch operations
@@ -44,16 +44,16 @@ class SaveOptimizer:
             total_time = time.time() - start_time
             timing_info['total'] = total_time
             
-            message = f"Save completed in {total_time:.1f}s"
+            message = f"Lưu hoàn tất trong {total_time:.1f}s"
             if total_time > 5:
-                message += " (slower than expected)"
+                message += " (chậm hơn kỳ vọng)"
             
             return success, message, timing_info
             
         except Exception as e:
             total_time = time.time() - start_time
             timing_info['total'] = total_time
-            return False, f"Save failed after {total_time:.1f}s: {str(e)}", timing_info
+            return False, f"Lưu thất bại sau {total_time:.1f}s: {str(e)}", timing_info
     
     def _quick_data_check(self) -> bool:
         """Quick data consistency check (not full validation)"""
@@ -97,7 +97,7 @@ class SaveOptimizer:
                 data_batches['fee_records']
             )
         except Exception as e:
-            st.error(f"Batch save failed: {str(e)}")
+            st.error(f"Lưu theo lô thất bại: {str(e)}")
             return False
     
     def _post_save_cleanup(self):
@@ -123,20 +123,20 @@ class AsyncSaveManager:
         
         try:
             # Step 1: Validation
-            status_text.text("🔍 Validating data...")
+            status_text.text("🔍 Đang kiểm tra dữ liệu...")
             progress_bar.progress(20)
             
             if not self.save_optimizer._quick_data_check():
-                status_text.error("❌ Data validation failed")
+                status_text.error("❌ Kiểm tra dữ liệu thất bại")
                 return False
             
             # Step 2: Preparation
-            status_text.text("📋 Preparing data...")
+            status_text.text("📋 Đang chuẩn bị dữ liệu...")
             progress_bar.progress(40)
             time.sleep(0.1)  # Small delay for UI feedback
             
             # Step 3: Save execution
-            status_text.text("💾 Saving to database...")
+            status_text.text("💾 Đang lưu vào cơ sở dữ liệu...")
             progress_bar.progress(60)
             
             success, message, timing_info = self.save_optimizer.optimized_save_all()
@@ -145,7 +145,7 @@ class AsyncSaveManager:
             
             if success:
                 # Step 4: Finalization
-                status_text.text("✅ Finalizing...")
+                status_text.text("✅ Đang hoàn tất...")
                 progress_bar.progress(100)
                 time.sleep(0.2)
                 
@@ -164,7 +164,7 @@ class AsyncSaveManager:
                 
         except Exception as e:
             progress_bar.empty()
-            status_text.error(f"❌ Save error: {str(e)}")
+            status_text.error(f"❌ Lỗi lưu: {str(e)}")
             return False
     
     def _show_save_performance(self, timing_info: Dict[str, float]):
@@ -172,19 +172,26 @@ class AsyncSaveManager:
         total_time = timing_info.get('total', 0)
         
         if total_time > 8:
-            st.sidebar.error(f"🔴 Very slow save: {total_time:.1f}s")
+            st.sidebar.error(f"🔴 Lưu rất chậm: {total_time:.1f}s")
         elif total_time > 4:
-            st.sidebar.warning(f"🟡 Slow save: {total_time:.1f}s")
+            st.sidebar.warning(f"🟡 Lưu chậm: {total_time:.1f}s")
         else:
-            st.sidebar.success(f"🟢 Save: {total_time:.1f}s")
+            st.sidebar.success(f"🟢 Lưu: {total_time:.1f}s")
         
         # Detailed breakdown for slow saves
         if total_time > 3:
-            with st.sidebar.expander("📊 Save Performance Breakdown"):
+            with st.sidebar.expander("📊 Phân Rã Hiệu Suất Lưu"):
+                step_labels = {
+                    'validation': 'Kiểm tra dữ liệu',
+                    'preparation': 'Chuẩn bị dữ liệu',
+                    'save_execution': 'Thực thi lưu',
+                    'cleanup': 'Dọn dẹp sau lưu'
+                }
                 for step, duration in timing_info.items():
                     if step != 'total':
                         percentage = (duration / total_time) * 100
-                        st.write(f"**{step.title()}:** {duration:.2f}s ({percentage:.0f}%)")
+                        label = step_labels.get(step, step)
+                        st.write(f"**{label}:** {duration:.2f}s ({percentage:.0f}%)")
 
 class TransactionOptimizer:
     """Optimize transaction processing for better performance"""
@@ -204,7 +211,7 @@ class TransactionOptimizer:
             elif transaction_type == 'nav_update':
                 success, message = self.fund_manager.process_nav_update(**kwargs)
             else:
-                return False, f"Unknown transaction type: {transaction_type}"
+                return False, f"Loại giao dịch không xác định: {transaction_type}"
             
             if success:
                 # Mark data as changed but don't save immediately
@@ -214,20 +221,20 @@ class TransactionOptimizer:
                 st.success(f"✅ {message}")
                 
                 # Auto-save in background (optional)
-                if st.checkbox("🔄 Auto-save after transaction", value=True):
-                    with st.spinner("💾 Auto-saving..."):
+                if st.checkbox("🔄 Tự động lưu sau giao dịch", value=True):
+                    with st.spinner("💾 Đang tự động lưu..."):
                         save_success = self.async_save_manager.save_with_progress()
                         if save_success:
-                            st.toast("💾 Data saved automatically!", icon="✅")
+                            st.toast("💾 Dữ liệu đã được tự động lưu!", icon="✅")
                         else:
-                            st.warning("⚠️ Auto-save failed. Please save manually.")
+                            st.warning("⚠️ Tự động lưu thất bại. Vui lòng lưu thủ công.")
                 
                 return True, message
             else:
                 return False, message
                 
         except Exception as e:
-            return False, f"Transaction processing failed: {str(e)}"
+            return False, f"Xử lý giao dịch thất bại: {str(e)}"
 
 # === INTEGRATION FUNCTIONS ===
 
@@ -243,15 +250,21 @@ def enhance_save_operations(fund_manager):
         if timing_info:
             total_time = timing_info.get('total', 0)
             if total_time > 5:
-                st.sidebar.error(f"🔴 Save: {total_time:.1f}s")
+                st.sidebar.error(f"🔴 Lưu: {total_time:.1f}s")
                 
                 # Show breakdown for slow saves
-                with st.sidebar.expander("📊 Save Breakdown"):
+                with st.sidebar.expander("📊 Phân Rã Tác Vụ Lưu"):
+                    step_labels = {
+                        'validation': 'Kiểm tra dữ liệu',
+                        'preparation': 'Chuẩn bị dữ liệu',
+                        'save_execution': 'Thực thi lưu',
+                        'cleanup': 'Dọn dẹp sau lưu'
+                    }
                     for step, duration in timing_info.items():
                         if step != 'total':
-                            st.write(f"{step}: {duration:.2f}s")
+                            st.write(f"{step_labels.get(step, step)}: {duration:.2f}s")
             else:
-                st.sidebar.success(f"🟢 Save: {total_time:.1f}s")
+                st.sidebar.success(f"🟢 Lưu: {total_time:.1f}s")
         
         return success
     
@@ -267,15 +280,15 @@ def smart_save_handler(fund_manager):
     
     # Show save options
     st.sidebar.markdown("---")
-    st.sidebar.subheader("💾 Save Options")
+    st.sidebar.subheader("💾 Tùy Chọn Lưu")
     
     save_mode = st.sidebar.radio(
-        "Save Mode",
-        ["🚀 Fast Save", "📊 Detailed Save", "🔧 Manual Control"],
+        "Chế độ lưu",
+        ["🚀 Lưu nhanh", "📊 Lưu chi tiết", "🔧 Điều khiển thủ công"],
         key="save_mode"
     )
     
-    if save_mode == "🚀 Fast Save":
+    if save_mode == "🚀 Lưu nhanh":
         # Automatic fast save
         save_optimizer = SaveOptimizer(fund_manager)
         success, message, timing = save_optimizer.optimized_save_all()
@@ -285,36 +298,36 @@ def smart_save_handler(fund_manager):
         else:
             st.sidebar.error(f"❌ {message}")
     
-    elif save_mode == "📊 Detailed Save":
+    elif save_mode == "📊 Lưu chi tiết":
         # Save with progress and detailed feedback
-        if st.sidebar.button("💾 Save with Progress", width="stretch"):
+        if st.sidebar.button("💾 Lưu Kèm Tiến Trình", width="stretch"):
             async_save_manager = AsyncSaveManager(fund_manager)
             success = async_save_manager.save_with_progress()
             
             if success:
-                st.sidebar.success("✅ Detailed save completed")
+                st.sidebar.success("✅ Lưu chi tiết hoàn tất")
             else:
-                st.sidebar.error("❌ Detailed save failed")
+                st.sidebar.error("❌ Lưu chi tiết thất bại")
     
-    elif save_mode == "🔧 Manual Control":
+    elif save_mode == "🔧 Điều khiển thủ công":
         # Manual save control
         col1, col2 = st.sidebar.columns(2)
         
         with col1:
-            if st.button("⚡ Quick", width="stretch"):
+            if st.button("⚡ Nhanh", width="stretch"):
                 success = fund_manager.save_data()
                 if success:
-                    st.sidebar.success("✅ Quick save")
+                    st.sidebar.success("✅ Lưu nhanh thành công")
                 else:
-                    st.sidebar.error("❌ Quick save failed")
+                    st.sidebar.error("❌ Lưu nhanh thất bại")
         
         with col2:
-            if st.button("🔍 Validate", width="stretch"):
+            if st.button("🔍 Kiểm tra", width="stretch"):
                 validation = fund_manager.validate_data_consistency()
                 if validation['valid']:
-                    st.sidebar.success("✅ Data valid")
+                    st.sidebar.success("✅ Dữ liệu hợp lệ")
                 else:
-                    st.sidebar.error("❌ Data invalid")
+                    st.sidebar.error("❌ Dữ liệu không hợp lệ")
 
 # === DATABASE CONNECTION OPTIMIZATION ===
 
@@ -324,7 +337,7 @@ def optimize_database_connection(data_handler):
     if not hasattr(data_handler, 'engine') or not data_handler.engine:
         # For CSV handler, no database optimization needed
         if hasattr(data_handler, '__class__') and 'CSV' in data_handler.__class__.__name__:
-            st.sidebar.info("📁 CSV Storage - No database optimization needed")
+            st.sidebar.info("📁 Lưu trữ CSV - Không cần tối ưu cơ sở dữ liệu")
         return False
     
     try:
@@ -332,7 +345,7 @@ def optimize_database_connection(data_handler):
         current_pool_size = getattr(data_handler.engine.pool, 'size', lambda: 5)()
         current_max_overflow = getattr(data_handler.engine.pool, 'max_overflow', lambda: 10)()
         
-        st.sidebar.info(f"🔗 DB Pool: {current_pool_size} + {current_max_overflow} overflow")
+        st.sidebar.info(f"🔗 Pool DB: {current_pool_size} + {current_max_overflow} tràn")
         
         # Show connection health
         try:
@@ -345,17 +358,17 @@ def optimize_database_connection(data_handler):
             ping_time = time.time() - start_time
             
             if ping_time > 1.0:
-                st.sidebar.error(f"🔴 DB ping: {ping_time:.2f}s")
+                st.sidebar.error(f"🔴 Ping DB: {ping_time:.2f}s")
             elif ping_time > 0.5:
-                st.sidebar.warning(f"🟡 DB ping: {ping_time:.2f}s")
+                st.sidebar.warning(f"🟡 Ping DB: {ping_time:.2f}s")
             else:
-                st.sidebar.success(f"🟢 DB ping: {ping_time:.2f}s")
+                st.sidebar.success(f"🟢 Ping DB: {ping_time:.2f}s")
                 
         except Exception as e:
-            st.sidebar.error(f"🔴 DB ping failed: {str(e)[:30]}")
+            st.sidebar.error(f"🔴 Ping DB thất bại: {str(e)[:30]}")
         
         return True
         
     except Exception as e:
-        st.sidebar.warning(f"⚠️ DB optimization unavailable: {str(e)[:30]}")
+        st.sidebar.warning(f"⚠️ Tối ưu DB không khả dụng: {str(e)[:30]}")
         return False

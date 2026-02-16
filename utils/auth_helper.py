@@ -20,7 +20,7 @@ def show_admin_status():
     """
     Show local system status - no authentication needed
     """
-    st.success("🏠 Local System - Full Access Enabled")
+    st.success("🏠 Hệ thống cục bộ - Đã bật toàn quyền truy cập")
 
 def is_admin_authenticated():
     """

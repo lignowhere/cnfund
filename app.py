@@ -6,6 +6,7 @@ import sys
 import time
 from pathlib import Path
 from datetime import datetime, date
+from helpers import display_runtime_status_vi
 
 # Initialize timezone management early
 from utils.timezone_manager import TimezoneManager
@@ -51,30 +52,83 @@ def load_config():
 
 @st.cache_resource
 def load_data_handler():
-    """Load and cache data handler - Always use Google Drive for unified storage"""
+    """Load and cache data handler with Drive-first strategy."""
+    def _load_csv_handler():
+        from core.csv_data_handler import CSVDataHandler
+        csv_handler = CSVDataHandler()
+        return csv_handler if getattr(csv_handler, "connected", False) else None
+
+    def _has_business_data(handler) -> bool:
+        """Check if a data source has meaningful business data."""
+        if not handler:
+            return False
+        try:
+            inv = handler.load_investors()
+            tr = handler.load_tranches()
+            tx = handler.load_transactions()
+            return (len(inv) > 1) or (len(tr) > 0) or (len(tx) > 0)
+        except Exception:
+            return False
+
+    cloud_mode = is_cloud_environment()
+
     try:
-        # ✅ UNIFIED: Always use Google Drive (local + cloud)
+        # Ưu tiên Google Drive
         from core.drive_data_handler import DriveBackedDataManager
         data_handler = DriveBackedDataManager()
 
-        if not hasattr(data_handler, 'connected') or not data_handler.connected:
-            st.warning("⚠️ Google Drive chưa kết nối - cần setup OAuth")
-            st.info("📖 Xem hướng dẫn setup tại: docs/STREAMLIT_CLOUD_SETUP.md")
-            st.info("💡 Chạy local: `python scripts/setup_oauth.py` để authenticate")
+        if cloud_mode and ((not hasattr(data_handler, 'connected')) or (not data_handler.connected)):
+            st.error("Google Drive is required in cloud mode. CSV fallback is disabled.")
+            st.info("Setup guide: docs/STREAMLIT_CLOUD_SETUP.md")
             return None
 
+        if (not cloud_mode) and ((not hasattr(data_handler, 'connected')) or (not data_handler.connected)):
+            st.warning("⚠️ Google Drive chưa kết nối. Chuyển sang dữ liệu cục bộ (CSV).")
+            csv_handler = _load_csv_handler()
+            if hasattr(csv_handler, 'connected') and csv_handler.connected:
+                st.session_state.active_data_source = "csv"
+                if 'drive_handler_loaded' not in st.session_state:
+                    st.sidebar.info("💾 Đang dùng lưu trữ cục bộ (CSV)")
+                return csv_handler
+            st.info("📖 Xem hướng dẫn thiết lập tại: docs/STREAMLIT_CLOUD_SETUP.md")
+            st.info("💡 Chạy trên máy cục bộ: `python scripts/setup_oauth.py` để xác thực")
+            return None
+
+        # Drive connected: ưu tiên dữ liệu Drive.
+        # Chỉ fallback CSV khi Drive rỗng nhưng local có dữ liệu.
+        csv_handler = _load_csv_handler()
+        if (not cloud_mode) and csv_handler and _has_business_data(csv_handler) and not _has_business_data(data_handler):
+            st.warning("⚠️ Dữ liệu Google Drive đang rỗng. Chuyển sang dữ liệu cục bộ (CSV).")
+            st.session_state.active_data_source = "csv"
+            st.sidebar.info("💾 Đang dùng lưu trữ cục bộ (CSV)")
+            return csv_handler
+
         # Show success message for first-time users
-        is_cloud = is_cloud_environment()
-        env_label = "Cloud" if is_cloud else "Local"
+        env_label = display_runtime_status_vi("Cloud" if cloud_mode else "Local")
 
         if 'drive_handler_loaded' not in st.session_state:
-            st.sidebar.success(f"✅ Sử dụng Google Drive Storage ({env_label})")
+            st.sidebar.success(f"✅ Sử dụng lưu trữ Google Drive ({env_label})")
             st.session_state.drive_handler_loaded = True
 
+        st.session_state.active_data_source = "drive"
         return data_handler
 
     except Exception as e:
-        st.error(f"❌ Lỗi khởi tạo Data Handler: {str(e)}")
+        if cloud_mode:
+            st.error(f"Drive initialization error: {str(e)}")
+            st.error("Cloud mode does not allow CSV fallback.")
+            st.info("Setup guide: docs/STREAMLIT_CLOUD_SETUP.md")
+            return None
+        st.error(f"❌ Lỗi khởi tạo Google Drive: {str(e)}")
+        st.info("💡 Thử chuyển sang dữ liệu cục bộ (CSV).")
+        try:
+            csv_handler = _load_csv_handler()
+            if hasattr(csv_handler, 'connected') and csv_handler.connected:
+                st.session_state.active_data_source = "csv"
+                st.sidebar.info("💾 Đang dùng lưu trữ cục bộ (CSV)")
+                return csv_handler
+        except Exception as csv_e:
+            st.error(f"❌ Không thể khởi tạo dữ liệu cục bộ: {csv_e}")
         st.info("💡 Đảm bảo đã cài đặt: `pip install google-auth-oauthlib googleapiclient`")
         return None
 
@@ -83,6 +137,14 @@ def load_fund_manager_class():
     """Load fund manager class"""
     from core.services_enhanced import EnhancedFundManager
     return EnhancedFundManager
+
+@st.cache_resource
+def load_security_manager():
+    """Load security manager for role-based access control."""
+    from utils.security_manager import SecurityManager
+    security_manager = SecurityManager()
+    security_manager.edit_pages = EDIT_PAGES
+    return security_manager
 
 @st.cache_resource
 def load_styles():
@@ -232,13 +294,13 @@ def cloud_optimized_refresh():
 PAGE_ADD_INVESTOR = "👥 Thêm Nhà Đầu Tư"
 PAGE_EDIT_INVESTOR = "✏️ Sửa Thông Tin NĐT"
 PAGE_ADD_TRANSACTION = "💸 Thêm Giao Dịch"
-PAGE_ADD_NAV = "📈 Thêm Total NAV"
-PAGE_FM_WITHDRAWAL = "🛠 FM Withdrawal"
+PAGE_ADD_NAV = "📈 Cập Nhật NAV"
+PAGE_FM_WITHDRAWAL = "🛠 Rút Vốn Fund Manager"
 PAGE_MANAGE_TRANSACTIONS = "🔧 Quản Lý Giao Dịch"
 PAGE_CALCULATE_FEES = "🧮 Tính Toán Phí"
 PAGE_CALCULATE_INDIVIDUAL_FEE = "📋 Tính Phí Riêng"
 PAGE_REPORTS = "📊 Báo Cáo & Thống Kê"
-PAGE_BACKUP = "💾 Backup Dashboard"
+PAGE_BACKUP = "💾 Bảng Điều Khiển Sao Lưu"
 
 ALL_PAGES = [
     PAGE_REPORTS, PAGE_BACKUP, PAGE_ADD_INVESTOR, PAGE_EDIT_INVESTOR, 
@@ -248,7 +310,14 @@ ALL_PAGES = [
 ]
 
 EDIT_PAGES = [
-    # No pages require authentication - local system doesn't need password protection
+    PAGE_ADD_INVESTOR,
+    PAGE_EDIT_INVESTOR,
+    PAGE_ADD_TRANSACTION,
+    PAGE_ADD_NAV,
+    PAGE_FM_WITHDRAWAL,
+    PAGE_MANAGE_TRANSACTIONS,
+    PAGE_CALCULATE_FEES,
+    PAGE_CALCULATE_INDIVIDUAL_FEE,
 ]
 
 # === MAIN APPLICATION CLASS ===
@@ -288,12 +357,26 @@ class FundManagementApp:
         
         # Load styles
         load_styles()
+
+        # Load security manager for role-based access.
+        self.security_manager = self.initialize_security_manager()
         
         # Initialize or load from cache
         if self.should_reinitialize():
             self.initialize_components()
         else:
             self.load_from_session()
+
+    def initialize_security_manager(self):
+        """Initialize security manager and sync protected pages."""
+        try:
+            security_manager = load_security_manager()
+            security_manager.edit_pages = EDIT_PAGES
+            return security_manager
+        except Exception as e:
+            st.error(f"Security initialization failed: {e}")
+            st.info("Cloud mode requires `ADMIN_PASSWORD` in Streamlit secrets.")
+            st.stop()
     
     def should_reinitialize(self) -> bool:
         """Check if we need to reinitialize components"""
@@ -313,6 +396,24 @@ class FundManagementApp:
                 
             if hasattr(data_handler, 'connected') and not data_handler.connected:
                 return True
+
+            # Self-heal: session đang rỗng nhưng local CSV có dữ liệu thật.
+            if (
+                len(getattr(fund_manager, 'transactions', [])) == 0
+                and len(getattr(fund_manager, 'tranches', [])) == 0
+            ):
+                try:
+                    from core.csv_data_handler import CSVDataHandler
+                    csv_handler = CSVDataHandler()
+                    local_has_data = (
+                        len(csv_handler.load_investors()) > 1
+                        or len(csv_handler.load_tranches()) > 0
+                        or len(csv_handler.load_transactions()) > 0
+                    )
+                    if local_has_data:
+                        return True
+                except Exception:
+                    pass
             
             # Check if last initialization was too long ago (optional)
             last_init = st.session_state.get('last_init', 0)
@@ -320,7 +421,7 @@ class FundManagementApp:
                 return True
                 
         except Exception as e:
-            st.warning(f"⚠️ Lỗi kiểm tra component: {str(e)}")
+            st.warning(f"⚠️ Lỗi kiểm tra thành phần: {str(e)}")
             return True
         
         return False
@@ -332,28 +433,28 @@ class FundManagementApp:
             status = st.empty()
 
             # Step 1: Data handler
-            status.info("🔌 Connecting to database...")
+            status.info("🔌 Đang kết nối cơ sở dữ liệu...")
             self.data_handler = load_data_handler()
             if not self.data_handler or not getattr(self.data_handler, "connected", False):
-                st.error("❌ Không thể kết nối Database. Vui lòng kiểm tra cấu hình.")
+                st.error("❌ Không thể kết nối cơ sở dữ liệu. Vui lòng kiểm tra cấu hình.")
                 self.render_error_recovery()
                 st.stop()
             progress.progress(25)
 
             # Step 2: Fund manager
-            status.info("📦 Loading fund manager...")
+            status.info("📦 Đang tải Fund Manager...")
             FundManagerClass = load_fund_manager_class()
             self.fund_manager = FundManagerClass(self.data_handler)
 
             # ++++++ THÊM 2 DÒNG QUAN TRỌNG NÀY ++++++
-            status.info("📂 Loading data from database...")
+            status.info("📂 Đang tải dữ liệu từ cơ sở dữ liệu...")
             self.fund_manager.load_data()  # Chủ động tải dữ liệu
             self.fund_manager._ensure_fund_manager_exists() # Đảm bảo có Fund Manager
             # +++++++++++++++++++++++++++++++++++++++
 
             # Start auto backup service
             try:
-                status.info("🚀 Starting auto backup service...")
+                status.info("🚀 Đang khởi động dịch vụ sao lưu tự động...")
                 start_auto_backup_service(self.fund_manager)
                 print('✅ Auto backup service started')
             except Exception as e:
@@ -362,7 +463,7 @@ class FundManagementApp:
             progress.progress(45)
 
             # Warm cache with frequently accessed data
-            status.info("💾 Warming up cache...")
+            status.info("💾 Đang làm nóng bộ nhớ đệm...")
             try:
                 warm_cache(self.fund_manager)
                 print('✅ Cache warming completed')
@@ -372,18 +473,18 @@ class FundManagementApp:
             progress.progress(50)
 
             # Step 3: Optimizations
-            status.info("⚡ Applying optimizations...")
+            status.info("⚡ Đang áp dụng tối ưu hóa...")
             optimizations = load_optimizations()
             self.apply_optimizations(optimizations)
             progress.progress(65)
 
             # Step 4: Load pages
-            status.info("📑 Loading pages...")
+            status.info("📑 Đang tải các trang...")
             self.pages = load_page_components()
             progress.progress(80)
 
             # Step 5: Sidebar
-            status.info("🧭 Initializing sidebar...")
+            status.info("🧭 Đang khởi tạo thanh bên...")
             from ui.sidebar_manager import SidebarManager
             self.sidebar_manager = SidebarManager(
                 self.fund_manager,
@@ -393,7 +494,7 @@ class FundManagementApp:
             progress.progress(90)
 
             # Step 6: Complete initialization (no authentication needed)
-            status.info("✅ Finalizing local system setup...")
+            status.info("✅ Đang hoàn tất thiết lập hệ thống cục bộ...")
             progress.progress(100)
 
             # Save to session
@@ -448,10 +549,10 @@ class FundManagementApp:
                 st.rerun()
         
         with col2:
-            if st.button("🧹 Xóa Cache", key="clear_cache"):
+            if st.button("🧹 Xóa Bộ Nhớ Đệm", key="clear_cache"):
                 self.clear_session_cache()
                 clear_app_cache()
-                st.success("✅ Đã xóa cache")
+                st.success("✅ Đã xóa bộ nhớ đệm")
                 st.rerun()
         
         with col3:
@@ -469,11 +570,15 @@ class FundManagementApp:
             if key in st.session_state:
                 del st.session_state[key]
     
-    # Authentication removed - local system doesn't need password protection
-    
     def render_main_content(self, page: str):
         """Render main content based on selected page"""
-        # No authentication needed for local system - all pages accessible
+        if not hasattr(self, 'security_manager'):
+            self.security_manager = self.initialize_security_manager()
+
+        if not self.security_manager.check_page_access(page):
+            st.warning("🔒 Trang này yêu cầu quyền quản trị để chỉnh sửa dữ liệu.")
+            self.security_manager.render_access_denied()
+            return
         
         try:
             # Render appropriate page
@@ -522,7 +627,7 @@ class FundManagementApp:
                 if st.button(f"🔄 Thử lại '{page}'", key="retry_page"):
                     st.rerun()
             with col2:
-                if st.button("🧹 Xóa Cache", key="clear_page_cache"):
+                if st.button("🧹 Xóa Bộ Nhớ Đệm", key="clear_page_cache"):
                     clear_app_cache()
                     st.rerun()
             with col3:
@@ -584,9 +689,11 @@ class FundManagementApp:
         try:
             # Kiểm tra xem các component đã sẵn sàng chưa
             if not hasattr(self, 'sidebar_manager') or not hasattr(self, 'fund_manager'):
-                st.error("❌ App chưa được khởi tạo đúng cách")
+                st.error("❌ Ứng dụng chưa được khởi tạo đúng cách")
                 self.render_error_recovery()
                 return
+            if not hasattr(self, 'security_manager'):
+                self.security_manager = self.initialize_security_manager()
 
             # Navigation optimization - add loading indicator
             NavigationOptimizer.add_navigation_loading_indicator()
@@ -597,6 +704,11 @@ class FundManagementApp:
             # Render sidebar and get selected page (fast - cached)
             nav_start = NavigationOptimizer.track_navigation_time("sidebar")
             selected_page = self.sidebar_manager.render()
+            source = st.session_state.get("active_data_source")
+            if source == "drive":
+                st.sidebar.caption("Nguồn dữ liệu: Google Drive")
+            elif source == "csv":
+                st.sidebar.caption("Nguồn dữ liệu: CSV cục bộ")
             NavigationOptimizer.record_navigation_time("sidebar", nav_start)
 
             # Render main content
@@ -627,21 +739,21 @@ class FundManagementApp:
                     st.rerun()
             
             with col2:
-                if st.button("🧹 Xóa toàn bộ Cache"):
+                if st.button("🧹 Xóa toàn bộ bộ nhớ đệm"):
                     self.clear_session_cache()
                     clear_app_cache()
-                    st.success("✅ Đã xóa cache")
+                    st.success("✅ Đã xóa bộ nhớ đệm")
                     time.sleep(1)
                     st.rerun()
             
             with col3:
-                if st.button("🛠 Thông tin Debug"):
-                    st.write("**Session State Keys:**", list(st.session_state.keys()))
-                    st.write("**App Start Time:**", st.session_state.get('app_start_time', 'Unknown'))
+                if st.button("🛠 Thông Tin Gỡ Lỗi"):
+                    st.write("**Khóa trạng thái phiên:**", list(st.session_state.keys()))
+                    st.write("**Thời Điểm Khởi Động Ứng Dụng:**", st.session_state.get('app_start_time', 'Không xác định'))
                     if 'fund_manager' in st.session_state:
-                        st.write("**Fund Manager Status:**", "Loaded")
+                        st.write("**Trạng Thái Fund Manager:**", "Đã tải")
                     if 'data_handler' in st.session_state:
-                        st.write("**Data Handler Status:**", "Loaded")
+                        st.write("**Trạng Thái Bộ Xử Lý Dữ Liệu:**", "Đã tải")
 
 # === APPLICATION ENTRY POINT ===
 def main():

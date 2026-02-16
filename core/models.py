@@ -279,31 +279,31 @@ def validate_tranche(tranche: Tranche) -> tuple[bool, list[str]]:
     errors = []
     
     if tranche.units <= 0:
-        errors.append("Units phải lớn hơn 0")
+        errors.append("Đơn vị quỹ phải lớn hơn 0")
     
     if tranche.entry_nav <= 0:
-        errors.append("Entry NAV phải lớn hơn 0")
+        errors.append("NAV vào phải lớn hơn 0")
     
     if tranche.original_entry_nav <= 0:
-        errors.append("Original entry NAV phải lớn hơn 0")
+        errors.append("NAV vào gốc phải lớn hơn 0")
     
     if tranche.hwm < tranche.entry_nav:
-        errors.append("HWM không thể nhỏ hơn entry NAV")
+        errors.append("HWM không thể nhỏ hơn NAV vào")
     
     if tranche.cumulative_fees_paid < 0:
-        errors.append("Cumulative fees không thể âm")
+        errors.append("Phí lũy kế không thể âm")
     
     # Use timezone-aware comparison to avoid offset-naive vs offset-aware error
     current_time = TimezoneManager.now()
     entry_time = TimezoneManager.normalize_for_display(tranche.entry_date)
     
     if entry_time > current_time:
-        errors.append("Entry date không thể ở tương lai")
+        errors.append("Ngày vào vốn không thể ở tương lai")
     
     # Compare normalized dates for consistency
     original_entry_time = TimezoneManager.normalize_for_display(tranche.original_entry_date)
     if original_entry_time > entry_time:
-        errors.append("Original entry date không thể sau entry date")
+        errors.append("Ngày vào vốn gốc không thể sau ngày vào vốn")
     
     return len(errors) == 0, errors
 
@@ -318,17 +318,18 @@ def validate_transaction(transaction: Transaction) -> tuple[bool, list[str]]:
     transaction_time = TimezoneManager.normalize_for_display(transaction.date)
     
     if transaction_time > current_time:
-        errors.append("Transaction date không thể ở tương lai")
+        errors.append("Ngày giao dịch không thể ở tương lai")
     
     # Validate based on transaction type
     if transaction.type in ['Nạp', 'Phí Nhận'] and transaction.amount <= 0:
-        errors.append(f"Amount cho {transaction.type} phải dương")
+        errors.append(f"Số tiền cho {transaction.type} phải dương")
     
     if transaction.type in ['Rút', 'Phí', 'Fund Manager Withdrawal'] and transaction.amount >= 0:
-        errors.append(f"Amount cho {transaction.type} phải âm")
+        errors.append(f"Số tiền cho {transaction.type} phải âm")
     
-    if transaction.type != 'NAV Update' and transaction.nav <= 0:
-        errors.append("NAV phải lớn hơn 0")
+    # NAV = 0 is valid when the fund/investor reaches zero after full withdrawal.
+    if transaction.type != 'NAV Update' and transaction.nav < 0:
+        errors.append("NAV không thể âm")
     
     return len(errors) == 0, errors
 
@@ -339,28 +340,28 @@ def validate_fee_record(fee_record: FeeRecord) -> tuple[bool, list[str]]:
     errors = []
     
     if fee_record.fee_amount < 0:
-        errors.append("Fee amount không thể âm")
+        errors.append("Giá trị phí không thể âm")
     
     if fee_record.fee_units < 0:
-        errors.append("Fee units không thể âm")
+        errors.append("Đơn vị quỹ phí không thể âm")
     
     if fee_record.units_after > fee_record.units_before:
-        errors.append("Units after không thể lớn hơn units before")
+        errors.append("Đơn vị quỹ sau phí không thể lớn hơn trước phí")
     
     if fee_record.nav_per_unit <= 0:
-        errors.append("NAV per unit phải lớn hơn 0")
+        errors.append("NAV trên mỗi đơn vị quỹ phải lớn hơn 0")
     
     if TimezoneManager.normalize_for_display(fee_record.calculation_date) > TimezoneManager.now():
-        errors.append("Calculation date không thể ở tương lai")
+        errors.append("Ngày tính phí không thể ở tương lai")
     
     # Check consistency
     expected_units_after = fee_record.units_before - fee_record.fee_units
     if abs(fee_record.units_after - expected_units_after) > 0.000001:
-        errors.append("Units calculation không nhất quán")
+        errors.append("Tính toán đơn vị quỹ không nhất quán")
     
     expected_fee_amount = fee_record.fee_units * fee_record.nav_per_unit
     if abs(fee_record.fee_amount - expected_fee_amount) > 0.01:  # Allow 1 VND difference
-        errors.append("Fee amount calculation không nhất quán")
+        errors.append("Tính toán giá trị phí không nhất quán")
     
     return len(errors) == 0, errors
 

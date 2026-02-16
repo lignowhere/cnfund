@@ -42,7 +42,10 @@ Thumbs.db
 oauth_credentials.json
 token.pickle
 token_encoded.txt
+.drive_folder_cache
 
 # Local data (CSV files - use Drive for cloud)
 data/
 exports/nul
+
+.streamlit/nul

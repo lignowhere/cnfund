@@ -45,28 +45,28 @@ class DriveStartupSync:
             self.drive_manager = GoogleDriveOAuthManager()
 
             if not self.drive_manager.connected:
-                st.warning("⚠️ Google Drive not connected - starting with empty data")
+                st.warning("⚠️ Google Drive chưa kết nối - khởi động với dữ liệu trống")
                 return False
 
             # Download latest backup
             backup_file = self._find_latest_backup()
 
             if not backup_file:
-                st.info("ℹ️ No backup found on Drive - starting fresh")
+                st.info("ℹ️ Không tìm thấy bản sao lưu trên Drive - khởi động mới")
                 return False
 
             # Download and extract
             success = self._download_and_extract(backup_file)
 
             if success:
-                st.success("✅ Data restored from Google Drive")
+                st.success("✅ Đã khôi phục dữ liệu từ Google Drive")
                 self.synced = True
                 return True
 
             return False
 
         except Exception as e:
-            st.error(f"❌ Restore failed: {e}")
+            st.error(f"❌ Khôi phục thất bại: {e}")
             return False
 
     def _find_latest_backup(self) -> Optional[dict]:

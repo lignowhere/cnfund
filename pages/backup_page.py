@@ -26,12 +26,12 @@ except ImportError:
 def show_backup_status_cards():
     """Display backup status cards using PersonalAutoBackupManager"""
     if not AUTO_BACKUP_AVAILABLE:
-        st.error("🚫 Auto backup system not available")
+        st.error("🚫 Hệ thống sao lưu tự động không khả dụng")
         return
     
     # Get fund manager from session state
     if 'fund_manager' not in st.session_state:
-        st.error("❌ Fund manager not initialized")
+        st.error("❌ Fund Manager chưa được khởi tạo")
         return
     
     fund_manager = st.session_state.fund_manager
@@ -42,14 +42,14 @@ def show_backup_status_cards():
     
     with col1:
         st.metric(
-            label="🏠 Service Status",
-            value="Running" if status['service_running'] else "Stopped",
-            delta="Active" if status['service_running'] else "Inactive"
+            label="🏠 Trạng thái dịch vụ",
+            value="Đang chạy" if status['service_running'] else "Đã dừng",
+            delta="Hoạt động" if status['service_running'] else "Không hoạt động"
         )
     
     with col2:
         st.metric(
-            label="💾 Local Backups",
+            label="💾 Sao lưu cục bộ",
             value=status['local_backups']['count'],
             delta=f"{status['local_backups']['total_size_mb']:.1f} MB"
         )
@@ -57,27 +57,27 @@ def show_backup_status_cards():
     with col3:
         cloud_count = status['cloud_backup'].get('files', 0) if status['cloud_backup']['connected'] else 0
         st.metric(
-            label="☁️ Cloud Backups", 
+            label="☁️ Sao lưu đám mây", 
             value=cloud_count,
-            delta="Connected" if status['cloud_backup']['connected'] else "Not connected"
+            delta="Đã kết nối" if status['cloud_backup']['connected'] else "Chưa kết nối"
         )
     
     with col4:
         st.metric(
-            label="📊 Today's Backups",
+            label="📊 Sao lưu hôm nay",
             value=f"{status['backups_today']}/5",
-            delta="Daily limit"
+            delta="Giới hạn ngày"
         )
 
 def handle_restore_from_backup(backup_file_path, filename):
     """Handle restore operation from backup Excel file"""
     try:
         if 'fund_manager' not in st.session_state:
-            st.error("❌ Fund manager not initialized")
+            st.error("❌ Fund Manager chưa được khởi tạo")
             return
         
         # Confirmation dialog with backup info
-        st.warning(f"⚠️ Bạn có chắc chắn muốn restore từ backup: **{filename}**?")
+        st.warning(f"⚠️ Bạn có chắc chắn muốn khôi phục từ bản sao lưu: **{filename}**?")
         st.warning("🔴 **CHÚ Ý**: Thao tác này sẽ ghi đè toàn bộ dữ liệu hiện tại!")
         
         # Show preview of backup content
@@ -85,23 +85,23 @@ def handle_restore_from_backup(backup_file_path, filename):
             import pandas as pd
             excel_data = pd.read_excel(backup_file_path, sheet_name=None)
             
-            st.info("📋 **Nội dung backup sẽ được restore:**")
+            st.info("📋 **Nội dung sao lưu sẽ được khôi phục:**")
             backup_info = []
             for sheet_name, sheet_data in excel_data.items():
                 if sheet_name in ['Investors', 'Tranches', 'Transactions', 'Fee_Records']:
-                    backup_info.append(f"- **{sheet_name}**: {len(sheet_data)} records")
+                    backup_info.append(f"- **{sheet_name}**: {len(sheet_data)} bản ghi")
             
             if backup_info:
                 for info in backup_info:
                     st.markdown(info)
         except Exception as e:
-            st.warning(f"⚠️ Không thể preview backup: {str(e)}")
+            st.warning(f"⚠️ Không thể xem trước bản sao lưu: {str(e)}")
         
         col1, col2, col3 = st.columns([1, 1, 2])
         
         with col1:
-            if st.button("✅ Xác nhận Restore", key="confirm_restore", type="primary"):
-                with st.spinner(f"🔄 Đang restore từ {filename}..."):
+            if st.button("✅ Xác nhận khôi phục", key="confirm_restore", type="primary"):
+                with st.spinner(f"🔄 Đang khôi phục từ {filename}..."):
                     # Create safety backup first
                     try:
                         safety_backup_success = False
@@ -109,7 +109,7 @@ def handle_restore_from_backup(backup_file_path, filename):
                             from integrations.auto_backup_personal import manual_backup
                             safety_backup_success = manual_backup(st.session_state.fund_manager, "pre_restore_safety")
                             if safety_backup_success:
-                                st.info("✅ Đã tạo safety backup trước khi restore")
+                                st.info("✅ Đã tạo bản sao lưu an toàn trước khi khôi phục")
                     except:
                         pass  # Continue even if safety backup fails
                     # Read Excel backup file
@@ -129,7 +129,7 @@ def handle_restore_from_backup(backup_file_path, filename):
                             investors_df.to_csv('data/investors.csv', index=False)
                             success_count += 1
                         except Exception as e:
-                            errors.append(f"Investors: {str(e)}")
+                            errors.append(f"Nhà đầu tư: {str(e)}")
                     
                     # Restore tranches  
                     if 'Tranches' in excel_data:
@@ -138,7 +138,7 @@ def handle_restore_from_backup(backup_file_path, filename):
                             tranches_df.to_csv('data/tranches.csv', index=False)
                             success_count += 1
                         except Exception as e:
-                            errors.append(f"Tranches: {str(e)}")
+                            errors.append(f"Đợt vốn: {str(e)}")
                     
                     # Restore transactions
                     if 'Transactions' in excel_data:
@@ -147,7 +147,7 @@ def handle_restore_from_backup(backup_file_path, filename):
                             transactions_df.to_csv('data/transactions.csv', index=False)
                             success_count += 1
                         except Exception as e:
-                            errors.append(f"Transactions: {str(e)}")
+                            errors.append(f"Giao dịch: {str(e)}")
                     
                     # Restore fee records
                     if 'Fee_Records' in excel_data:
@@ -156,14 +156,14 @@ def handle_restore_from_backup(backup_file_path, filename):
                             fees_df.to_csv('data/fee_records.csv', index=False)
                             success_count += 1
                         except Exception as e:
-                            errors.append(f"Fee Records: {str(e)}")
+                            errors.append(f"Bản ghi phí: {str(e)}")
                     
                     # Reload fund manager data
                     st.session_state.fund_manager.load_data()
                     
                     # Show results
                     if success_count > 0:
-                        st.success(f"✅ Restore thành công {success_count} bảng dữ liệu!")
+                        st.success(f"✅ Khôi phục thành công {success_count} bảng dữ liệu!")
                         st.balloons()
                         if errors:
                             st.warning(f"⚠️ Có {len(errors)} lỗi:")
@@ -175,7 +175,7 @@ def handle_restore_from_backup(backup_file_path, filename):
                         time.sleep(2)
                         st.rerun()
                     else:
-                        st.error("❌ Không thể restore dữ liệu")
+                        st.error("❌ Không thể khôi phục dữ liệu")
                         for error in errors:
                             st.error(f"  - {error}")
         
@@ -184,32 +184,32 @@ def handle_restore_from_backup(backup_file_path, filename):
                 st.rerun()
                 
     except Exception as e:
-        st.error(f"❌ Lỗi restore: {str(e)}")
+        st.error(f"❌ Lỗi khôi phục: {str(e)}")
 
 def show_backup_history():
     """Show backup history from local exports folder with restore functionality"""
-    st.subheader("📊 Backup History")
+    st.subheader("📊 Lịch Sử Sao Lưu")
     
     # Warning about restore
-    with st.expander("⚠️ Hướng dẫn Restore"):
-        st.warning("🔴 **CHÚ Ý quan trọng về Restore:**")
+    with st.expander("⚠️ Hướng dẫn khôi phục"):
+        st.warning("🔴 **CHÚ Ý quan trọng về khôi phục:**")
         st.markdown("""
-        - **Restore sẽ ghi đè toàn bộ dữ liệu hiện tại**
-        - Nên tạo backup hiện tại trước khi restore
-        - Restore chỉ áp dụng cho file Excel backup
-        - Sau restore, hệ thống sẽ tự động reload data
+        - **Khôi phục sẽ ghi đè toàn bộ dữ liệu hiện tại**
+        - Nên tạo bản sao lưu hiện tại trước khi khôi phục
+        - Khôi phục chỉ áp dụng cho file Excel sao lưu
+        - Sau khi khôi phục, hệ thống sẽ tự động tải lại dữ liệu
         """)
     
     export_dir = Path("exports")
     if not export_dir.exists():
-        st.info("📁 No backup directory found")
+        st.info("📁 Không tìm thấy thư mục sao lưu")
         return
     
     # Get all backup files
     backup_files = list(export_dir.glob("Fund_Export_*.xlsx"))
     
     if not backup_files:
-        st.info("📁 No backup files found")
+        st.info("📁 Không tìm thấy file sao lưu")
         return
     
     # Create backup history data
@@ -221,14 +221,14 @@ def show_backup_history():
                 'Filename': file_path.name,
                 'Date': datetime.fromtimestamp(stats.st_mtime),
                 'Size (KB)': round(stats.st_size / 1024, 1),
-                'Type': 'Auto' if 'auto_' in file_path.name else 'Manual',
+                'Type': 'Tự động' if 'auto_' in file_path.name else 'Thủ công',
                 'Path': str(file_path)
             })
         except Exception as e:
-            st.warning(f"⚠️ Could not read {file_path.name}: {e}")
+            st.warning(f"⚠️ Không thể đọc {file_path.name}: {e}")
     
     if not backup_data:
-        st.info("📁 No readable backup files found")
+        st.info("📁 Không có file sao lưu nào đọc được")
         return
     
     # Sort by date (newest first)
@@ -242,7 +242,7 @@ def show_backup_history():
     display_df = df.drop('Path', axis=1).copy()
     
     # Add restore column with better formatting
-    st.markdown("**Danh sách Backup Files (nhấn 🔄 để restore):**")
+    st.markdown("**Danh sách file sao lưu (nhấn 🔄 để khôi phục):**")
     
     for i, row in enumerate(backup_data):
         with st.container():
@@ -251,14 +251,14 @@ def show_backup_history():
                 # Format the display with better styling
                 file_date = row['Date'].strftime('%Y-%m-%d %H:%M')
                 file_size_mb = row['Size (KB)'] / 1024
-                type_emoji = "🤖" if row['Type'] == 'Auto' else "👤"
+                type_emoji = "🤖" if row['Type'] == 'Tự động' else "👤"
                 
                 st.markdown(f"""
                 **{row['Filename']}**  
                 📅 {file_date} | 📦 {file_size_mb:.1f} MB | {type_emoji} {row['Type']}
                 """)
             with col2:
-                if st.button(f"🔄", key=f"restore_{i}", help=f"Restore từ backup: {row['Filename']}", type="secondary"):
+                if st.button(f"🔄", key=f"restore_{i}", help=f"Khôi phục từ sao lưu: {row['Filename']}", type="secondary"):
                     handle_restore_from_backup(row['Path'], row['Filename'])
             
             st.divider()
@@ -266,26 +266,26 @@ def show_backup_history():
     # Show total stats
     col1, col2, col3 = st.columns(3)
     with col1:
-        st.metric("Total Files", len(backup_data))
+        st.metric("Tổng số file", len(backup_data))
     with col2:
         total_size = sum(item['Size (KB)'] for item in backup_data)
-        st.metric("Total Size", f"{total_size/1024:.1f} MB")
+        st.metric("Tổng dung lượng", f"{total_size/1024:.1f} MB")
     with col3:
         if backup_data:
             # Use original datetime objects from backup_data, not the string-converted ones
             latest = max(backup_data, key=lambda x: x['Date'])
-            st.metric("Latest Backup", latest['Date'].strftime('%Y-%m-%d'))
+            st.metric("Bản sao lưu mới nhất", latest['Date'].strftime('%Y-%m-%d'))
 
 def show_cloud_backup_status():
     """Show cloud backup status and details"""
-    st.subheader("☁️ Cloud Backup Status")
+    st.subheader("☁️ Trạng Thái Sao Lưu Đám Mây")
     
     if not AUTO_BACKUP_AVAILABLE:
-        st.error("🚫 Auto backup system not available")
+        st.error("🚫 Hệ thống sao lưu tự động không khả dụng")
         return
     
     if 'fund_manager' not in st.session_state:
-        st.error("❌ Fund manager not initialized")
+        st.error("❌ Fund Manager chưa được khởi tạo")
         return
     
     fund_manager = st.session_state.fund_manager
@@ -295,55 +295,55 @@ def show_cloud_backup_status():
     cloud_info = status['cloud_backup']
     
     if cloud_info['connected']:
-        st.success("✅ Cloud backup connected")
+        st.success("✅ Sao lưu đám mây đã kết nối")
         
         col1, col2 = st.columns(2)
         with col1:
-            st.info(f"👤 Account: {cloud_info.get('account', 'Unknown')}")
-            st.info(f"🔐 Method: {cloud_info.get('method', 'Unknown')}")
+            st.info(f"👤 Tài khoản: {cloud_info.get('account', 'Không xác định')}")
+            st.info(f"🔐 Phương thức: {cloud_info.get('method', 'Không xác định')}")
         
         with col2:
-            st.info(f"📄 Files in Drive: {cloud_info.get('files', 0)}")
-            st.info("📁 Storage: 15GB free (personal account)")
+            st.info(f"📄 Số tệp trên Drive: {cloud_info.get('files', 0)}")
+            st.info("📁 Dung lượng: 15GB miễn phí (tài khoản cá nhân)")
         
         # Test connection button
-        if st.button("🧪 Test Connection", help="Test Google Drive connection"):
+        if st.button("🧪 Kiểm Tra Kết Nối", help="Kiểm tra kết nối Google Drive"):
             try:
                 drive_manager = backup_manager.drive_manager
                 if drive_manager:
                     test_result = drive_manager.test_connection()
                     if test_result.get('connected'):
-                        st.success(f"✅ Connection successful! Files: {test_result.get('files_count', 0)}")
+                        st.success(f"✅ Kết nối thành công! Số file: {test_result.get('files_count', 0)}")
                     else:
-                        st.error("❌ Connection test failed")
+                        st.error("❌ Kiểm tra kết nối thất bại")
                         for error in test_result.get('errors', []):
                             st.error(f"   - {error}")
                 else:
-                    st.warning("⚠️ Drive manager not available")
+                    st.warning("⚠️ Trình quản lý Drive không khả dụng")
             except Exception as e:
-                st.error(f"❌ Test failed: {e}")
+                st.error(f"❌ Kiểm tra thất bại: {e}")
     else:
-        st.warning("⚠️ Cloud backup not connected")
+        st.warning("⚠️ Sao lưu đám mây chưa kết nối")
         if 'error' in cloud_info:
-            st.error(f"Error: {cloud_info['error']}")
+            st.error(f"Lỗi: {cloud_info['error']}")
         
-        st.info("💡 To enable cloud backup:")
+        st.info("💡 Để bật sao lưu đám mây:")
         st.markdown("""
-        1. Follow setup in `SETUP_OAUTH_PERSONAL.md`
-        2. Create OAuth credentials
-        3. Restart the app
+        1. Làm theo hướng dẫn trong `SETUP_OAUTH_PERSONAL.md`
+        2. Tạo thông tin xác thực OAuth
+        3. Khởi động lại ứng dụng
         """)
 
 def show_backup_controls():
     """Show backup control buttons and settings"""
-    st.subheader("🎮 Backup Controls")
+    st.subheader("🎮 Điều Khiển Sao Lưu")
     
     if not AUTO_BACKUP_AVAILABLE:
-        st.error("🚫 Auto backup system not available")
+        st.error("🚫 Hệ thống sao lưu tự động không khả dụng")
         return
     
     if 'fund_manager' not in st.session_state:
-        st.error("❌ Fund manager not initialized")
+        st.error("❌ Fund Manager chưa được khởi tạo")
         return
     
     fund_manager = st.session_state.fund_manager
@@ -352,23 +352,23 @@ def show_backup_controls():
     col1, col2, col3 = st.columns(3)
     
     with col1:
-        if st.button("📊 Create Backup Now", type="primary", help="Create manual backup"):
-            with st.spinner("Creating backup..."):
+        if st.button("📊 Tạo Sao Lưu Ngay", type="primary", help="Tạo bản sao lưu thủ công"):
+            with st.spinner("Đang tạo bản sao lưu..."):
                 success = manual_backup(fund_manager, "dashboard_manual")
             
             if success:
-                st.success("✅ Backup created successfully!")
+                st.success("✅ Tạo bản sao lưu thành công!")
                 st.balloons()
                 st.rerun()
             else:
-                st.error("❌ Backup creation failed")
+                st.error("❌ Tạo bản sao lưu thất bại")
     
     with col2:
-        if st.button("🔄 Refresh Status", help="Refresh backup status"):
+        if st.button("🔄 Làm Mới Trạng Thái", help="Làm mới trạng thái sao lưu"):
             st.rerun()
     
     with col3:
-        if st.button("🧹 Clean Old Backups", help="Remove old local backups (keep 10 newest)"):
+        if st.button("🧹 Dọn Dẹp Sao Lưu Cũ", help="Xóa bản sao lưu cục bộ cũ (giữ 10 bản mới nhất)"):
             try:
                 export_dir = Path("exports")
                 if export_dir.exists():
@@ -384,28 +384,28 @@ def show_backup_controls():
                                 file_path.unlink()
                                 deleted_count += 1
                             except Exception as e:
-                                st.warning(f"Could not delete {file_path.name}: {e}")
+                                st.warning(f"Không thể xóa {file_path.name}: {e}")
                         
-                        st.success(f"🧹 Cleaned up {deleted_count} old backup files")
+                        st.success(f"🧹 Đã dọn dẹp {deleted_count} file sao lưu cũ")
                         st.rerun()
                     else:
-                        st.info("✅ No cleanup needed (≤10 files)")
+                        st.info("✅ Không cần dọn dẹp (≤10 file)")
                 else:
-                    st.warning("📁 No backup directory found")
+                    st.warning("📁 Không tìm thấy thư mục sao lưu")
                     
             except Exception as e:
-                st.error(f"❌ Cleanup failed: {e}")
+                st.error(f"❌ Dọn dẹp thất bại: {e}")
 
 def show_backup_settings():
     """Show backup system settings"""
-    st.subheader("⚙️ Backup Settings")
+    st.subheader("⚙️ Cài Đặt Sao Lưu")
     
     if not AUTO_BACKUP_AVAILABLE:
-        st.error("🚫 Auto backup system not available")
+        st.error("🚫 Hệ thống sao lưu tự động không khả dụng")
         return
     
     if 'fund_manager' not in st.session_state:
-        st.error("❌ Fund manager not initialized")
+        st.error("❌ Fund Manager chưa được khởi tạo")
         return
     
     fund_manager = st.session_state.fund_manager
@@ -413,39 +413,39 @@ def show_backup_settings():
     
     # Show current configuration
     st.json({
-        "Local Backup": "Always enabled",
-        "Cloud Backup": "OAuth-based (personal account)",
+        "Sao lưu cục bộ": "Luôn bật",
+        "Sao lưu đám mây": "Dựa trên OAuth (tài khoản cá nhân)",
         "Daily Schedule": "23:00 (11 PM)",
-        "Max Daily Backups": "5 backups",
-        "Backup Interval": "6 hours minimum",
-        "Local Retention": "20 newest files",
-        "Storage Cost": "$0/month (personal Google Drive)"
+        "Số sao lưu tối đa mỗi ngày": "5 bản",
+        "Khoảng cách sao lưu": "Tối thiểu 6 giờ",
+        "Lưu giữ cục bộ": "20 file mới nhất",
+        "Chi phí lưu trữ": "$0/tháng (Google Drive cá nhân)"
     })
     
     # Show backup statistics
     status = backup_manager.get_backup_status()
     
-    st.subheader("📊 Statistics")
+    st.subheader("📊 Thống Kê")
     stats_data = {
-        "Total Backups Created": status['stats']['total_backups'],
-        "Successful Local": status['stats']['successful_local'],
-        "Successful Cloud": status['stats']['successful_cloud'],
-        "Failed Backups": status['stats']['failed_backups'],
-        "Service Uptime": "Running" if status['service_running'] else "Stopped"
+        "Tổng số bản sao lưu đã tạo": status['stats']['total_backups'],
+        "Sao lưu cục bộ thành công": status['stats']['successful_local'],
+        "Sao lưu đám mây thành công": status['stats']['successful_cloud'],
+        "Sao lưu thất bại": status['stats']['failed_backups'],
+        "Thời gian hoạt động dịch vụ": "Đang chạy" if status['service_running'] else "Đã dừng"
     }
     
     if status['stats']['last_error']:
-        stats_data["Last Error"] = status['stats']['last_error']
+        stats_data["Lỗi gần nhất"] = status['stats']['last_error']
 
     st.json(stats_data)
 
 def show_drive_backup_controls():
     """Show manual backup controls for Drive-backed storage"""
-    st.subheader("☁️ Google Drive Backup Controls")
+    st.subheader("☁️ Điều Khiển Sao Lưu Google Drive")
 
     # Check if using Drive handler
     if 'fund_manager' not in st.session_state:
-        st.info("ℹ️ Fund manager chưa được khởi tạo")
+        st.info("ℹ️ Chưa khởi tạo Fund Manager")
         return
 
     fund_manager = st.session_state.fund_manager
@@ -456,7 +456,7 @@ def show_drive_backup_controls():
 
     if not is_drive_handler:
         st.warning("⚠️ Hệ thống cần Google Drive để hoạt động")
-        st.info("💡 App hiện đang dùng Google Drive làm storage chính cho cả local và cloud")
+        st.info("💡 Ứng dụng hiện đang dùng Google Drive làm nơi lưu trữ chính cho cả cục bộ và đám mây")
         return
 
     # Show Drive connection status
@@ -473,18 +473,18 @@ def show_drive_backup_controls():
             last_backup = st.session_state[f'{data_handler.session_key_prefix}last_backup']
             time_ago = datetime.now() - last_backup
             minutes_ago = int(time_ago.total_seconds() / 60)
-            st.metric("Backup cuối", f"{minutes_ago} phút trước")
+            st.metric("Sao lưu cuối", f"{minutes_ago} phút trước")
         else:
-            st.metric("Backup cuối", "Chưa có")
+            st.metric("Sao lưu cuối", "Chưa có")
 
     with col3:
         if f'{data_handler.session_key_prefix}last_load' in st.session_state:
             last_load = st.session_state[f'{data_handler.session_key_prefix}last_load']
             time_ago = datetime.now() - last_load
             minutes_ago = int(time_ago.total_seconds() / 60)
-            st.metric("Load cuối", f"{minutes_ago} phút trước")
+            st.metric("Tải cuối", f"{minutes_ago} phút trước")
         else:
-            st.metric("Load cuối", "Chưa có")
+            st.metric("Tải cuối", "Chưa có")
 
     st.divider()
 
@@ -492,47 +492,47 @@ def show_drive_backup_controls():
     col1, col2, col3 = st.columns([1, 1, 2])
 
     with col1:
-        if st.button("💾 Backup Ngay", type="primary", key="manual_drive_backup", use_container_width=True):
+        if st.button("💾 Sao Lưu Ngay", type="primary", key="manual_drive_backup", use_container_width=True):
             if data_handler.connected:
                 success = data_handler.backup_to_drive()
                 if success:
-                    st.success("✅ Backup thành công!")
+                    st.success("✅ Sao lưu thành công!")
                     st.balloons()
                 else:
-                    st.error("❌ Backup thất bại")
+                    st.error("❌ Sao lưu thất bại")
             else:
                 st.error("❌ Google Drive chưa kết nối")
 
     with col2:
-        if st.button("🔄 Reload từ Drive", key="reload_from_drive", use_container_width=True):
+        if st.button("🔄 Tải Lại Từ Drive", key="reload_from_drive", use_container_width=True):
             if data_handler.connected:
                 with st.spinner("📥 Đang tải dữ liệu từ Drive..."):
                     success = data_handler.load_from_drive()
                     if success:
                         # Reload fund manager
                         fund_manager.load_data()
-                        st.success("✅ Đã reload dữ liệu!")
+                        st.success("✅ Đã tải lại dữ liệu!")
                         st.rerun()
                     else:
-                        st.error("❌ Reload thất bại")
+                        st.error("❌ Tải lại thất bại")
             else:
                 st.error("❌ Google Drive chưa kết nối")
 
 def main():
     """Main backup dashboard function"""
     st.set_page_config(
-        page_title="Backup Management",
+        page_title="Quản lý sao lưu",
         page_icon="💾",
         layout="wide"
     )
     
-    st.title("💾 Backup Management Dashboard")
+    st.title("💾 Bảng Điều Khiển Quản Lý Sao Lưu")
 
     # Check authentication (but don't require it since auth is disabled)
     if is_admin_authenticated():
         show_admin_status()
     else:
-        st.success("🏠 Local System - Full Access Enabled")
+        st.success("🏠 Hệ thống cục bộ - Đã bật toàn quyền truy cập")
 
     # Drive backup controls (for cloud deployment)
     show_drive_backup_controls()
@@ -566,23 +566,23 @@ def main():
         show_backup_settings()
         
     else:
-        st.error("🚫 Auto backup system not available")
-        st.info("💡 Make sure auto_backup_personal.py is properly installed")
+        st.error("🚫 Hệ thống sao lưu tự động không khả dụng")
+        st.info("💡 Hãy đảm bảo auto_backup_personal.py đã được cài đặt đúng")
         
         # Show debug info
-        with st.expander("🔍 Debug Information"):
+        with st.expander("🔍 Thông Tin Gỡ Lỗi"):
             if 'fund_manager' in st.session_state:
                 fm = st.session_state.fund_manager
                 st.json({
-                    "Fund Manager Type": type(fm).__name__,
-                    "Has backup_manager": hasattr(fm, 'backup_manager'),
-                    "backup_manager value": str(getattr(fm, 'backup_manager', None)) if hasattr(fm, 'backup_manager') else "N/A",
-                    "Data Handler Type": type(fm.data_handler).__name__,
-                    "Auto Backup Available": AUTO_BACKUP_AVAILABLE,
-                    "Backup System": "PersonalAutoBackupManager (integrated via app.py)"
+                    "Loại Fund Manager": type(fm).__name__,
+                    "Có backup_manager": hasattr(fm, 'backup_manager'),
+                    "Giá trị backup_manager": str(getattr(fm, 'backup_manager', None)) if hasattr(fm, 'backup_manager') else "Không có",
+                    "Loại Data Handler": type(fm.data_handler).__name__,
+                    "Sao lưu tự động khả dụng": AUTO_BACKUP_AVAILABLE,
+                    "Hệ thống sao lưu": "PersonalAutoBackupManager (tích hợp qua app.py)"
                 })
             else:
-                st.warning("Fund manager not in session state")
+                st.warning("Không tìm thấy Fund Manager trong trạng thái phiên")
 
 if __name__ == "__main__":
     main()

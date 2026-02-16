@@ -71,7 +71,7 @@ class SidebarManager:
     def render_header(self):
         """Render tiêu đề với responsive design"""
         st.sidebar.markdown(
-            '<div class="sidebar-section">🦈 FUND MANAGEMENT</div>',
+            '<div class="sidebar-section">🦈 QUẢN LÝ QUỸ</div>',
             unsafe_allow_html=True
         )
 
@@ -125,7 +125,7 @@ class SidebarManager:
 
     def render_navigation_menu(self):
         """Render menu điều hướng - theo style code gốc"""
-        st.sidebar.markdown('<div class="sidebar-section">MENU</div>', unsafe_allow_html=True)
+        st.sidebar.markdown('<div class="sidebar-section">MENU CHÍNH</div>', unsafe_allow_html=True)
 
         # Đặt giá trị mặc định cho key của radio button nếu chưa tồn tại
         if 'menu_selection' not in st.session_state:
@@ -149,7 +149,7 @@ class SidebarManager:
     def render_user_status(self):
         """Render trạng thái người dùng - theo style code gốc"""
         if st.session_state.get('logged_in', False):
-            st.sidebar.success("👤 Chế độ Admin")
+            st.sidebar.success("👤 Chế độ quản trị")
             if st.sidebar.button("🚪 Đăng xuất", width="stretch"):
                 st.session_state.logged_in = False
                 st.rerun()
@@ -162,16 +162,16 @@ class SidebarManager:
 
         col1, col2 = st.sidebar.columns(2)
 
-        if col1.button("📊 Export Excel", use_container_width=True,
+        if col1.button("📊 Xuất Excel", use_container_width=True,
                       help="Xuất báo cáo tổng hợp ra file Excel"):
             self.handle_excel_export()
 
-        if col2.button("☁️ Test Drive", use_container_width=True,
+        if col2.button("☁️ Kiểm tra Drive", use_container_width=True,
                       help="Kiểm tra kết nối tới Google Drive"):
             self.handle_drive_test()
 
         # Reload data button (full width)
-        if st.sidebar.button("🔄 Reload Data", use_container_width=True,
+        if st.sidebar.button("🔄 Tải lại dữ liệu", use_container_width=True,
                             help="Tải lại dữ liệu mới nhất từ Google Drive"):
             self.handle_reload_data()
 
@@ -180,9 +180,9 @@ class SidebarManager:
         st.sidebar.markdown('<div class="sidebar-section">Thông tin hệ thống</div>', unsafe_allow_html=True)
 
         if self.data_handler and hasattr(self.data_handler, 'connected') and self.data_handler.connected:
-            st.sidebar.success("🟢 Supabase Connected")
+            st.sidebar.success("🟢 Supabase đã kết nối")
         else:
-            st.sidebar.error("🔴 Supabase Disconnected")
+            st.sidebar.error("🔴 Supabase mất kết nối")
 
         
 
@@ -196,10 +196,10 @@ class SidebarManager:
             excel_files = list(export_dir.glob("*.xlsx"))
             if excel_files:
                 latest_file = max(excel_files, key=lambda p: p.stat().st_mtime)
-                st.sidebar.caption(f"Last export: {datetime.fromtimestamp(latest_file.stat().st_mtime).strftime('%Y-%m-%d %H:%M')}")
+                st.sidebar.caption(f"Lần xuất gần nhất: {datetime.fromtimestamp(latest_file.stat().st_mtime).strftime('%Y-%m-%d %H:%M')}")
 
         # Version info - theo code gốc
-        st.sidebar.caption("v3.1 - Clean Architecture")
+        st.sidebar.caption("v3.1 - Kiến trúc gọn nhẹ")
 
     def show_last_export_info(self):
         """Show information about last export"""
@@ -210,7 +210,7 @@ class SidebarManager:
                 if excel_files:
                     latest_file = max(excel_files, key=lambda p: p.stat().st_mtime)
                     export_time = datetime.fromtimestamp(latest_file.stat().st_mtime)
-                    st.sidebar.caption(f"📊 Export cuối: {export_time.strftime('%d/%m %H:%M')}")
+                    st.sidebar.caption(f"📊 Lần xuất cuối: {export_time.strftime('%d/%m %H:%M')}")
         except Exception:
             pass  # Silently ignore if can't get export info
 
@@ -246,13 +246,13 @@ class SidebarManager:
 
                 if gdrive.connected:
                     st.success("✅ Google Drive kết nối thành công!")
-                    st.toast("☁️ Drive connection OK", icon="✅")
+                    st.toast("☁️ Kết nối Drive thành công", icon="✅")
                 else:
                     st.error("❌ Không thể kết nối Google Drive")
-                    st.info("💡 Kiểm tra file credentials.json")
+                    st.info("💡 Kiểm tra tệp thông tin xác thực (credentials.json)")
 
         except ImportError:
-            st.error("❌ Google Drive Manager không khả dụng")
+            st.error("❌ Trình quản lý Google Drive không khả dụng")
         except Exception as e:
             st.error(f"❌ Lỗi kết nối Drive: {str(e)}")
 
@@ -281,7 +281,7 @@ class SidebarManager:
                             raise e
 
                 st.success("✅ Đã tải lại dữ liệu mới nhất!")
-                st.toast("🔄 Data reloaded successfully", icon="✅")
+                st.toast("🔄 Đã tải lại dữ liệu thành công", icon="✅")
 
                 # Rerun to refresh UI
                 st.rerun()
@@ -319,7 +319,7 @@ class SidebarManager:
                 self.fund_manager.load_data()
                 
                 st.success("✅ Dữ liệu đã được làm mới!")
-                st.toast("🔄 Data refreshed successfully", icon="✅")
+                st.toast("🔄 Đã làm mới dữ liệu thành công", icon="✅")
                 
                 # Small delay then rerun
                 time.sleep(0.5)
@@ -341,6 +341,7 @@ class SidebarManager:
         self.render_nav_card()           # NAV display
         self.render_stats_grid()         # Quick stats 
         selected_page = self.render_navigation_menu()  # MENU
+        self.render_user_status()        # Viewer/Admin status
         self.render_action_buttons()     # Thao tác nhanh
         self.render_auto_backup_section(self.fund_manager)  # Auto backup system
         
@@ -368,7 +369,7 @@ class SidebarManager:
                 color: #2c3e50;
                 z-index: 100;
             ">
-                🦈 FUND MANAGEMENT
+                🦈 QUẢN LÝ QUỸ
             </div>
             
             <style>
@@ -385,54 +386,54 @@ class SidebarManager:
         if not AUTO_BACKUP_AVAILABLE:
             return
             
-        with st.sidebar.expander("🚀 Auto Backup System"):
+        with st.sidebar.expander("🚀 Hệ thống sao lưu tự động"):
             try:
                 backup_manager = get_auto_backup_manager(fund_manager)
                 status = backup_manager.get_backup_status()
                 
                 # Status indicators
                 if status['service_running']:
-                    st.success("✅ Service Running")
+                    st.success("✅ Dịch vụ đang chạy")
                 else:
-                    st.warning("⚠️ Service Stopped")
+                    st.warning("⚠️ Dịch vụ đã dừng")
                 
                 # Last backup info
                 if status['last_backup']:
                     from datetime import datetime
                     last_backup = datetime.fromisoformat(status['last_backup'])
-                    st.info(f"⏰ Last: {last_backup.strftime('%m-%d %H:%M')}")
+                    st.info(f"⏰ Lần gần nhất: {last_backup.strftime('%m-%d %H:%M')}")
                 else:
-                    st.info("⏰ No backups yet")
+                    st.info("⏰ Chưa có bản sao lưu")
                 
                 # Backup counts
                 col1, col2 = st.columns(2)
                 with col1:
-                    st.metric("Local", status['local_backups']['count'])
+                    st.metric("Cục bộ", status['local_backups']['count'])
                 with col2:
                     cloud_count = status['cloud_backup'].get('files', 0) if status['cloud_backup']['connected'] else 0
-                    st.metric("Cloud", cloud_count)
+                    st.metric("Đám mây", cloud_count)
                 
                 # Manual backup button
-                if st.button("📊 Backup Now", key="manual_backup_btn", help="Create backup now"):
-                    with st.spinner("Creating backup..."):
+                if st.button("📊 Sao lưu ngay", key="manual_backup_btn", help="Tạo bản sao lưu ngay"):
+                    with st.spinner("Đang tạo bản sao lưu..."):
                         success = manual_backup(fund_manager, "sidebar_manual")
                     if success:
-                        st.success("✅ Backup created!")
+                        st.success("✅ Đã tạo bản sao lưu!")
                         st.rerun()
                     else:
-                        st.error("❌ Backup failed")
+                        st.error("❌ Tạo bản sao lưu thất bại")
                 
                 # Status details (collapsed)
-                with st.expander("📊 Details"):
+                with st.expander("📊 Chi tiết"):
                     st.json({
-                        "Today": f"{status['backups_today']}/5",
-                        "Cloud": "Connected" if status['cloud_backup']['connected'] else "Not connected",
-                        "Method": status['cloud_backup'].get('method', 'None'),
-                        "Stats": {
-                            "Total": status['stats']['total_backups'],
-                            "Failed": status['stats']['failed_backups']
+                        "Hôm nay": f"{status['backups_today']}/5",
+                        "Đám mây": "Đã kết nối" if status['cloud_backup']['connected'] else "Chưa kết nối",
+                        "Phương thức": status['cloud_backup'].get('method', 'Không xác định'),
+                        "Thống kê": {
+                            "Tổng số": status['stats']['total_backups'],
+                            "Thất bại": status['stats']['failed_backups']
                         }
                     })
                     
             except Exception as e:
-                st.error(f"❌ Auto backup error: {str(e)}")
+                st.error(f"❌ Lỗi sao lưu tự động: {str(e)}")

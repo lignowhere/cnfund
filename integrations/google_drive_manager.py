@@ -23,7 +23,7 @@ try:
     GOOGLE_API_AVAILABLE = True
 except ImportError:
     GOOGLE_API_AVAILABLE = False
-    st.warning("⚠️ Google API libraries not installed. Run: pip install google-api-python-client google-auth")
+    st.warning("⚠️ Chưa cài thư viện Google API. Chạy: pip install google-api-python-client google-auth")
 
 from helpers import format_currency, format_percentage
 
@@ -195,7 +195,7 @@ class GoogleDriveManager:
         }
         
         if not self.connected or not self.service:
-            result['errors'].append("Not connected to Google Drive")
+            result['errors'].append("Chưa kết nối Google Drive")
             return result
         
         try:
@@ -203,8 +203,8 @@ class GoogleDriveManager:
             about = self.service.about().get(fields="user").execute()
             user_info = about.get('user', {})
             result['user'] = {
-                'name': user_info.get('displayName', 'Unknown'),
-                'email': user_info.get('emailAddress', 'Unknown')
+                'name': user_info.get('displayName', 'Không xác định'),
+                'email': user_info.get('emailAddress', 'Không xác định')
             }
             result['connected'] = True
             
@@ -221,10 +221,10 @@ class GoogleDriveManager:
                 result['folder_access'] = True
                 result['files_count'] = len(files)
             except Exception as folder_error:
-                result['errors'].append(f"Folder access error: {str(folder_error)}")
+                result['errors'].append(f"Lỗi truy cập thư mục: {str(folder_error)}")
                 
         except Exception as e:
-            result['errors'].append(f"Connection test error: {str(e)}")
+            result['errors'].append(f"Lỗi kiểm tra kết nối: {str(e)}")
             
         return result
 
@@ -559,7 +559,7 @@ class GoogleDriveManager:
     def upload_to_drive(self, file_buffer: io.BytesIO, filename: str) -> bool:
         """Upload file to Google Drive with personal account workaround"""
         if not self.connected or not self.service:
-            st.error("❌ Google Drive not connected")
+            st.error("❌ Google Drive chưa kết nối")
             return False
 
         try:
@@ -589,7 +589,7 @@ class GoogleDriveManager:
             except HttpError as e:
                 if 'storageQuotaExceeded' in str(e):
                     # Try alternative approach: create in root then move to folder
-                    st.info("🔄 Trying alternative upload method...")
+                    st.info("🔄 Đang thử phương thức tải lên thay thế...")
                     file_metadata_root = {'name': filename}
                     file_buffer.seek(0)
                     
@@ -638,16 +638,16 @@ class GoogleDriveManager:
 
                 web_link = file.get('webViewLink', '')
                 if web_link:
-                    st.success(f"✅ Uploaded: [{filename}]({web_link})")
+                    st.success(f"✅ Đã tải lên: [{filename}]({web_link})")
                 else:
-                    st.success(f"✅ Uploaded: {filename}")
+                    st.success(f"✅ Đã tải lên: {filename}")
                 return True
 
             return False
 
         except Exception as e:
             self._log_error(f"Upload failed", e)
-            st.error(f"❌ Upload error: {str(e)}")
+            st.error(f"❌ Lỗi tải lên: {str(e)}")
             return False
     
     def _get_folder_owner_email(self):
@@ -692,19 +692,19 @@ class GoogleDriveManager:
             with open(local_file, 'wb') as f:
                 f.write(buffer.getvalue())
 
-            st.info(f"💾 Local backup: {local_file}")
+            st.info(f"💾 Sao lưu cục bộ: {local_file}")
 
             # Upload to Google Drive if connected
             if self.connected:
                 buffer.seek(0)
                 return self.upload_to_drive(buffer, filename)
             else:
-                st.warning("⚠️ Google Drive not connected. Only local backup saved.")
+                st.warning("⚠️ Google Drive chưa kết nối. Chỉ lưu bản sao cục bộ.")
                 return True
 
         except Exception as e:
             self._log_error(f"Export failed", e)
-            st.error(f"❌ Export error: {str(e)}")
+            st.error(f"❌ Lỗi xuất dữ liệu: {str(e)}")
             return False
 
     def schedule_monthly_export(self):
@@ -718,32 +718,32 @@ class ExportManager:
     @staticmethod
     def render_export_button(fund_manager):
         """Render export button in sidebar"""
-        with st.sidebar.expander("📤 Export & Backup"):
+        with st.sidebar.expander("📤 Xuất Dữ Liệu & Sao Lưu"):
             col1, col2 = st.sidebar.columns(2)
 
-            if col1.button("📊 Export", width="stretch", key="export_btn"):
+            if col1.button("📊 Xuất dữ liệu", width="stretch", key="export_btn"):
                 try:
                     gdrive = GoogleDriveManager(fund_manager)
-                    with st.spinner("Exporting..."):
+                    with st.spinner("Đang xuất dữ liệu..."):
                         success = gdrive.auto_export_and_upload(trigger="manual")
                     if success:
                         st.balloons()
                 except Exception as e:
-                    st.error(f"Export failed: {str(e)}")
+                    st.error(f"Xuất dữ liệu thất bại: {str(e)}")
 
-            if col2.button("☁️ Test", width="stretch", key="test_btn"):
+            if col2.button("☁️ Kiểm tra", width="stretch", key="test_btn"):
                 try:
                     gdrive = GoogleDriveManager(fund_manager)
                     test_result = gdrive.test_connection()
                     
                     if test_result['connected']:
-                        st.success("✅ Connected!")
+                        st.success("✅ Đã kết nối!")
                         if test_result['user']:
-                            st.info(f"User: {test_result['user']['name']}")
-                            st.info(f"Files: {test_result['files_count']}")
+                            st.info(f"Người dùng: {test_result['user']['name']}")
+                            st.info(f"Số file: {test_result['files_count']}")
                     else:
-                        st.error("❌ Not connected")
+                        st.error("❌ Chưa kết nối")
                         for error in test_result['errors']:
                             st.error(error)
                 except Exception as e:
-                    st.error(f"Test failed: {str(e)}")
+                    st.error(f"Kiểm tra thất bại: {str(e)}")

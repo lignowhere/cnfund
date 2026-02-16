@@ -35,8 +35,8 @@ def track_integer_conversion_errors(func: Callable) -> Callable:
                 
                 # Also show in Streamlit if available
                 try:
-                    st.error(f"🚨 Integer conversion error in {func.__name__}: {str(e)}")
-                    with st.expander("Error Details"):
+                    st.error(f"🚨 Lỗi chuyển đổi số nguyên trong {func.__name__}: {str(e)}")
+                    with st.expander("Chi tiết lỗi"):
                         st.code(error_details['traceback'])
                 except:
                     pass  # Streamlit not available
@@ -74,11 +74,11 @@ def safe_integer_operation(operation_name: str, operation_func: Callable, *args,
             
             # Show in Streamlit if available
             try:
-                st.error(f"🚨 Integer conversion error in {operation_name}")
-                st.write("**Arguments causing error:**")
+                st.error(f"🚨 Lỗi chuyển đổi số nguyên trong {operation_name}")
+                st.write("**Đối số gây lỗi:**")
                 for i, arg in enumerate(args):
                     if isinstance(arg, str):
-                        st.write(f"  - Arg {i}: '{arg}' (type: string)")
+                        st.write(f"  - Đối số {i}: '{arg}' (kiểu: chuỗi)")
             except:
                 pass
                 

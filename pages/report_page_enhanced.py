@@ -3,7 +3,13 @@ import pandas as pd
 import altair as alt
 import io
 from datetime import datetime, date
-from helpers import format_currency, format_percentage, parse_currency, highlight_profit_loss
+from helpers import (
+    format_currency,
+    format_percentage,
+    parse_currency,
+    highlight_profit_loss,
+    display_transaction_type_vi,
+)
 from ui.chart_utils import safe_altair_chart
 from utils.timezone_manager import TimezoneManager
 
@@ -69,12 +75,12 @@ class EnhancedReportPage:
             return
         
         tab1, tab2, tab3, tab4, tab5, tab6 = st.tabs([
-            "📊 Dashboard Tổng Quan",
-            "👤 Individual Reports", 
-            "📈 Lifetime Performance",
+            "📊 Bảng Điều Khiển Tổng Quan",
+            "👤 Báo Cáo Từng Nhà Đầu Tư", 
+            "📈 Hiệu Suất Vòng Đời",
             "💰 Lịch Sử Phí",
-            "📋 Transaction History", 
-            "🛒 Fund Manager Dashboard"
+            "📋 Lịch Sử Giao Dịch", 
+            "🛒 Bảng Điều Khiển Fund Manager"
         ])
         
         with tab1:
@@ -97,18 +103,18 @@ class EnhancedReportPage:
     
     def _render_executive_dashboard(self):
         """Render executive dashboard với key metrics"""
-        st.subheader("🎯 Executive Dashboard")
+        st.subheader("🎯 Bảng Điều Khiển Điều Hành")
         
         latest_nav = self.fund_manager.get_latest_total_nav()
         nav_input = st.text_input(
-            "📊 Total NAV Hiện Tại", 
+            "📊 NAV Hiện Tại", 
             value=format_currency(latest_nav) if latest_nav else "0đ",
             key="dashboard_nav_input"
         )
         current_nav = parse_currency(nav_input)
         
         if current_nav <= 0:
-            st.warning("⚠️ Vui lòng nhập Total NAV hợp lệ.")
+            st.warning("⚠️ Vui lòng nhập NAV tổng hợp lệ.")
             return
         
         # Key Performance Metrics
@@ -127,12 +133,12 @@ class EnhancedReportPage:
         self._render_fund_growth_timeline()
         
         # Export full dashboard
-        if st.button("📤 Export Executive Summary", width='stretch'):
+        if st.button("📤 Xuất Tóm Tắt Điều Hành", width='stretch'):
             self._export_executive_summary(current_nav)
     
     def _render_individual_reports(self):
         """Render individual investor reports"""
-        st.subheader("👤 Individual Investor Reports")
+        st.subheader("👤 Báo Cáo Từng Nhà Đầu Tư")
         
         # Investor selection
         options = self.fund_manager.get_investor_options()
@@ -149,20 +155,20 @@ class EnhancedReportPage:
         from utils.streamlit_widget_safety import safe_investor_id_from_selectbox
         investor_id = safe_investor_id_from_selectbox(self.fund_manager, selected_display)
         if investor_id is None:
-            st.error("❌ Could not get valid investor ID from selection")
+            st.error("❌ Không thể lấy ID nhà đầu tư hợp lệ từ lựa chọn")
             return
         
         # NAV input for calculations
         latest_nav = self.fund_manager.get_latest_total_nav()
         nav_input = st.text_input(
-            "📊 Total NAV cho tính toán", 
+            "📊 NAV dùng để tính toán", 
             value=format_currency(latest_nav) if latest_nav else "0đ",
             key="individual_report_nav"
         )
         current_nav = parse_currency(nav_input)
         
         if current_nav <= 0:
-            st.warning("⚠️ Vui lòng nhập Total NAV hợp lệ.")
+            st.warning("⚠️ Vui lòng nhập NAV tổng hợp lệ.")
             return
         
         # Display individual report
@@ -172,20 +178,20 @@ class EnhancedReportPage:
         col1, col2, col3 = st.columns(3)
         
         with col1:
-            if st.button("📄 Export PDF Report", width='stretch', key="export_pdf"):
-                st.info("🚧 PDF export đang phát triển")
+            if st.button("📄 Xuất Báo Cáo PDF", width='stretch', key="export_pdf"):
+                st.info("🚧 Tính năng xuất PDF đang phát triển")
         
         with col2:
-            if st.button("📊 Export Excel Report", width='stretch', key="export_excel_individual"):
+            if st.button("📊 Xuất Báo Cáo Excel", width='stretch', key="export_excel_individual"):
                 self._export_individual_excel_report(investor_id, current_nav, selected_display)
         
         with col3:
-            if st.button("📧 Email to Client", width='stretch', key="email_client"):
-                st.info("🚧 Email feature đang phát triển")
+            if st.button("📧 Gửi Email Cho Khách Hàng", width='stretch', key="email_client"):
+                st.info("🚧 Tính năng email đang phát triển")
     
     def _render_kpi_section(self, current_nav):
         """Render key performance indicators with color coding"""
-        st.markdown("### 🎯 Key Performance Indicators")
+        st.markdown("### 🎯 Chỉ Số Hiệu Suất Chính")
 
         # Add global color classes
         ColorCoding.add_global_color_classes()
@@ -222,10 +228,10 @@ class EnhancedReportPage:
         col1, col2, col3, col4, col5 = st.columns(5)
 
         with col1:
-            st.metric("💰 Total NAV", format_currency(current_nav))
+            st.metric("💰 NAV Tổng", format_currency(current_nav))
 
         with col2:
-            st.metric("📈 Price/Unit", format_currency(current_price))
+            st.metric("📈 Giá/đơn vị quỹ", format_currency(current_price))
 
         with col3:
             # Gross Return with inline color (Dark mode compatible)
@@ -239,10 +245,10 @@ class EnhancedReportPage:
             """, unsafe_allow_html=True)
 
         with col4:
-            st.metric("💸 Total Fees", format_currency(total_fees_paid))
+            st.metric("💸 Tổng Phí", format_currency(total_fees_paid))
 
         with col5:
-            st.metric("🛒 FM Value", format_currency(fm_value))
+            st.metric("🛒 Giá Trị FM", format_currency(fm_value))
 
         # Show total profit/loss with color - bigger and clearer (Dark mode compatible)
         st.markdown("---")
@@ -257,7 +263,7 @@ class EnhancedReportPage:
         
         # Additional insights with color
         st.markdown("---")
-        st.markdown("### 📈 Chi Tiết Performance")
+        st.markdown("### 📈 Chi Tiết Hiệu Suất")
         insight_col1, insight_col2, insight_col3 = st.columns(3)
 
         net_return = (total_current_value - total_original_invested) / total_original_invested if total_original_invested > 0 else 0
@@ -267,7 +273,7 @@ class EnhancedReportPage:
         with insight_col1:
             st.markdown(f"""
             <div class="metric-card">
-                <div class="metric-label">📉 Net Return (After Fees)</div>
+                <div class="metric-label">📉 Net Return (sau phí)</div>
                 <div class="metric-value">
                     {percentage_html(net_return)}
                 </div>
@@ -277,7 +283,7 @@ class EnhancedReportPage:
         with insight_col2:
             st.markdown(f"""
             <div class="metric-card">
-                <div class="metric-label">💱 Cumulative Fee Rate</div>
+                <div class="metric-label">💱 Tỷ lệ phí lũy kế</div>
                 <div class="metric-value">
                     {format_percentage(fee_rate)}
                 </div>
@@ -287,7 +293,7 @@ class EnhancedReportPage:
         with insight_col3:
             st.markdown(f"""
             <div class="metric-card">
-                <div class="metric-label">🚀 AUM Growth</div>
+                <div class="metric-label">🚀 Tăng trưởng AUM</div>
                 <div class="metric-value">
                     {percentage_html(aum_growth)}
                 </div>
@@ -296,16 +302,16 @@ class EnhancedReportPage:
     
     def _render_portfolio_composition(self, current_nav):
         """Render portfolio composition chart"""
-        st.markdown("### 🥧 Portfolio Composition")
+        st.markdown("### 🥧 Cơ Cấu Danh Mục")
         
         composition_data = []
         for investor in self.fund_manager.get_regular_investors():
             balance, _, _ = self.fund_manager.get_investor_balance(investor.id, current_nav)
             if balance > 0:
                 composition_data.append({
-                    'Investor': investor.display_name,
-                    'Value': balance,
-                    'Percentage': balance / current_nav * 100
+                    'Nhà Đầu Tư': investor.display_name,
+                    'Giá Trị': balance,
+                    'Tỷ Trọng': balance / current_nav * 100
                 })
         
         # Add Fund Manager
@@ -316,9 +322,9 @@ class EnhancedReportPage:
             fm_value = fm_units * self.fund_manager.calculate_price_per_unit(current_nav)
             if fm_value > 0:
                 composition_data.append({
-                    'Investor': '🛒 Fund Manager',
-                    'Value': fm_value,
-                    'Percentage': fm_value / current_nav * 100
+                    'Nhà Đầu Tư': '🛒 Fund Manager',
+                    'Giá Trị': fm_value,
+                    'Tỷ Trọng': fm_value / current_nav * 100
                 })
         
         if composition_data:
@@ -328,11 +334,11 @@ class EnhancedReportPage:
             if not df_composition.empty:
                 # Pie chart
                 pie_chart = alt.Chart(df_composition).mark_arc(innerRadius=50).encode(
-                    theta='Value:Q',
-                    color=alt.Color('Investor:N', scale=alt.Scale(scheme='category20')),
-                    tooltip=['Investor', 'Value', 'Percentage']
+                    theta='Giá Trị:Q',
+                    color=alt.Color('Nhà Đầu Tư:N', scale=alt.Scale(scheme='category20')),
+                    tooltip=['Nhà Đầu Tư', 'Giá Trị', 'Tỷ Trọng']
                 ).properties(
-                    title="Portfolio Distribution",
+                    title="Phân Bố Danh Mục",
                     height=300
                 )
                 safe_altair_chart(pie_chart, use_container_width=True)
@@ -341,7 +347,7 @@ class EnhancedReportPage:
     
     def _render_performance_summary(self, current_nav):
         """Render performance summary with color coding"""
-        st.markdown("### 📈 Performance Summary")
+        st.markdown("### 📈 Tóm Tắt Hiệu Suất")
 
         performance_data = []
         for investor in self.fund_manager.get_regular_investors():
@@ -351,13 +357,13 @@ class EnhancedReportPage:
                 profit_loss = lifetime_perf['current_value'] + lifetime_perf['total_fees_paid'] - lifetime_perf['original_invested']
 
                 performance_data.append({
-                    'Investor': investor.display_name,
-                    'Original Invested': lifetime_perf['original_invested'],
-                    'Current Value': lifetime_perf['current_value'],
-                    'Profit/Loss': profit_loss,
+                    'Nhà Đầu Tư': investor.display_name,
+                    'Vốn Gốc': lifetime_perf['original_invested'],
+                    'Giá Trị Hiện Tại': lifetime_perf['current_value'],
+                    'Lãi/Lỗ': profit_loss,
                     'Gross Return': lifetime_perf['gross_return'],
                     'Net Return': lifetime_perf['net_return'],
-                    'Total Fees': lifetime_perf['total_fees_paid']
+                    'Tổng Phí': lifetime_perf['total_fees_paid']
                 })
 
         if performance_data:
@@ -365,19 +371,19 @@ class EnhancedReportPage:
 
             # Return comparison chart
             chart_data = df_performance.melt(
-                id_vars=['Investor'],
+                id_vars=['Nhà Đầu Tư'],
                 value_vars=['Gross Return', 'Net Return'],
-                var_name='Return Type',
-                value_name='Return'
+                var_name='Loại Lợi Nhuận',
+                value_name='Tỷ Lệ'
             )
 
             bar_chart = alt.Chart(chart_data).mark_bar().encode(
-                x='Investor:N',
-                y='Return:Q',
-                color='Return Type:N',
-                tooltip=['Investor', 'Return Type', 'Return']
+                x='Nhà Đầu Tư:N',
+                y='Tỷ Lệ:Q',
+                color='Loại Lợi Nhuận:N',
+                tooltip=['Nhà Đầu Tư', 'Loại Lợi Nhuận', 'Tỷ Lệ']
             ).properties(
-                title="Gross vs Net Returns",
+                title="So Sánh Gross và Net Return",
                 height=300
             )
 
@@ -385,7 +391,7 @@ class EnhancedReportPage:
     
     def _render_fund_growth_timeline(self):
         """Render fund growth over time"""
-        st.markdown("### 📅 Fund Growth Timeline")
+        st.markdown("### 📅 Dòng Thời Gian Tăng Trưởng Quỹ")
         
         if not self.fund_manager.transactions:
             st.info("📄 Chưa có dữ liệu giao dịch.")
@@ -405,9 +411,9 @@ class EnhancedReportPage:
                 running_nav = trans.nav
             
             timeline_data.append({
-                'Date': trans.date,
+                'Ngày': trans.date,
                 'NAV': running_nav,
-                'Type': trans.type
+                'Loại': display_transaction_type_vi(trans.type)
             })
         
         if timeline_data:
@@ -417,12 +423,12 @@ class EnhancedReportPage:
             if not df_timeline.empty:
                 # Line chart
                 line_chart = alt.Chart(df_timeline).mark_line(point=True).encode(
-                    x='Date:T',
+                    x='Ngày:T',
                     y='NAV:Q',
                     color=alt.value('steelblue'),
-                    tooltip=['Date', 'NAV', 'Type']
+                    tooltip=['Ngày', 'NAV', 'Loại']
                 ).properties(
-                    title="Fund NAV Growth Over Time",
+                    title="Dòng thời gian tăng trưởng NAV của quỹ",
                     height=400
                 )
                 safe_altair_chart(line_chart, use_container_width=True)
@@ -434,22 +440,22 @@ class EnhancedReportPage:
                     growth = (end_nav - start_nav) / start_nav if start_nav > 0 else 0
                     
                     col1, col2, col3 = st.columns(3)
-                    col1.metric("Starting NAV", format_currency(start_nav))
-                    col2.metric("Current NAV", format_currency(end_nav))
-                    col3.metric("Total Growth", format_percentage(growth))
+                    col1.metric("NAV đầu kỳ", format_currency(start_nav))
+                    col2.metric("NAV hiện tại", format_currency(end_nav))
+                    col3.metric("Tăng trưởng tổng", format_percentage(growth))
             else:
                 st.info("ℹ️ Không có dữ liệu để hiển thị biểu đồ tăng trưởng.")
             # ==========================================================
     
     def _render_detailed_individual_report(self, investor_id, current_nav, investor_name):
         """Render detailed individual investor report"""
-        st.markdown(f"### 👤 Detailed Report: {investor_name}")
+        st.markdown(f"### 👤 Báo Cáo Chi Tiết: {investor_name}")
         
         # Get all data for this investor
         report_data = self.fund_manager.get_investor_individual_report(investor_id, current_nav)
         
         if not report_data:
-            st.error("❌ Không thể tạo báo cáo cho investor này")
+            st.error("❌ Không thể tạo báo cáo cho nhà đầu tư này")
             return
         
         # Summary section with color coding
@@ -458,7 +464,7 @@ class EnhancedReportPage:
         with col1:
             st.markdown("""
             <div class="metric-card metric-card-lg">
-                <div class="metric-label">💰 Original Investment</div>
+                <div class="metric-label">💰 Vốn gốc ban đầu</div>
                 <div class="metric-value">
                     {0}
                 </div>
@@ -468,7 +474,7 @@ class EnhancedReportPage:
         with col2:
             st.markdown("""
             <div class="metric-card metric-card-lg">
-                <div class="metric-label">📊 Current Value</div>
+                <div class="metric-label">📊 Giá trị hiện tại</div>
                 <div class="metric-value">
                     {0}
                 </div>
@@ -478,7 +484,7 @@ class EnhancedReportPage:
         with col3:
             st.markdown("""
             <div class="metric-card metric-card-lg">
-                <div class="metric-label">📈 Current P&L</div>
+                <div class="metric-label">📈 Lãi/Lỗ hiện tại</div>
                 <div class="metric-value">
                     {0}
                 </div>
@@ -488,7 +494,7 @@ class EnhancedReportPage:
         with col4:
             st.markdown("""
             <div class="metric-card metric-card-lg">
-                <div class="metric-label">💸 Total Fees Paid</div>
+                <div class="metric-label">💸 Tổng phí đã trả</div>
                 <div class="metric-value">
                     {0}
                 </div>
@@ -496,7 +502,7 @@ class EnhancedReportPage:
             """.format(format_currency(report_data['lifetime_performance']['total_fees_paid'])), unsafe_allow_html=True)
 
         # Performance comparison with color coding
-        st.markdown("#### 📊 Performance Analysis")
+        st.markdown("#### 📊 Phân Tích Hiệu Suất")
 
         perf_col1, perf_col2 = st.columns(2)
 
@@ -504,7 +510,7 @@ class EnhancedReportPage:
             gross_return = report_data['lifetime_performance']['gross_return']
             st.markdown("""
             <div class="metric-card metric-card-lg">
-                <div class="metric-label">🚀 Gross Return (Before Fees)</div>
+                <div class="metric-label">🚀 Gross Return (trước phí)</div>
                 <div class="metric-value">
                     {0}
                 </div>
@@ -515,7 +521,7 @@ class EnhancedReportPage:
             net_return = report_data['lifetime_performance']['net_return']
             st.markdown("""
             <div class="metric-card metric-card-lg">
-                <div class="metric-label">💼 Net Return (After Fees)</div>
+                <div class="metric-label">💼 Net Return (sau phí)</div>
                 <div class="metric-value">
                     {0}
                 </div>
@@ -524,24 +530,24 @@ class EnhancedReportPage:
         
         # Tranches detail with color coding
         if report_data['tranches']:
-            st.markdown("#### 📋 Investment Tranches")
+            st.markdown("#### 📋 Các Đợt Vốn Đầu Tư")
 
             # Header row
             col1, col2, col3, col4, col5, col6, col7 = st.columns([1.2, 1, 1, 1.2, 1.2, 1, 1])
             with col1:
-                st.markdown("**Entry Date**")
+                st.markdown("**Ngày vào**")
             with col2:
-                st.markdown("**Entry Price**")
+                st.markdown("**Giá vào**")
             with col3:
-                st.markdown("**Units**")
+                st.markdown("**Đơn vị quỹ**")
             with col4:
-                st.markdown("**Original Investment**")
+                st.markdown("**Vốn gốc ban đầu**")
             with col5:
-                st.markdown("**Current Value**")
+                st.markdown("**Giá trị hiện tại**")
             with col6:
-                st.markdown("**P&L**")
+                st.markdown("**Lãi/Lỗ**")
             with col7:
-                st.markdown("**Fees Paid**")
+                st.markdown("**Phí đã trả**")
 
             st.divider()
 
@@ -571,16 +577,16 @@ class EnhancedReportPage:
         
         # Transaction history for this investor
         if report_data['transactions']:
-            st.markdown("#### 📝 Transaction History")
+            st.markdown("#### 📝 Lịch Sử Giao Dịch")
             
             trans_data = []
             for trans in sorted(report_data['transactions'], key=lambda x: x.date, reverse=True):
                 trans_data.append({
-                    'Date': trans.date.strftime("%d/%m/%Y"),
-                    'Type': trans.type,
-                    'Amount': format_currency(trans.amount),
-                    'NAV at Time': format_currency(trans.nav),
-                    'Units Change': f"{trans.units_change:.6f}"
+                    'Ngày': trans.date.strftime("%d/%m/%Y"),
+                    'Loại': display_transaction_type_vi(trans.type),
+                    'Số tiền': format_currency(trans.amount),
+                    'NAV tại thời điểm': format_currency(trans.nav),
+                    'Biến động đơn vị quỹ': f"{trans.units_change:.6f}"
                 })
             
             df_transactions = pd.DataFrame(trans_data)
@@ -588,15 +594,15 @@ class EnhancedReportPage:
         
         # Fee history
         if report_data['fee_history']:
-            st.markdown("#### 💰 Fee Payment History")
+            st.markdown("#### 💰 Lịch Sử Thanh Toán Phí")
             
             fee_data = []
             for fee_record in report_data['fee_history']:
                 fee_data.append({
-                    'Period': fee_record.period,
-                    'Date': fee_record.calculation_date.strftime("%d/%m/%Y"),
-                    'Fee Amount': format_currency(fee_record.fee_amount),
-                    'Fee Units': f"{fee_record.fee_units:.6f}",
+                    'Kỳ': fee_record.period,
+                    'Ngày': fee_record.calculation_date.strftime("%d/%m/%Y"),
+                    'Giá trị phí': format_currency(fee_record.fee_amount),
+                    'Đơn vị quỹ phí': f"{fee_record.fee_units:.6f}",
                     'NAV/Unit': format_currency(fee_record.nav_per_unit)
                 })
             
@@ -604,7 +610,7 @@ class EnhancedReportPage:
             st.dataframe(df_fees, use_container_width=True, hide_index=True)
         
         # Investment insights
-        st.markdown("#### 💡 Investment Insights")
+        st.markdown("#### 💡 Gợi Ý Đầu Tư")
         
         insights = []
         
@@ -649,7 +655,7 @@ class EnhancedReportPage:
             if all_returns:
                 current_return = report_data['lifetime_performance']['net_return']
                 rank = sum(1 for r in all_returns if r > current_return) + 1
-                insights.append(f"🏆 Xếp hạng: #{rank}/{len(all_returns)} investors theo net return")
+                insights.append(f"🏆 Xếp hạng: #{rank}/{len(all_returns)} nhà đầu tư theo Net Return")
         
         for insight in insights:
             st.info(insight)
@@ -762,17 +768,17 @@ class EnhancedReportPage:
             
             # Offer download
             st.download_button(
-                label=f"📥 Download {filename}",
+                label=f"📥 Tải xuống {filename}",
                 data=buffer,
                 file_name=filename,
                 mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
                 use_container_width=True
             )
             
-            st.success(f"✅ Individual report ready for download: {filename}")
+            st.success(f"✅ Báo cáo cá nhân đã sẵn sàng để tải xuống: {filename}")
             
         except Exception as e:
-            st.error(f"❌ Export failed: {str(e)}")
+            st.error(f"❌ Xuất báo cáo thất bại: {str(e)}")
     
     def _export_executive_summary(self, current_nav):
         """Export executive summary to Excel"""
@@ -835,30 +841,30 @@ class EnhancedReportPage:
             
             # Offer download
             st.download_button(
-                label=f"📥 Download {filename}",
+                label=f"📥 Tải xuống {filename}",
                 data=buffer,
                 file_name=filename,
                 mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
                 use_container_width=True
             )
             
-            st.success(f"✅ Executive summary ready for download: {filename}")
+            st.success(f"✅ Tóm tắt điều hành đã sẵn sàng để tải xuống: {filename}")
             
         except Exception as e:
-            st.error(f"❌ Export failed: {str(e)}")
+            st.error(f"❌ Xuất báo cáo thất bại: {str(e)}")
     
     def render_lifetime_performance(self):
         """Render lifetime performance"""
-        st.subheader("📈 Lifetime Performance Analysis")
+        st.subheader("📈 Phân Tích Hiệu Suất Vòng Đời")
         
         latest_nav = self.fund_manager.get_latest_total_nav()
-        nav_input = st.text_input("📊 Total NAV Hiện Tại", 
+        nav_input = st.text_input("📊 NAV Hiện Tại", 
                                  value=format_currency(latest_nav) if latest_nav else "0đ",
                                  key="lifetime_performance_nav_input")
         current_nav = parse_currency(nav_input)
         
         if current_nav <= 0:
-            st.warning("⚠️ Vui lòng nhập Total NAV hợp lệ.")
+            st.warning("⚠️ Vui lòng nhập NAV tổng hợp lệ.")
             return
         
         # Performance table
@@ -876,9 +882,9 @@ class EnhancedReportPage:
                     'Tổng Phí Đã Trả': perf['total_fees_paid'],
                     'Lợi Nhuận Gross': perf['gross_profit'],
                     'Lợi Nhuận Net': perf['net_profit'],
-                    'Return Gross': perf['gross_return'],
-                    'Return Net': perf['net_return'],
-                    'Units Hiện Tại': perf['current_units']
+                    'Gross Return': perf['gross_return'],
+                    'Net Return': perf['net_return'],
+                    'Đơn vị quỹ hiện tại': perf['current_units']
                 })
         
         if performance_data:
@@ -896,7 +902,7 @@ class EnhancedReportPage:
             col1.metric("💰 Tổng Vốn Gốc", format_currency(total_invested))
             col2.metric("📊 Tổng Giá Trị Hiện Tại", format_currency(total_current))
             col3.metric("💸 Tổng Phí Đã Thu", format_currency(total_fees))
-            col4.metric("📈 Overall Net Return", format_percentage(overall_net_return))
+            col4.metric("📈 Net Return tổng thể", format_percentage(overall_net_return))
             
             # Format display table
             display_df = df_perf.copy()
@@ -905,9 +911,9 @@ class EnhancedReportPage:
             for col in currency_cols:
                 display_df[col] = display_df[col].apply(format_currency)
             
-            display_df['Return Gross'] = display_df['Return Gross'].apply(format_percentage)
-            display_df['Return Net'] = display_df['Return Net'].apply(format_percentage)
-            display_df['Units Hiện Tại'] = display_df['Units Hiện Tại'].apply(lambda x: f"{x:.6f}")
+            display_df['Gross Return'] = display_df['Gross Return'].apply(format_percentage)
+            display_df['Net Return'] = display_df['Net Return'].apply(format_percentage)
+            display_df['Đơn vị quỹ hiện tại'] = display_df['Đơn vị quỹ hiện tại'].apply(lambda x: f"{x:.6f}")
             
             st.dataframe(display_df, use_container_width=True)
             
@@ -927,20 +933,20 @@ class EnhancedReportPage:
                     safe_altair_chart(pie_chart, use_container_width=True)
                 
                 with col_chart2:
-                    st.subheader("📊 Gross vs Net Return")
-                    return_data = df_perf[['Nhà Đầu Tư', 'Return Gross', 'Return Net']].copy()
+                    st.subheader("📊 So sánh Gross và Net Return")
+                    return_data = df_perf[['Nhà Đầu Tư', 'Gross Return', 'Net Return']].copy()
                     return_data_melted = return_data.melt(
                         id_vars=['Nhà Đầu Tư'], 
-                        value_vars=['Return Gross', 'Return Net'],
-                        var_name='Return Type', 
-                        value_name='Return'
+                        value_vars=['Gross Return', 'Net Return'],
+                        var_name='Loại lợi nhuận', 
+                        value_name='Tỷ lệ'
                     )
                     
                     bar_chart = alt.Chart(return_data_melted).mark_bar().encode(
                         x='Nhà Đầu Tư:N',
-                        y='Return:Q',
-                        color='Return Type:N',
-                        tooltip=['Nhà Đầu Tư', 'Return Type', 'Return']
+                        y='Tỷ lệ:Q',
+                        color='Loại lợi nhuận:N',
+                        tooltip=['Nhà Đầu Tư', 'Loại lợi nhuận', 'Tỷ lệ']
                     )
                     safe_altair_chart(bar_chart, use_container_width=True)
                 
@@ -957,7 +963,7 @@ class EnhancedReportPage:
                 safe_altair_chart(fee_chart, use_container_width=True)
         
         else:
-            st.info("📄 Chưa có dữ liệu performance.")
+            st.info("📄 Chưa có dữ liệu hiệu suất.")
     
     def render_fee_history(self):
         """Render fee history"""
@@ -1012,10 +1018,10 @@ class EnhancedReportPage:
                     'Nhà Đầu Tư': investor_name,
                     'Ngày Tính': record.calculation_date.strftime("%d/%m/%Y"),
                     'Phí (VND)': record.fee_amount,
-                    'Phí (Units)': f"{record.fee_units:.6f}",
+                    'Phí (Đơn vị quỹ)': f"{record.fee_units:.6f}",
                     'NAV/Unit': record.nav_per_unit,
-                    'Units Trước': f"{record.units_before:.6f}",
-                    'Units Sau': f"{record.units_after:.6f}",
+                    'Đơn vị quỹ trước': f"{record.units_before:.6f}",
+                    'Đơn vị quỹ sau': f"{record.units_after:.6f}",
                     'Mô tả': record.description
                 })
             
@@ -1035,7 +1041,7 @@ class EnhancedReportPage:
             avg_nav_price = sum(record.nav_per_unit for record in filtered_records) / len(filtered_records)
             
             col1.metric("💰 Tổng Phí (VND)", format_currency(total_fee_amount))
-            col2.metric("📊 Tổng Units Chuyển", f"{total_fee_units:.6f}")
+            col2.metric("📊 Tổng đơn vị quỹ chuyển", f"{total_fee_units:.6f}")
             col3.metric("📈 NAV Trung Bình", format_currency(avg_nav_price))
             
             # Fee summary by period
@@ -1055,7 +1061,7 @@ class EnhancedReportPage:
                 summary_data.append({
                     'Kỳ': period,
                     'Tổng Phí': format_currency(data['amount']),
-                    'Tổng Units': f"{data['units']:.6f}",
+                    'Tổng đơn vị quỹ': f"{data['units']:.6f}",
                     'Số Lần Tính': data['count']
                 })
             
@@ -1073,7 +1079,7 @@ class EnhancedReportPage:
                     y='Tổng Phí:Q',
                     color=alt.value('steelblue'),
                     tooltip=['Kỳ', 'Tổng Phí']
-                ).properties(title="Phí Performance Theo Kỳ")
+                ).properties(title="Phí hiệu suất theo kỳ")
                 
                 safe_altair_chart(chart, use_container_width=True)
         
@@ -1092,16 +1098,16 @@ class EnhancedReportPage:
         data = []
         for trans in sorted(self.fund_manager.transactions, key=lambda x: x.date, reverse=True):
             investor = self.fund_manager.get_investor_by_id(trans.investor_id)
-            investor_name = investor.display_name if investor else "System"
+            investor_name = investor.display_name if investor else "Hệ thống"
             
             data.append({
                 'ID': trans.id,
                 'Nhà Đầu Tư': investor_name,
                 'Ngày': trans.date.strftime("%d/%m/%Y %H:%M"),
-                'Loại': trans.type,
+                'Loại': display_transaction_type_vi(trans.type),
                 'Số Tiền': format_currency(trans.amount),
                 'NAV': format_currency(trans.nav),
-                'Units Change': f"{trans.units_change:.6f}"
+                'Biến động đơn vị quỹ': f"{trans.units_change:.6f}"
             })
         
         df_trans = pd.DataFrame(data)
@@ -1122,7 +1128,7 @@ class EnhancedReportPage:
     
     def _render_fund_manager_dashboard(self):
         """Dashboard cho fund manager"""
-        st.subheader("🛒 Fund Manager Dashboard")
+        st.subheader("🛒 Bảng Điều Khiển Fund Manager")
         
         fund_manager = self.fund_manager.get_fund_manager()
         if not fund_manager:
@@ -1132,7 +1138,7 @@ class EnhancedReportPage:
         fm_tranches = self.fund_manager.get_investor_tranches(fund_manager.id)
         
         if not fm_tranches:
-            st.info("📄 Fund Manager chưa có units")
+            st.info("📄 Fund Manager chưa có đơn vị quỹ")
             return
         
         latest_nav = self.fund_manager.get_latest_total_nav()
@@ -1150,13 +1156,13 @@ class EnhancedReportPage:
         avg_entry_price = total_invested / total_units if total_units > 0 else 0
         
         col1, col2, col3, col4 = st.columns(4)
-        col1.metric("📊 Total Units", f"{total_units:.6f}")
-        col2.metric("💰 Total Value", format_currency(total_value))
-        col3.metric("📈 Current Price", format_currency(current_price))
-        col4.metric("🎯 Avg Entry Price", format_currency(avg_entry_price))
+        col1.metric("📊 Tổng đơn vị quỹ", f"{total_units:.6f}")
+        col2.metric("💰 Tổng giá trị", format_currency(total_value))
+        col3.metric("📈 Giá hiện tại", format_currency(current_price))
+        col4.metric("🎯 Giá vào trung bình", format_currency(avg_entry_price))
         
         # Fund Manager tranches detail
-        st.subheader("📋 Fund Manager Tranches")
+        st.subheader("📋 Danh Sách Đợt Vốn Fund Manager")
         
         fm_data = []
         for tranche in fm_tranches:
@@ -1165,8 +1171,8 @@ class EnhancedReportPage:
             
             fm_data.append({
                 'Ngày Nhận': tranche.entry_date.strftime("%d/%m/%Y"),
-                'Entry Price': format_currency(tranche.entry_nav),
-                'Units': f"{tranche.units:.6f}",
+                'Giá vào': format_currency(tranche.entry_nav),
+                'Đơn vị quỹ': f"{tranche.units:.6f}",
                 'Vốn Đầu Tư': format_currency(tranche.invested_value),
                 'Giá Trị Hiện Tại': format_currency(current_value),
                 'L/L': format_currency(profit_loss),
@@ -1180,7 +1186,7 @@ class EnhancedReportPage:
         fee_transactions = [t for t in self.fund_manager.transactions if t.investor_id == fund_manager.id and t.type == 'Phí Nhận']
         
         if fee_transactions:
-            st.subheader("📈 Fee Income Timeline")
+            st.subheader("📈 Dòng thời gian phí nhận")
             
             fee_timeline = []
             cumulative_fee = 0
@@ -1188,23 +1194,23 @@ class EnhancedReportPage:
             for trans in sorted(fee_transactions, key=lambda x: x.date):
                 cumulative_fee += trans.amount
                 fee_timeline.append({
-                    'Date': trans.date,
-                    'Fee Amount': trans.amount,
-                    'Cumulative Fee': cumulative_fee
+                    'Ngày': trans.date,
+                    'Phí nhận': trans.amount,
+                    'Phí lũy kế': cumulative_fee
                 })
             
             df_timeline = pd.DataFrame(fee_timeline)
             
             chart = alt.Chart(df_timeline).mark_line(point=True).encode(
-                x='Date:T',
-                y='Cumulative Fee:Q',
-                tooltip=['Date', 'Fee Amount', 'Cumulative Fee']
-            ).properties(title="Cumulative Fee Income")
+                x='Ngày:T',
+                y='Phí lũy kế:Q',
+                tooltip=['Ngày', 'Phí nhận', 'Phí lũy kế']
+            ).properties(title="Lũy kế phí nhận")
             
             safe_altair_chart(chart, use_container_width=True)
             
             total_fee_income = sum(t.amount for t in fee_transactions)
-            st.success(f"💰 **Tổng Fee Income:** {format_currency(total_fee_income)}")
+            st.success(f"💰 **Tổng phí nhận:** {format_currency(total_fee_income)}")
         
         else:
-            st.info("📄 Fund Manager chưa nhận fee nào")
+            st.info("📄 Fund Manager chưa nhận khoản phí nào")

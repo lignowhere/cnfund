@@ -23,7 +23,7 @@ TRANSACTIONS_FILE = DATA_DIR / "transactions.csv"
 
 # === UI CONFIG ===
 PAGE_CONFIG = {
-    "page_title": "Fund Management System",
+    "page_title": "Hệ Thống Quản Lý Quỹ",
     "page_icon": "💰",
     "layout": "wide",
     "initial_sidebar_state": "expanded"

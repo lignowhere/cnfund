@@ -1,204 +1,230 @@
 # security_manager.py
 """
-Quản lý bảo mật và authentication
+Security and permission helpers for CNFund.
 """
 
-import streamlit as st
 import os
-from timezone_manager import TimezoneManager
+from typing import Dict, Any
+
+import streamlit as st
+
+from utils.timezone_manager import TimezoneManager
 
 
 class SecurityManager:
-    """Quản lý bảo mật và authentication cho app"""
-    
+    """Manage authentication state and edit-page access rules."""
+
     def __init__(self):
-        self.admin_password = self._get_admin_password()
         self.edit_pages = [
             "👥 Thêm Nhà Đầu Tư",
             "✏️ Sửa Thông Tin NĐT",
-            "💸 Thêm Giao Dịch", 
-            "📈 Thêm Total NAV",
-            "🛒 Fund Manager Withdrawal",
+            "💸 Thêm Giao Dịch",
+            "📈 Cập Nhật NAV",
+            "🛠 Rút Vốn Fund Manager",
             "🔧 Quản Lý Giao Dịch",
-            "🧮 Tính Toán Phí"
+            "🧮 Tính Toán Phí",
+            "📋 Tính Phí Riêng",
         ]
-    
-    def _get_admin_password(self):
-        """Get admin password từ secrets hoặc env vars"""
+        self.admin_password = self._get_admin_password()
+
+    def _is_cloud_environment(self) -> bool:
+        """Detect Streamlit Cloud runtime."""
+        return (
+            bool(os.getenv("STREAMLIT_CLOUD"))
+            or "streamlit.io" in os.getenv("HOSTNAME", "")
+            or "/mount/src" in os.getcwd()
+        )
+
+    def _get_admin_password(self) -> str:
+        """
+        Get admin password from secrets or env.
+        In cloud mode, missing ADMIN_PASSWORD is a hard error.
+        """
+        password = None
         try:
-            return st.secrets["ADMIN_PASSWORD"]
-        except (KeyError, FileNotFoundError, AttributeError):
-            # Fallback cho local hoặc nếu secrets chưa set
+            password = st.secrets.get("ADMIN_PASSWORD")
+        except Exception:
+            password = None
+
+        if not password:
             password = os.getenv("ADMIN_PASSWORD")
-            if not password:
-                password = "1997"  # Default cho development
-            return password
-    
-    def is_edit_page(self, page_name):
-        """Check xem page có cần quyền edit không"""
+
+        if self._is_cloud_environment() and not password:
+            raise RuntimeError("Missing ADMIN_PASSWORD in Streamlit secrets.")
+
+        return str(password or "").strip()
+
+    def is_edit_page(self, page_name: str) -> bool:
+        """Return True if this page requires admin login."""
         return page_name in self.edit_pages
-    
-    def is_logged_in(self):
-        """Check login status"""
-        return st.session_state.get('logged_in', False)
-    
-    def login(self, password):
-        """Thực hiện login"""
+
+    def is_logged_in(self) -> bool:
+        """Check login status from session state."""
+        return st.session_state.get("logged_in", False)
+
+    def login(self, password: str) -> bool:
+        """Attempt login."""
+        if not self.admin_password:
+            st.error("ADMIN_PASSWORD is not configured.")
+            return False
         if password == self.admin_password:
             st.session_state.logged_in = True
             return True
         return False
-    
+
     def logout(self):
-        """Thực hiện logout"""
+        """Log out current session."""
         st.session_state.logged_in = False
-    
+
     def render_login_form(self):
-        """Render form login với styling cải tiến"""
-        st.markdown("""
-            <div style='max-width: 400px; margin: 2rem auto; padding: 2rem; 
-                        background: white; border-radius: 10px; box-shadow: 0 4px 6px rgba(0,0,0,0.1);'>
-                <h3 style='text-align: center; color: #2c3e50; margin-bottom: 1.5rem;'>
+        """Render login form for protected pages."""
+        if not self.admin_password:
+            st.error("ADMIN_PASSWORD is not configured. Viewer mode only.")
+            return
+
+        st.markdown(
+            """
+            <div style='max-width: 420px; margin: 1.5rem auto; padding: 1.5rem;
+                        background: white; border-radius: 10px; box-shadow: 0 4px 6px rgba(0,0,0,0.08);'>
+                <h3 style='text-align: center; color: #2c3e50; margin-bottom: 1rem;'>
                     🔐 Yêu cầu đăng nhập để chỉnh sửa
                 </h3>
             </div>
-        """, unsafe_allow_html=True)
-        
-        with st.container():
-            col1, col2, col3 = st.columns([1, 2, 1])
-            with col2:
-                password = st.text_input("Mật khẩu", type="password", 
-                                       placeholder="Nhập mật khẩu admin...",
-                                       key="login_password")
-                
-                if st.button("🚀 Đăng nhập", width="stretch", type="primary"):
-                    if self.login(password):
-                        st.success("✅ Đăng nhập thành công!")
-                        st.rerun()
-                    else:
-                        st.error("⚠ Mật khẩu không chính xác")
-                        st.info("💡 Liên hệ admin để được hỗ trợ")
-    
-    def check_page_access(self, page_name):
-        """Check quyền truy cập page"""
+            """,
+            unsafe_allow_html=True,
+        )
+
+        col1, col2, col3 = st.columns([1, 2, 1])
+        with col2:
+            password = st.text_input(
+                "Mật khẩu",
+                type="password",
+                placeholder="Nhập mật khẩu admin...",
+                key="login_password",
+            )
+
+            if st.button("🚀 Đăng nhập", type="primary", use_container_width=True):
+                if self.login(password):
+                    st.success("✅ Đăng nhập thành công.")
+                    st.rerun()
+                else:
+                    st.error("⚠ Mật khẩu không chính xác.")
+
+    def check_page_access(self, page_name: str) -> bool:
+        """Return True if current user can access this page."""
         if self.is_edit_page(page_name) and not self.is_logged_in():
             return False
         return True
-    
+
     def render_access_denied(self):
-        """Render thông báo không có quyền truy cập"""
+        """Render permission denied/login UI."""
         self.render_login_form()
-    
-    def get_user_role(self):
-        """Get user role hiện tại"""
+
+    def get_user_role(self) -> str:
+        """Return current role."""
+        return "admin" if self.is_logged_in() else "viewer"
+
+    def render_user_badge(self) -> str:
+        """Return HTML status badge."""
         if self.is_logged_in():
-            return "admin"
-        return "viewer"
-    
-    def render_user_badge(self):
-        """Render user status badge"""
-        if self.is_logged_in():
-            return """
-                <div style='padding: 6px; background: linear-gradient(135deg, #28a745 0%, #20c997 100%); 
-                            color: white; border-radius: 4px; text-align: center; margin-bottom: 6px;'>
-                    <span style='font-size: 11px; font-weight: 500;'>👤 Chế độ Admin</span>
-                </div>
-            """
-        else:
-            return """
-                <div style='padding: 6px; background: #fff3cd; color: #856404; 
-                            border: 1px solid #ffeaa7; border-radius: 4px; text-align: center;'>
-                    <span style='font-size: 10px;'>🔒 Chế độ chỉ xem</span>
-                </div>
-            """
+            return (
+                "<div style='padding: 6px; background: linear-gradient(135deg, #28a745 0%, #20c997 100%);"
+                " color: white; border-radius: 4px; text-align: center; margin-bottom: 6px;'>"
+                "<span style='font-size: 11px; font-weight: 500;'>👤 Chế độ Admin</span></div>"
+            )
+        return (
+            "<div style='padding: 6px; background: #fff3cd; color: #856404;"
+            " border: 1px solid #ffeaa7; border-radius: 4px; text-align: center;'>"
+            "<span style='font-size: 10px;'>🔒 Chế độ chỉ xem</span></div>"
+        )
 
 
 class SessionManager:
-    """Quản lý session state và data persistence"""
-    
+    """Manage common Streamlit session state keys."""
+
     @staticmethod
     def init_session_state():
-        """Initialize session state variables"""
+        """Initialize session defaults."""
         default_values = {
-            'logged_in': False,
-            'current_page': "👥 Thêm Nhà Đầu Tư",
-            'data_changed': False,
-            'last_save_time': None,
-            'fund_manager': None
+            "logged_in": False,
+            "current_page": "👥 Thêm Nhà Đầu Tư",
+            "data_changed": False,
+            "last_save_time": None,
+            "fund_manager": None,
         }
-        
         for key, default_value in default_values.items():
             if key not in st.session_state:
                 st.session_state[key] = default_value
-    
+
     @staticmethod
     def mark_data_changed():
-        """Mark data as changed"""
+        """Mark data dirty."""
         st.session_state.data_changed = True
-    
+
     @staticmethod
     def mark_data_saved():
-        """Mark data as saved"""
+        """Mark data saved."""
         st.session_state.data_changed = False
-        st.session_state.last_save_time = st.session_state.get('current_time')
-    
+        st.session_state.last_save_time = st.session_state.get("current_time")
+
     @staticmethod
-    def get_session_info():
-        """Get session information for debugging"""
+    def get_session_info() -> Dict[str, Any]:
+        """Debug helper for current session."""
         return {
-            'logged_in': st.session_state.get('logged_in', False),
-            'current_page': st.session_state.get('current_page', 'Unknown'),
-            'data_changed': st.session_state.get('data_changed', False),
-            'session_keys': list(st.session_state.keys())
+            "logged_in": st.session_state.get("logged_in", False),
+            "current_page": st.session_state.get("current_page", "Unknown"),
+            "data_changed": st.session_state.get("data_changed", False),
+            "session_keys": list(st.session_state.keys()),
         }
-    
+
     @staticmethod
     def clear_session():
-        """Clear all session data"""
-        keys_to_clear = [key for key in st.session_state.keys() 
-                        if not key.startswith('FormSubmitter')]
+        """Clear all session state except form submit keys."""
+        keys_to_clear = [
+            key for key in st.session_state.keys() if not key.startswith("FormSubmitter")
+        ]
         for key in keys_to_clear:
             del st.session_state[key]
 
 
 class PermissionManager:
-    """Quản lý permissions cho các features khác nhau"""
-    
+    """Action-level permission helper."""
+
     PERMISSIONS = {
-        'admin': {
-            'can_add_investor': True,
-            'can_edit_investor': True,
-            'can_add_transaction': True,
-            'can_edit_transaction': True,
-            'can_calculate_fees': True,
-            'can_export_data': True,
-            'can_view_reports': True,
-            'can_manage_nav': True,
-            'can_withdraw_funds': True
+        "admin": {
+            "can_add_investor": True,
+            "can_edit_investor": True,
+            "can_add_transaction": True,
+            "can_edit_transaction": True,
+            "can_calculate_fees": True,
+            "can_export_data": True,
+            "can_view_reports": True,
+            "can_manage_nav": True,
+            "can_withdraw_funds": True,
         },
-        'viewer': {
-            'can_add_investor': False,
-            'can_edit_investor': False,
-            'can_add_transaction': False,
-            'can_edit_transaction': False,
-            'can_calculate_fees': False,
-            'can_export_data': True,  # Viewer có thể export
-            'can_view_reports': True,  # Viewer có thể xem reports
-            'can_manage_nav': False,
-            'can_withdraw_funds': False
-        }
+        "viewer": {
+            "can_add_investor": False,
+            "can_edit_investor": False,
+            "can_add_transaction": False,
+            "can_edit_transaction": False,
+            "can_calculate_fees": False,
+            "can_export_data": True,
+            "can_view_reports": True,
+            "can_manage_nav": False,
+            "can_withdraw_funds": False,
+        },
     }
-    
-    def __init__(self, security_manager):
+
+    def __init__(self, security_manager: SecurityManager):
         self.security_manager = security_manager
-    
-    def has_permission(self, action):
-        """Check quyền thực hiện action"""
+
+    def has_permission(self, action: str) -> bool:
+        """Check whether current role can perform action."""
         user_role = self.security_manager.get_user_role()
         return self.PERMISSIONS.get(user_role, {}).get(action, False)
-    
-    def require_permission(self, action, error_message=None):
-        """Decorator/context manager require permission"""
+
+    def require_permission(self, action: str, error_message: str = None) -> bool:
+        """Show error and return False if permission is missing."""
         if not self.has_permission(action):
             if error_message:
                 st.error(error_message)
@@ -206,50 +232,47 @@ class PermissionManager:
                 st.error(f"⚠️ Bạn không có quyền thực hiện: {action}")
             return False
         return True
-    
+
     def get_allowed_actions(self):
-        """Get list of allowed actions cho user hiện tại"""
+        """Return allowed actions for current role."""
         user_role = self.security_manager.get_user_role()
         permissions = self.PERMISSIONS.get(user_role, {})
         return [action for action, allowed in permissions.items() if allowed]
 
 
 class AuditLogger:
-    """Log các hoạt động của user"""
-    
+    """Simple file logger for audit events."""
+
     def __init__(self):
         self.log_file = "audit.log"
-    
-    def log_action(self, user_role, action, details=None):
-        """Log user action"""
+
+    def log_action(self, user_role: str, action: str, details=None):
+        """Append one audit event to file."""
         try:
             timestamp = TimezoneManager.now().isoformat()
             log_entry = {
-                'timestamp': timestamp,
-                'user_role': user_role,
-                'action': action,
-                'details': details or {}
+                "timestamp": timestamp,
+                "user_role": user_role,
+                "action": action,
+                "details": details or {},
             }
-            
-            # Simple file logging
-            with open(self.log_file, 'a', encoding='utf-8') as f:
+            with open(self.log_file, "a", encoding="utf-8") as f:
                 f.write(f"{log_entry}\n")
         except Exception:
-            # Silent fail for logging errors
             pass
-    
-    def log_login_attempt(self, success, ip_address=None):
-        """Log login attempt"""
+
+    def log_login_attempt(self, success: bool, ip_address: str = None):
+        """Record login attempt."""
         self.log_action(
-            'system',
-            'login_attempt',
-            {'success': success, 'ip_address': ip_address}
+            "system",
+            "login_attempt",
+            {"success": success, "ip_address": ip_address},
         )
-    
-    def log_data_change(self, user_role, change_type, entity_type):
-        """Log data changes"""
+
+    def log_data_change(self, user_role: str, change_type: str, entity_type: str):
+        """Record data change action."""
         self.log_action(
             user_role,
-            f'data_{change_type}',
-            {'entity_type': entity_type}
+            f"data_{change_type}",
+            {"entity_type": entity_type},
         )

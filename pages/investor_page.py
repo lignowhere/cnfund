@@ -188,13 +188,13 @@ class InvestorPage:
         from utils.streamlit_widget_safety import safe_investor_id_from_selectbox
         investor_id = safe_investor_id_from_selectbox(self.fund_manager, selected_display)
         if investor_id is None:
-            st.error("❌ Could not get valid investor ID from selection")
+            st.error("❌ Không thể lấy ID nhà đầu tư hợp lệ từ lựa chọn")
             return
         
         # Input Total NAV
         latest_nav = self.fund_manager.get_latest_total_nav()
         default_nav = format_currency(latest_nav) if latest_nav else "0đ"
-        nav_input = st.text_input("Total NAV Hiện Tại", value=default_nav, key="status_nav")
+        nav_input = st.text_input("NAV hiện tại", value=default_nav, key="status_nav")
         
         current_nav = parse_currency(nav_input)
         
@@ -215,7 +215,7 @@ class InvestorPage:
                 
                 # Chi tiết tranches
                 if len(tranches) > 1:
-                    with st.expander("📋 Chi tiết tranches"):
+                    with st.expander("📋 Chi tiết các đợt vốn"):
                         tranche_data = []
                         current_price = self.fund_manager.calculate_price_per_unit(current_nav)
                         
@@ -223,7 +223,7 @@ class InvestorPage:
                             tranche_data.append({
                                 'Ngày vào': t.entry_date.strftime("%d/%m/%Y"),
                                 'Giá vào': format_currency(t.entry_nav),
-                                'Units': f"{t.units:.6f}",
+                                'Đơn vị quỹ': f"{t.units:.6f}",
                                 'Vốn': format_currency(t.invested_value),
                                 'Giá trị hiện tại': format_currency(t.units * current_price),
                                 'L/L': format_currency((current_price - t.entry_nav) * t.units),

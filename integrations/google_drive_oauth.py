@@ -25,7 +25,7 @@ except ImportError:
     GOOGLE_OAUTH_AVAILABLE = False
     if TYPE_CHECKING:
         from google.oauth2.credentials import Credentials
-    st.warning("⚠️ Google OAuth libraries not installed. Run: pip install google-auth-oauthlib")
+    st.warning("⚠️ Chưa cài thư viện Google OAuth. Chạy: pip install google-auth-oauthlib")
 
 if GOOGLE_OAUTH_AVAILABLE:
     class GoogleDriveOAuthManager:
@@ -58,8 +58,8 @@ if GOOGLE_OAUTH_AVAILABLE:
 
                     if is_cloud:
                         print("❌ No OAuth token found in Streamlit secrets")
-                        st.error("❌ OAuth token not found in secrets")
-                        st.info("📖 Setup guide: docs/STREAMLIT_CLOUD_SETUP.md")
+                        st.error("❌ Không tìm thấy mã thông báo OAuth trong cấu hình secrets")
+                        st.info("📖 Hướng dẫn thiết lập: docs/STREAMLIT_CLOUD_SETUP.md")
                         self.connected = False
                         return
                     else:
@@ -186,7 +186,7 @@ if GOOGLE_OAUTH_AVAILABLE:
 
                     except Exception as e:
                         print(f"⚠️ Could not create flow from secrets: {e}")
-                        st.error(f"❌ Error loading OAuth credentials from secrets: {e}")
+                        st.error(f"❌ Lỗi tải thông tin OAuth từ secrets: {e}")
                         return None
 
                 # Try to get from file (for local development)
@@ -196,14 +196,14 @@ if GOOGLE_OAUTH_AVAILABLE:
                         str(self.credentials_file), self.SCOPES
                     )
                 else:
-                    st.error(f"❌ OAuth credentials not found")
-                    st.info("📋 For local: Create oauth_credentials.json")
-                    st.info("📋 For cloud: Add oauth_credentials to Streamlit secrets")
+                    st.error("❌ Không tìm thấy thông tin OAuth")
+                    st.info("📋 Môi trường cục bộ: Tạo oauth_credentials.json")
+                    st.info("📋 Môi trường đám mây: Thêm oauth_credentials vào Streamlit secrets")
                     return None
 
                 # For Streamlit, we need to use manual flow
-                st.info("🔐 OAuth authentication required...")
-                st.warning("⚠️ This requires manual OAuth setup. See oauth_setup_instructions.md")
+                st.info("🔐 Yêu cầu xác thực OAuth...")
+                st.warning("⚠️ Cần thiết lập OAuth thủ công. Xem oauth_setup_instructions.md")
 
                 # Try to run local server flow
                 try:
@@ -211,11 +211,11 @@ if GOOGLE_OAUTH_AVAILABLE:
                     self._save_credentials(creds)
                     return creds
                 except Exception as flow_error:
-                    st.error(f"❌ OAuth flow failed: {flow_error}")
+                    st.error(f"❌ Luồng OAuth thất bại: {flow_error}")
                     return None
 
             except Exception as e:
-                st.error(f"❌ OAuth flow error: {e}")
+                st.error(f"❌ Lỗi luồng OAuth: {e}")
                 return None
     
         def _get_folder_id(self) -> str:
@@ -308,8 +308,8 @@ if GOOGLE_OAUTH_AVAILABLE:
 
                 folder_id = folder.get('id')
                 if folder_id:
-                    st.success(f"📁 Created backup folder: CNFund Backup")
-                    st.info(f"🔗 Folder link: {folder.get('webViewLink', '')}")
+                    st.success(f"📁 Đã tạo thư mục sao lưu: CNFund Backup")
+                    st.info(f"🔗 Liên kết thư mục: {folder.get('webViewLink', '')}")
                     print(f"💾 IMPORTANT: Save this folder ID to Streamlit secrets: {folder_id}")
                     print(f"💾 Add to .streamlit/secrets.toml: drive_folder_id = \"{folder_id}\"")
                     return folder_id
@@ -330,7 +330,7 @@ if GOOGLE_OAUTH_AVAILABLE:
             }
 
             if not self.connected or not self.service:
-                result['errors'].append("Not connected to Google Drive")
+                result['errors'].append("Chưa kết nối Google Drive")
                 return result
 
             try:
@@ -338,8 +338,8 @@ if GOOGLE_OAUTH_AVAILABLE:
                 about = self.service.about().get(fields="user").execute()
                 user_info = about.get('user', {})
                 result['user'] = {
-                    'name': user_info.get('displayName', 'Unknown'),
-                    'email': user_info.get('emailAddress', 'Unknown')
+                    'name': user_info.get('displayName', 'Không xác định'),
+                    'email': user_info.get('emailAddress', 'Không xác định')
                 }
                 result['connected'] = True
 
@@ -355,19 +355,19 @@ if GOOGLE_OAUTH_AVAILABLE:
                         result['folder_access'] = True
                         result['files_count'] = len(files)
                     except Exception as folder_error:
-                        result['errors'].append(f"Folder access error: {str(folder_error)}")
+                        result['errors'].append(f"Lỗi truy cập thư mục: {str(folder_error)}")
                 else:
-                    result['errors'].append("No folder ID configured")
+                    result['errors'].append("Chưa cấu hình ID thư mục")
 
             except Exception as e:
-                result['errors'].append(f"Connection test error: {str(e)}")
+                result['errors'].append(f"Lỗi kiểm tra kết nối: {str(e)}")
 
             return result
     
         def upload_to_drive(self, file_buffer: io.BytesIO, filename: str) -> bool:
             """Upload file using OAuth credentials (personal account)"""
             if not self.connected or not self.service:
-                st.error("❌ Google Drive not connected")
+                st.error("❌ Google Drive chưa kết nối")
                 return False
 
             try:
@@ -404,15 +404,15 @@ if GOOGLE_OAUTH_AVAILABLE:
 
                     web_link = file.get('webViewLink', '')
                     if web_link:
-                        st.success(f"✅ Uploaded: [{filename}]({web_link})")
+                        st.success(f"✅ Đã tải lên: [{filename}]({web_link})")
                     else:
-                        st.success(f"✅ Uploaded: {filename}")
+                        st.success(f"✅ Đã tải lên: {filename}")
                     return True
 
                 return False
 
             except Exception as e:
-                st.error(f"❌ Upload error: {str(e)}")
+                st.error(f"❌ Lỗi tải lên: {str(e)}")
                 return False
 
         def is_authenticated(self) -> bool:
@@ -424,13 +424,13 @@ if GOOGLE_OAUTH_AVAILABLE:
             try:
                 if self.token_file.exists():
                     self.token_file.unlink()
-                    st.info("🔄 Saved credentials cleared. Re-authentication required.")
+                    st.info("🔄 Đã xóa thông tin xác thực đã lưu. Cần xác thực lại.")
 
                 # Reinitialize
                 self._initialize_oauth_service()
 
             except Exception as e:
-                st.error(f"❌ Could not clear credentials: {e}")
+                st.error(f"❌ Không thể xóa thông tin xác thực: {e}")
 
 else:
     # Dummy class when OAuth libraries not available
@@ -442,10 +442,10 @@ else:
             self.folder_id = None
 
         def test_connection(self):
-            return {'connected': False, 'errors': ['OAuth libraries not installed']}
+            return {'connected': False, 'errors': ['Chưa cài thư viện OAuth']}
 
         def upload_to_drive(self, file_buffer, filename):
-            st.error("❌ Google OAuth not available. Install: pip install google-auth-oauthlib")
+            st.error("❌ Google OAuth không khả dụng. Cài đặt: pip install google-auth-oauthlib")
             return False
 
         def is_authenticated(self):

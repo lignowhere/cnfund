@@ -111,14 +111,14 @@ class DriveBackedDataManager:
                         self._parse_excel_to_session(excel_bytes)
                         self._mark_as_loaded()
 
-                        st.success(f"✅ Đã tải dữ liệu từ Drive (File: {latest_backup['name']})")
+                        st.success(f"✅ Đã tải dữ liệu từ Drive (Tệp: {latest_backup['name']})")
                         return True
                 else:
                     # No backup found - initialize empty
                     print("ℹ️ No backup found - initializing empty data")
                     self._init_empty_data()
                     self._mark_as_loaded()
-                    st.info("ℹ️ Không tìm thấy backup - khởi tạo dữ liệu mới")
+                    st.info("ℹ️ Không tìm thấy bản sao lưu - khởi tạo dữ liệu mới")
                     return True
 
         except Exception as e:
@@ -326,16 +326,16 @@ class DriveBackedDataManager:
 
         return pd.DataFrame(columns=schemas.get(table_name, []))
 
-    def backup_to_drive(self, auto_cleanup: bool = True, keep_recent: int = 10) -> bool:
+    def backup_to_drive(self, auto_cleanup: bool = False, keep_recent: int = 10) -> bool:
         """
         Backup all session data to Google Drive
 
         Args:
-            auto_cleanup: Automatically delete old backups (default: True)
+            auto_cleanup: Automatically delete old backups (default: False)
             keep_recent: Number of recent backups to keep (default: 10)
         """
         if not self.connected:
-            st.warning("⚠️ Không thể backup - Drive chưa kết nối")
+            st.warning("⚠️ Không thể sao lưu - Drive chưa kết nối")
             return False
 
         try:
@@ -386,7 +386,7 @@ class DriveBackedDataManager:
                 return False
 
         except Exception as e:
-            st.error(f"❌ Lỗi backup: {e}")
+            st.error(f"❌ Lỗi sao lưu: {e}")
             print(f"❌ Backup error: {e}")
             return False
 
@@ -698,7 +698,7 @@ class DriveBackedDataManager:
 
             # Backup to Drive
             print("☁️ Backing up to Drive...")
-            success = self.backup_to_drive()
+            success = self.backup_to_drive(auto_cleanup=False)
 
             if success:
                 print("✅ Save completed successfully")

@@ -46,7 +46,7 @@ def safe_altair_chart(chart: alt.Chart, **kwargs) -> None:
             st.altair_chart(chart, use_container_width=True)
         except Exception as e2:
             print(f"Fallback chart error: {str(e2)}")
-            st.error("❌ Unable to render chart")
+            st.error("❌ Không thể hiển thị biểu đồ")
 
 def safe_plotly_chart(figure: go.Figure, **kwargs) -> None:
     """
@@ -75,7 +75,7 @@ def safe_plotly_chart(figure: go.Figure, **kwargs) -> None:
     try:
         st.plotly_chart(figure, **filtered_params)
     except Exception as e:
-        st.error(f"❌ Chart rendering failed: {str(e)}")
+        st.error(f"❌ Hiển thị biểu đồ thất bại: {str(e)}")
         print(f"Chart error details: {str(e)}")
 
 def validate_chart_environment() -> Dict[str, Any]:
