@@ -1,17 +1,20 @@
 from fastapi import APIRouter, Depends, HTTPException, Query
 
 from ...api.deps import require_mutate_access, require_read_access
+from ...core.config import get_settings
 from ...schemas.common import ApiResponse, PaginatedResponse
 from ...schemas.transactions import (
     TransactionCardDTO,
     TransactionCreateRequest,
     TransactionDTO,
 )
+from ...services.backup_service import trigger_auto_backup_after_transaction
 from ...services.fund_runtime import runtime
 from ...services.mappers import transaction_to_card_dto, transaction_to_dto
 
 
 router = APIRouter()
+settings = get_settings()
 
 
 def _investor_name_map(manager) -> dict[int, str]:
@@ -107,7 +110,26 @@ def create_transaction(payload: TransactionCreateRequest, _user=Depends(require_
             raise HTTPException(status_code=400, detail=message)
         return {"success": True, "message": message}
 
-    return ApiResponse(message="Transaction processed", data=runtime.mutate(_write))
+    result = runtime.mutate(_write)
+
+    if settings.auto_backup_on_new_transaction:
+        try:
+            auto_backup = runtime.read(
+                lambda manager: trigger_auto_backup_after_transaction(
+                    manager,
+                    transaction_type=payload.transaction_type,
+                )
+            )
+            result["auto_backup"] = auto_backup
+        except Exception as exc:
+            result["auto_backup"] = {
+                "backup_id": None,
+                "local_backup": False,
+                "google_drive_uploaded": False,
+                "google_drive_reason": f"auto_backup_failed:{exc}",
+            }
+
+    return ApiResponse(message="Transaction processed", data=result)
 
 
 @router.delete("/{transaction_id}", response_model=ApiResponse[dict])
@@ -130,4 +152,3 @@ def undo_transaction(transaction_id: int, _user=Depends(require_mutate_access)):
         return {"undone": True, "transaction_id": transaction_id}
 
     return ApiResponse(message="Transaction undone", data=runtime.mutate(_write))
-

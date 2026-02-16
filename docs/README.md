@@ -1,52 +1,16 @@
-# Hệ Thống Quản Lý Quỹ Đầu Tư
+﻿# CNFund Documentation
 
-## Mục Lục Tài Liệu
+## Active docs
 
-### 📖 [Tổng Quan Dự Án](overview/)
-- [Giới Thiệu Hệ Thống](overview/introduction.md)
-- [Hướng Dẫn Cài Đặt](overview/installation.md)
-- [Cấu Hình Hệ Thống](overview/configuration.md)
+- `docs/DEPLOYMENT_LOW_COST_STABLE.md`: deployment runbook (Railway + Vercel + PostgreSQL)
+- `docs/CUTOVER_AND_ROLLBACK_PLAYBOOK.md`: release/cutover and rollback steps
+- `docs/STRANGLER_MIGRATION_SETUP.md`: parallel migration setup notes
+- `docs/STREAMLIT_CLOUD_SETUP.md`: legacy Streamlit Cloud setup (kept for fallback use)
 
-### 🏗️ [Kiến Trúc Hệ Thống](architecture/)
-- [Tổng Quan Kiến Trúc](architecture/overview.md)
-- [Sơ Đồ Components](architecture/components.md)
-- [Luồng Dữ Liệu](architecture/data-flow.md)
+## Archived legacy docs
 
-### 📚 [API Documentation](api/)
-- [Core Services API](api/services.md)
-- [Data Models](api/models.md)
-- [Database Handler](api/database.md)
+Legacy Streamlit/Supabase architecture notes and one-off fix reports were moved to:
 
-### 👥 [Hướng Dẫn Người Dùng](user-guides/)
-- [Quản Lý Nhà Đầu Tư](user-guides/investor-management.md)
-- [Quản Lý Giao Dịch](user-guides/transaction-management.md)
-- [Tính Toán Phí](user-guides/fee-calculation.md)
-- [Báo Cáo Và Thống Kê](user-guides/reporting.md)
+- `docs/archive/legacy-streamlit/`
 
-### 🔧 [Developer Documentation](developer/)
-- [Coding Standards](developer/coding-standards.md)
-- [Testing Guide](developer/testing.md)
-- [Development Workflow](developer/workflow.md)
-- [Performance Guidelines](developer/performance.md)
-
-### 🗄️ [Database Documentation](database/)
-- [Schema Overview](database/schema.md)
-- [Data Models](database/models.md)
-- [Migration Guide](database/migrations.md)
-
----
-
-## Liên Kết Nhanh
-
-- **🚀 Bắt Đầu**: [Hướng Dẫn Cài Đặt](overview/installation.md)
-- **📱 Sử Dụng**: [Hướng Dẫn Người Dùng Cuối](user-guides/)
-- **💻 Phát Triển**: [Developer Documentation](developer/)
-- **🏗️ Kiến Trúc**: [Architecture Overview](architecture/overview.md)
-
-## Phiên Bản Hiện Tại
-
-- **Version**: 2.0
-- **Last Updated**: September 2025
-- **Python**: 3.8+
-- **Framework**: Streamlit
-- **Database**: Supabase PostgreSQL
+These files are kept for historical reference only and should not be treated as the current system design.

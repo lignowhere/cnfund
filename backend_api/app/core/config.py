@@ -24,6 +24,7 @@ class Settings(BaseSettings):
     feature_backup_restore: bool = True
     feature_fee_safety: bool = True
     feature_transactions_load_more: bool = True
+    auto_backup_on_new_transaction: bool = True
 
     model_config = SettingsConfigDict(
         env_file=".env",

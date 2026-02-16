@@ -36,6 +36,9 @@ Main env vars:
 - `API_FEATURE_BACKUP_RESTORE=true`
 - `API_FEATURE_FEE_SAFETY=true`
 - `API_FEATURE_TRANSACTIONS_LOAD_MORE=true`
+- `API_AUTO_BACKUP_ON_NEW_TRANSACTION=true` (auto backup when creating new transaction)
+- `GOOGLE_DRIVE_FOLDER_ID=<drive-folder-id-or-url>`
+- `GOOGLE_OAUTH_TOKEN_BASE64=<base64-token-from-token.pickle>`
 
 ## Run
 

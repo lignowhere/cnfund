@@ -29,11 +29,16 @@ API_FEATURE_TABLE_VIEW=true
 API_FEATURE_BACKUP_RESTORE=true
 API_FEATURE_FEE_SAFETY=true
 API_FEATURE_TRANSACTIONS_LOAD_MORE=true
+API_AUTO_BACKUP_ON_NEW_TRANSACTION=true
+GOOGLE_DRIVE_FOLDER_ID=<drive-folder-id-or-url>
+GOOGLE_OAUTH_TOKEN_BASE64=<base64-token-from-token.pickle>
 ```
 
 Notes:
 - `API_CNFUND_DATA_SOURCE=postgres` is now the primary mode.
 - `API_POSTGRES_BOOTSTRAP_FROM_CSV=true` is only for one-time migration when DB is empty.
+- If `GOOGLE_DRIVE_FOLDER_ID` and `GOOGLE_OAUTH_TOKEN_BASE64` are configured, every new transaction (`POST /api/v1/transactions`) triggers automatic backup upload to Google Drive.
+- If you already have `token_encoded.txt`, copy its full content into `GOOGLE_OAUTH_TOKEN_BASE64`.
 
 ## 3) Railway click-by-click
 

@@ -46,9 +46,10 @@ token_encoded.txt
 
 # Local data (CSV files - use Drive for cloud)
 data/
-exports/nul
-
-.streamlit/nul
+exports/
+backend_api/exports/
+.streamlit/
+tmp_*.txt
 
 # Strangler migration workspaces
 frontend_app/node_modules/

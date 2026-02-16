@@ -1,3 +1,6 @@
+import base64
+import os
+import pickle
 from datetime import datetime, timedelta
 from pathlib import Path
 import re
@@ -231,6 +234,147 @@ def _write_backup_excel(fund_manager, filename: str) -> Path:
         fees_df.to_excel(writer, sheet_name="Fee Records", index=False)
 
     return output_path
+
+
+def _normalize_drive_folder_id(raw_value: str | None) -> str | None:
+    if not raw_value:
+        return None
+    value = raw_value.strip()
+    if not value:
+        return None
+
+    match = re.search(r"/folders/([a-zA-Z0-9_-]+)", value)
+    if match:
+        return match.group(1)
+
+    match = re.search(r"[?&]id=([a-zA-Z0-9_-]+)", value)
+    if match:
+        return match.group(1)
+
+    return value
+
+
+def _load_google_credentials():
+    token_b64 = (
+        os.getenv("GOOGLE_OAUTH_TOKEN_BASE64")
+        or os.getenv("OAUTH_TOKEN_BASE64")
+        or os.getenv("oauth_token_base64")
+    )
+    token_file = Path("token.pickle")
+    token_encoded_file = Path("token_encoded.txt")
+
+    creds = None
+    if token_b64:
+        try:
+            creds = pickle.loads(base64.b64decode(token_b64.strip()))
+        except Exception:
+            creds = None
+    elif token_file.exists():
+        try:
+            with token_file.open("rb") as f:
+                creds = pickle.load(f)
+        except Exception:
+            creds = None
+    elif token_encoded_file.exists():
+        try:
+            encoded = token_encoded_file.read_text(encoding="utf-8").strip()
+            creds = pickle.loads(base64.b64decode(encoded))
+        except Exception:
+            creds = None
+
+    if creds is None:
+        return None, "missing_oauth_token"
+
+    try:
+        from google.auth.transport.requests import Request
+
+        if getattr(creds, "expired", False) and getattr(creds, "refresh_token", None):
+            creds.refresh(Request())
+    except Exception as exc:
+        return None, f"refresh_failed:{exc}"
+
+    if not getattr(creds, "valid", False):
+        return None, "invalid_oauth_token"
+
+    return creds, None
+
+
+def _upload_backup_to_google_drive(local_path: Path) -> dict[str, Any]:
+    folder_id = _normalize_drive_folder_id(
+        os.getenv("GOOGLE_DRIVE_FOLDER_ID") or os.getenv("DRIVE_FOLDER_ID")
+    )
+    if not folder_id:
+        return {
+            "uploaded": False,
+            "reason": "missing_drive_folder_id",
+            "file_id": None,
+            "web_view_link": None,
+        }
+
+    creds, error = _load_google_credentials()
+    if creds is None:
+        return {
+            "uploaded": False,
+            "reason": error or "missing_credentials",
+            "file_id": None,
+            "web_view_link": None,
+        }
+
+    try:
+        from googleapiclient.discovery import build
+        from googleapiclient.http import MediaFileUpload
+
+        service = build("drive", "v3", credentials=creds, cache_discovery=False)
+        media = MediaFileUpload(
+            str(local_path),
+            mimetype="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            resumable=False,
+        )
+        metadata = {"name": local_path.name, "parents": [folder_id]}
+        uploaded = (
+            service.files()
+            .create(
+                body=metadata,
+                media_body=media,
+                fields="id,name,webViewLink",
+                supportsAllDrives=True,
+            )
+            .execute()
+        )
+        return {
+            "uploaded": True,
+            "reason": None,
+            "file_id": uploaded.get("id"),
+            "web_view_link": uploaded.get("webViewLink"),
+        }
+    except Exception as exc:
+        return {
+            "uploaded": False,
+            "reason": f"upload_failed:{exc}",
+            "file_id": None,
+            "web_view_link": None,
+        }
+
+
+def trigger_auto_backup_after_transaction(
+    fund_manager, transaction_type: str = "transaction"
+) -> dict[str, Any]:
+    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+    safe_type = re.sub(r"[^a-zA-Z0-9_-]+", "_", transaction_type).strip("_") or "transaction"
+    filename = f"Fund_Export_{timestamp}_auto_{safe_type}.xlsx"
+
+    local_path = _write_backup_excel(fund_manager, filename)
+    drive_result = _upload_backup_to_google_drive(local_path)
+
+    return {
+        "backup_id": local_path.name,
+        "created_at": datetime.now().isoformat(),
+        "local_backup": True,
+        "google_drive_uploaded": bool(drive_result.get("uploaded")),
+        "google_drive_file_id": drive_result.get("file_id"),
+        "google_drive_link": drive_result.get("web_view_link"),
+        "google_drive_reason": drive_result.get("reason"),
+    }
 
 
 def trigger_manual_backup(fund_manager, description: str = "api_manual") -> dict[str, Any]:
