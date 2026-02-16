@@ -1,0 +1,9 @@
+﻿{
+  "version": "v3",
+  "source_url": "https://raw.githubusercontent.com/thanglequoc/vietnamese-provinces-database/master/json/vn_only_simplified_json_generated_data_vn_units.json",
+  "source_repo": "https://github.com/thanglequoc/vietnamese-provinces-database",
+  "fetched_at": "2026-02-16T21:44:38+07:00",
+  "checksum_sha256": "E10D713FAD54145836A2D9CC3D5D3C3C81A751C00F1B172EF67BB83C89A54589",
+  "model": "province_to_ward",
+  "notes": "Snapshot for backend-only location catalog. Runtime does not call third-party APIs."
+}

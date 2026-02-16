@@ -33,7 +33,7 @@ test("create investor from mobile flow", async ({ page }) => {
   await page.getByPlaceholder("Tên").fill(uniqueName);
   await page.getByPlaceholder("Số điện thoại").fill("0900000000");
   await page.getByPlaceholder("Email").fill("e2e@example.com");
-  await page.getByPlaceholder("Địa chỉ").fill("TP HCM");
+  await page.getByPlaceholder("Địa chỉ chi tiết (số nhà, đường...)").fill("TP HCM");
   await page.getByRole("button", { name: "Tạo nhà đầu tư" }).click();
 
   await expect(page.getByText("Đã tạo nhà đầu tư mới.")).toBeVisible();

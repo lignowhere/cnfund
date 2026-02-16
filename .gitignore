@@ -46,6 +46,9 @@ token_encoded.txt
 
 # Local data (CSV files - use Drive for cloud)
 data/
+!backend_api/app/data/
+!backend_api/app/data/locations/
+!backend_api/app/data/locations/*.json
 exports/
 backend_api/exports/
 .streamlit/

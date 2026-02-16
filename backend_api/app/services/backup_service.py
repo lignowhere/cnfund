@@ -126,6 +126,33 @@ def _as_bool(value: Any, fallback: bool = False) -> bool:
     return fallback
 
 
+def _normalize_phone_value(value: Any) -> str:
+    if value is None:
+        return ""
+    text = str(value).strip()
+    if not text or text.lower() in {"nan", "none"}:
+        return ""
+
+    # Excel often serializes phone numbers as floats like 912345678.0.
+    if isinstance(value, (int, float)) and not isinstance(value, bool):
+        try:
+            if float(value).is_integer():
+                text = str(int(value))
+        except Exception:
+            pass
+    elif text.endswith(".0") and text[:-2].isdigit():
+        text = text[:-2]
+
+    digits = re.sub(r"\D+", "", text)
+    if not digits:
+        return ""
+    if len(digits) == 9:
+        return f"0{digits}"
+    if len(digits) == 10 and digits.startswith("0"):
+        return digits
+    return digits
+
+
 def list_local_backups(days: int = 30) -> list[dict[str, Any]]:
     EXPORT_DIR.mkdir(exist_ok=True)
     cutoff = datetime.now() - timedelta(days=days)
@@ -166,6 +193,11 @@ def _write_backup_excel(fund_manager, filename: str) -> Path:
                 "name": inv.name,
                 "phone": inv.phone,
                 "address": inv.address,
+                "province_code": getattr(inv, "province_code", ""),
+                "province_name": getattr(inv, "province_name", ""),
+                "ward_code": getattr(inv, "ward_code", ""),
+                "ward_name": getattr(inv, "ward_name", ""),
+                "address_line": getattr(inv, "address_line", ""),
                 "email": inv.email,
                 "join_date": inv.join_date,
                 "is_fund_manager": bool(inv.is_fund_manager),
@@ -425,12 +457,19 @@ def restore_from_local_backup(
         df = _normalize_columns(investors_sheet)
         for _, row in df.iterrows():
             try:
+                address_value = str(_row_pick(row, "address") or "").strip()
+                address_line_value = str(_row_pick(row, "address_line") or "").strip() or address_value
                 investors.append(
                     Investor(
                         id=safe_int_conversion(_row_pick(row, "id")),
                         name=str(_row_pick(row, "name") or "").strip(),
-                        phone=str(_row_pick(row, "phone") or "").strip(),
-                        address=str(_row_pick(row, "address") or "").strip(),
+                        phone=_normalize_phone_value(_row_pick(row, "phone")),
+                        address=address_value,
+                        province_code=str(_row_pick(row, "province_code") or "").strip(),
+                        province_name=str(_row_pick(row, "province_name") or "").strip(),
+                        ward_code=str(_row_pick(row, "ward_code") or "").strip(),
+                        ward_name=str(_row_pick(row, "ward_name") or "").strip(),
+                        address_line=address_line_value,
                         email=str(_row_pick(row, "email") or "").strip(),
                         join_date=_as_date(_row_pick(row, "join_date")),
                         is_fund_manager=_as_bool(

@@ -34,6 +34,11 @@ class InvestorProfileDTO(BaseModel):
     phone: str = ""
     email: str = ""
     address: str = ""
+    province_code: str = ""
+    province_name: str = ""
+    ward_code: str = ""
+    ward_name: str = ""
+    address_line: str = ""
     join_date: date
 
 

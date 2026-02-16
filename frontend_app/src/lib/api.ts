@@ -5,6 +5,8 @@ import type {
   BackupListItemDTO,
   DashboardDTO,
   FeatureFlagsDTO,
+  LocationProvinceDTO,
+  LocationWardDTO,
   FeePreviewBundleDTO,
   InvestorReportDTO,
   InvestorCardDTO,
@@ -183,7 +185,18 @@ export const apiClient = {
 
   async createInvestor(
     token: string,
-    payload: { name: string; phone?: string; address?: string; email?: string },
+    payload: {
+      name: string;
+      phone?: string;
+      address?: string;
+      province_code?: string;
+      province_name?: string;
+      ward_code?: string;
+      ward_name?: string;
+      address_line?: string;
+      email?: string;
+      join_date?: string;
+    },
   ) {
     return request("/investors", {
       method: "POST",
@@ -195,7 +208,18 @@ export const apiClient = {
   async updateInvestor(
     token: string,
     investorId: number,
-    payload: { name?: string; phone?: string; address?: string; email?: string },
+    payload: {
+      name?: string;
+      phone?: string;
+      address?: string;
+      province_code?: string;
+      province_name?: string;
+      ward_code?: string;
+      ward_name?: string;
+      address_line?: string;
+      email?: string;
+      join_date?: string;
+    },
   ) {
     return request(`/investors/${investorId}`, {
       method: "PUT",
@@ -295,6 +319,15 @@ export const apiClient = {
 
   async featureFlags(token: string): Promise<FeatureFlagsDTO> {
     return request<FeatureFlagsDTO>("/system/feature-flags", { token });
+  },
+
+  async listProvinces(token: string): Promise<LocationProvinceDTO[]> {
+    return request<LocationProvinceDTO[]>("/system/locations/provinces", { token });
+  },
+
+  async listWards(token: string, provinceCode: string): Promise<LocationWardDTO[]> {
+    const params = new URLSearchParams({ province_code: provinceCode });
+    return request<LocationWardDTO[]>(`/system/locations/wards?${params.toString()}`, { token });
   },
 
   async manualBackup(token: string): Promise<{ backup_id: string }> {

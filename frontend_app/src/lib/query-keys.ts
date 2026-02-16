@@ -6,6 +6,8 @@ export const queryKeys = {
     ["dashboard-transactions-summary", token] as const,
   investorOptions: (token: string) => ["investor-options", token] as const,
   investorCards: (token: string) => ["investor-cards", token] as const,
+  provinces: (token: string) => ["provinces", token] as const,
+  wards: (token: string, provinceCode: string) => ["wards", token, provinceCode] as const,
   investorDetail: (token: string, investorId: number | null | undefined, nav?: number) =>
     ["investor-detail", token, investorId ?? null, nav ?? null] as const,
   transactionCards: (token: string) => ["transaction-cards", token] as const,

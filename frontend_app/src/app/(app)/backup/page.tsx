@@ -6,6 +6,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
+import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import { Input } from "@/components/ui/input";
 import { EmptyState, ErrorState, LoadingState } from "@/components/ui/states";
 import { apiClient } from "@/lib/api";
@@ -19,6 +20,7 @@ export default function BackupPage() {
   const safeToken = token || "";
   const pushToast = useToastStore((state) => state.push);
   const [restoreTargetId, setRestoreTargetId] = useState<string | null>(null);
+  const [confirmRestoreId, setConfirmRestoreId] = useState<string | null>(null);
   const [confirmPhrase, setConfirmPhrase] = useState("");
   const [createSafetyBackup, setCreateSafetyBackup] = useState(true);
 
@@ -62,6 +64,7 @@ export default function BackupPage() {
     onSuccess: () => {
       pushToast({ title: "Khôi phục dữ liệu thành công", variant: "success" });
       setRestoreTargetId(null);
+      setConfirmRestoreId(null);
       setConfirmPhrase("");
       queryClient.invalidateQueries({ queryKey: queryKeys.backups(safeToken), exact: true });
       queryClient.invalidateQueries({ queryKey: queryKeys.dashboard(safeToken), exact: true });
@@ -70,11 +73,14 @@ export default function BackupPage() {
       queryClient.invalidateQueries({ queryKey: queryKeys.investorCards(safeToken), exact: true });
     },
     onError: (error) =>
-      pushToast({
-        title: "Không thể khôi phục dữ liệu",
-        description: error instanceof Error ? error.message : undefined,
-        variant: "error",
-      }),
+      {
+        setConfirmRestoreId(null);
+        pushToast({
+          title: "Không thể khôi phục dữ liệu",
+          description: error instanceof Error ? error.message : undefined,
+          variant: "error",
+        });
+      },
   });
 
   const restoreEnabled = flagsQuery.data?.backup_restore ?? true;
@@ -146,7 +152,7 @@ export default function BackupPage() {
                       <Button
                         variant="danger"
                         className="flex-1"
-                        onClick={() => restoreMutation.mutate(item.backup_id)}
+                        onClick={() => setConfirmRestoreId(item.backup_id)}
                         disabled={restoreMutation.isPending || confirmPhrase.trim().toUpperCase() !== "RESTORE"}
                       >
                         {restoreMutation.isPending ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
@@ -173,6 +179,22 @@ export default function BackupPage() {
           <EmptyState title="Chưa có bản sao lưu." />
         )}
       </Card>
+
+      <ConfirmDialog
+        open={confirmRestoreId !== null}
+        onOpenChange={(open) => {
+          if (!open) setConfirmRestoreId(null);
+        }}
+        title="Xác nhận khôi phục dữ liệu"
+        description={`Dữ liệu hiện tại sẽ bị thay thế bởi backup ${confirmRestoreId || ""}. Bạn có chắc muốn tiếp tục?`}
+        confirmLabel="Khôi phục"
+        confirmVariant="danger"
+        onConfirm={() => {
+          if (!confirmRestoreId) return;
+          restoreMutation.mutate(confirmRestoreId);
+        }}
+        isPending={restoreMutation.isPending}
+      />
     </div>
   );
 }

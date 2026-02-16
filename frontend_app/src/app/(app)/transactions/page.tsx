@@ -49,6 +49,7 @@ export default function TransactionsPage() {
   const [selectedTx, setSelectedTx] = useState<TransactionCardDTO | null>(null);
   const [viewMode, setViewMode] = useState<TxViewMode>("card");
   const [deleteTarget, setDeleteTarget] = useState<number | null>(null);
+  const [undoTarget, setUndoTarget] = useState<number | null>(null);
 
   const flagsQuery = useQuery({
     queryKey: queryKeys.featureFlags(safeToken),
@@ -333,7 +334,7 @@ export default function TransactionsPage() {
                           <Button
                             variant="secondary"
                             className="h-9 px-3 py-1 text-xs"
-                            onClick={() => undoMutation.mutate(tx.id)}
+                            onClick={() => setUndoTarget(tx.id)}
                             disabled={undoMutation.isPending}
                             aria-label={`Hoàn tác giao dịch ${tx.id}`}
                           >
@@ -377,7 +378,7 @@ export default function TransactionsPage() {
                   <Button
                     variant="secondary"
                     className="flex-1"
-                    onClick={() => undoMutation.mutate(tx.id)}
+                    onClick={() => setUndoTarget(tx.id)}
                     disabled={undoMutation.isPending}
                     aria-label={`Hoàn tác giao dịch ${tx.id}`}
                   >
@@ -459,6 +460,22 @@ export default function TransactionsPage() {
           deleteMutation.mutate(deleteTarget);
         }}
         isPending={deleteMutation.isPending}
+      />
+
+      <ConfirmDialog
+        open={undoTarget !== null}
+        onOpenChange={(open) => {
+          if (!open) setUndoTarget(null);
+        }}
+        title="Xác nhận hoàn tác giao dịch"
+        description="Hoàn tác sẽ thay đổi lại số dư và NAV tại thời điểm hiện tại. Bạn có chắc muốn tiếp tục?"
+        confirmLabel="Hoàn tác"
+        onConfirm={() => {
+          if (undoTarget === null) return;
+          undoMutation.mutate(undoTarget);
+          setUndoTarget(null);
+        }}
+        isPending={undoMutation.isPending}
       />
     </div>
   );

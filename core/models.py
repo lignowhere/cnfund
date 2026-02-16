@@ -10,6 +10,11 @@ class Investor:
     name: str
     phone: str = ""
     address: str = ""
+    province_code: str = ""
+    province_name: str = ""
+    ward_code: str = ""
+    ward_name: str = ""
+    address_line: str = ""
     email: str = ""
     join_date: date = None
     is_fund_manager: bool = False

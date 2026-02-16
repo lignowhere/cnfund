@@ -53,6 +53,13 @@ export type InvestorCardDTO = {
   display_name: string;
   phone: string;
   email: string;
+  address: string;
+  province_code: string;
+  province_name: string;
+  ward_code: string;
+  ward_name: string;
+  address_line: string;
+  join_date: string;
   current_value: number;
   pnl: number;
   pnl_percent: number;
@@ -136,7 +143,23 @@ export type InvestorProfileDTO = {
   phone: string;
   email: string;
   address: string;
+  province_code: string;
+  province_name: string;
+  ward_code: string;
+  ward_name: string;
+  address_line: string;
   join_date: string;
+};
+
+export type LocationProvinceDTO = {
+  code: string;
+  name: string;
+};
+
+export type LocationWardDTO = {
+  code: string;
+  name: string;
+  province_code: string;
 };
 
 export type InvestorLifetimeDTO = {

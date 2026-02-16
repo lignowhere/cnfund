@@ -27,6 +27,7 @@ from sqlalchemy import (
     String,
     create_engine,
     func,
+    inspect,
     select,
     text,
 )
@@ -97,6 +98,11 @@ class InvestorRow(Base):
     name: Mapped[str] = mapped_column(String(255), nullable=False)
     phone: Mapped[str] = mapped_column(String(64), default="")
     address: Mapped[str] = mapped_column(String(255), default="")
+    province_code: Mapped[str] = mapped_column(String(32), default="")
+    province_name: Mapped[str] = mapped_column(String(255), default="")
+    ward_code: Mapped[str] = mapped_column(String(32), default="")
+    ward_name: Mapped[str] = mapped_column(String(255), default="")
+    address_line: Mapped[str] = mapped_column(String(255), default="")
     email: Mapped[str] = mapped_column(String(255), default="")
     join_date: Mapped[date] = mapped_column(Date, nullable=False)
     is_fund_manager: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
@@ -166,6 +172,7 @@ class PostgresDataHandler:
 
         try:
             Base.metadata.create_all(self.engine)
+            self.ensure_schema_migrations()
             self._bootstrap_from_csv_if_needed()
         except Exception:
             self.connected = False
@@ -185,6 +192,31 @@ class PostgresDataHandler:
         if self._session_factory is None:
             raise RuntimeError("Session factory is not initialized")
         return self._session_factory()
+
+    def ensure_schema_migrations(self) -> None:
+        inspector = inspect(self.engine)
+        if "fund_investors" not in inspector.get_table_names():
+            return
+
+        existing_columns = {column["name"] for column in inspector.get_columns("fund_investors")}
+        statements: list[str] = []
+        required_columns = {
+            "province_code": "ALTER TABLE fund_investors ADD COLUMN province_code VARCHAR(32) DEFAULT ''",
+            "province_name": "ALTER TABLE fund_investors ADD COLUMN province_name VARCHAR(255) DEFAULT ''",
+            "ward_code": "ALTER TABLE fund_investors ADD COLUMN ward_code VARCHAR(32) DEFAULT ''",
+            "ward_name": "ALTER TABLE fund_investors ADD COLUMN ward_name VARCHAR(255) DEFAULT ''",
+            "address_line": "ALTER TABLE fund_investors ADD COLUMN address_line VARCHAR(255) DEFAULT ''",
+        }
+        for column_name, ddl in required_columns.items():
+            if column_name not in existing_columns:
+                statements.append(ddl)
+
+        if not statements:
+            return
+
+        with self.engine.begin() as conn:
+            for ddl in statements:
+                conn.execute(text(ddl))
 
     def _is_empty(self) -> bool:
         with self._session() as session:
@@ -236,16 +268,33 @@ class PostgresDataHandler:
             df["is_fund_manager"] = df["isfundmanager"]
         if "is_fund_manager" not in df.columns:
             df["is_fund_manager"] = False
+        if "province_code" not in df.columns:
+            df["province_code"] = ""
+        if "province_name" not in df.columns:
+            df["province_name"] = ""
+        if "ward_code" not in df.columns:
+            df["ward_code"] = ""
+        if "ward_name" not in df.columns:
+            df["ward_name"] = ""
+        if "address_line" not in df.columns:
+            df["address_line"] = ""
 
         rows: List[Investor] = []
         for _, row in df.iterrows():
             try:
+                address_value = str(row.get("address", "")).strip()
+                address_line_value = str(row.get("address_line", "")).strip() or address_value
                 rows.append(
                     Investor(
                         id=safe_int_conversion(row.get("id")),
                         name=str(row.get("name", "")).strip(),
                         phone=str(row.get("phone", "")).strip(),
-                        address=str(row.get("address", "")).strip(),
+                        address=address_value,
+                        province_code=str(row.get("province_code", "")).strip(),
+                        province_name=str(row.get("province_name", "")).strip(),
+                        ward_code=str(row.get("ward_code", "")).strip(),
+                        ward_name=str(row.get("ward_name", "")).strip(),
+                        address_line=address_line_value,
                         email=str(row.get("email", "")).strip(),
                         join_date=_as_date(row.get("join_date")),
                         is_fund_manager=_as_bool(row.get("is_fund_manager", False)),
@@ -354,6 +403,11 @@ class PostgresDataHandler:
                 name=row.name,
                 phone=row.phone or "",
                 address=row.address or "",
+                province_code=getattr(row, "province_code", "") or "",
+                province_name=getattr(row, "province_name", "") or "",
+                ward_code=getattr(row, "ward_code", "") or "",
+                ward_name=getattr(row, "ward_name", "") or "",
+                address_line=getattr(row, "address_line", "") or "",
                 email=row.email or "",
                 join_date=row.join_date,
                 is_fund_manager=bool(row.is_fund_manager),
@@ -448,6 +502,11 @@ class PostgresDataHandler:
                                     "name": str(inv.name).strip(),
                                     "phone": str(getattr(inv, "phone", "") or "").strip(),
                                     "address": str(getattr(inv, "address", "") or "").strip(),
+                                    "province_code": str(getattr(inv, "province_code", "") or "").strip(),
+                                    "province_name": str(getattr(inv, "province_name", "") or "").strip(),
+                                    "ward_code": str(getattr(inv, "ward_code", "") or "").strip(),
+                                    "ward_name": str(getattr(inv, "ward_name", "") or "").strip(),
+                                    "address_line": str(getattr(inv, "address_line", "") or "").strip(),
                                     "email": str(getattr(inv, "email", "") or "").strip(),
                                     "join_date": _as_date(getattr(inv, "join_date", None)),
                                     "is_fund_manager": bool(getattr(inv, "is_fund_manager", False)),

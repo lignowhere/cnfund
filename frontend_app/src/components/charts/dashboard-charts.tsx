@@ -17,6 +17,27 @@ import {
 
 import { formatCurrency } from "@/lib/utils";
 
+/**
+ * Common Tooltip style for all charts to ensure readability in Dark Mode
+ */
+const tooltipStyle = {
+  backgroundColor: "var(--color-surface)",
+  borderColor: "var(--color-border)",
+  borderRadius: "12px",
+  boxShadow: "var(--shadow-card)",
+};
+
+const tooltipLabelStyle = {
+  color: "var(--color-text)",
+  fontWeight: "bold",
+  marginBottom: "4px",
+};
+
+const tooltipItemStyle = {
+  color: "var(--color-text)",
+  fontSize: "12px",
+};
+
 export function DashboardNavAreaChart({
   data,
   formatCompactMoney,
@@ -38,11 +59,9 @@ export function DashboardNavAreaChart({
         <YAxis tickFormatter={formatCompactMoney} tick={{ fontSize: 12, fill: "var(--color-muted)" }} />
         <Tooltip
           formatter={(value) => formatCurrency(Number(value))}
-          contentStyle={{
-            backgroundColor: "var(--color-surface)",
-            borderColor: "var(--color-border)",
-            color: "var(--color-text)",
-          }}
+          contentStyle={tooltipStyle}
+          labelStyle={tooltipLabelStyle}
+          itemStyle={tooltipItemStyle}
         />
         <Area
           type="monotone"
@@ -57,10 +76,10 @@ export function DashboardNavAreaChart({
   );
 }
 
-export function DashboardTxTypePieChart({
+export function DashboardInvestorConcentrationChart({
   data,
 }: {
-  data: Array<{ name: string; value: number; color: string }>;
+  data: Array<{ name: string; value: number; color: string; percent: number }>;
 }) {
   return (
     <ResponsiveContainer width="100%" height="100%">
@@ -74,19 +93,51 @@ export function DashboardTxTypePieChart({
           innerRadius={56}
           outerRadius={90}
           paddingAngle={3}
+          stroke="none"
         >
           {data.map((entry) => (
             <Cell key={entry.name} fill={entry.color} />
           ))}
         </Pie>
         <Tooltip
-          contentStyle={{
-            backgroundColor: "var(--color-surface)",
-            borderColor: "var(--color-border)",
-            color: "var(--color-text)",
-          }}
+          formatter={(value, name, props) => [
+            `${formatCurrency(Number(value))} (${props.payload.percent.toFixed(1)}%)`,
+            name,
+          ]}
+          contentStyle={tooltipStyle}
+          labelStyle={tooltipLabelStyle}
+          itemStyle={tooltipItemStyle}
         />
       </PieChart>
+    </ResponsiveContainer>
+  );
+}
+
+export function DashboardMonthlyFlowChart({
+  data,
+}: {
+  data: Array<{ month: string; deposit: number; withdraw: number }>;
+}) {
+  return (
+    <ResponsiveContainer width="100%" height="100%">
+      <BarChart data={data}>
+        <CartesianGrid strokeDasharray="3 3" stroke="var(--chart-grid)" vertical={false} />
+        <XAxis
+          dataKey="month"
+          tick={{ fontSize: 11, fill: "var(--color-muted)" }}
+          axisLine={false}
+          tickLine={false}
+        />
+        <YAxis hide />
+        <Tooltip
+          formatter={(value) => formatCurrency(Number(value))}
+          contentStyle={tooltipStyle}
+          labelStyle={tooltipLabelStyle}
+          itemStyle={tooltipItemStyle}
+        />
+        <Bar dataKey="deposit" name="Nạp tiền" fill="var(--color-success)" radius={[4, 4, 0, 0]} />
+        <Bar dataKey="withdraw" name="Rút tiền" fill="var(--color-danger)" radius={[4, 4, 0, 0]} />
+      </BarChart>
     </ResponsiveContainer>
   );
 }
@@ -112,11 +163,9 @@ export function DashboardTopInvestorsBarChart({
         <YAxis tickFormatter={formatCompactMoney} tick={{ fontSize: 12, fill: "var(--color-muted)" }} />
         <Tooltip
           formatter={(value) => formatCurrency(Number(value))}
-          contentStyle={{
-            backgroundColor: "var(--color-surface)",
-            borderColor: "var(--color-border)",
-            color: "var(--color-text)",
-          }}
+          contentStyle={tooltipStyle}
+          labelStyle={tooltipLabelStyle}
+          itemStyle={tooltipItemStyle}
         />
         <Bar dataKey="balance" fill="var(--chart-2)" radius={[8, 8, 0, 0]} />
       </BarChart>

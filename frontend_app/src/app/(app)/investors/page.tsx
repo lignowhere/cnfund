@@ -5,6 +5,7 @@ import { Eye, Loader2, Pencil, X } from "lucide-react";
 import { useMemo, useState } from "react";
 import { useInfiniteQuery, useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 
+import { LocationCombobox, type LocationOption } from "@/components/form/location-combobox";
 import { MoneyInput } from "@/components/form/money-input";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
@@ -28,6 +29,45 @@ function normalizeType(type: string) {
     .trim();
 }
 
+function isValidVietnamPhone(phone: string): boolean {
+  return /^0\d{9}$/.test(phone);
+}
+
+function todayIsoDate(): string {
+  return new Date().toISOString().slice(0, 10);
+}
+
+function buildAddress(addressLine: string, wardName: string, provinceName: string): string {
+  const parts = [addressLine, wardName, provinceName]
+    .map((part) => part.trim())
+    .filter(Boolean);
+  return parts.join(", ");
+}
+
+function buildAddressLabel(profile: {
+  address?: string;
+  address_line?: string;
+  ward_name?: string;
+  province_name?: string;
+}) {
+  const structured = buildAddress(
+    profile.address_line || "",
+    profile.ward_name || "",
+    profile.province_name || "",
+  );
+  return structured || profile.address || "Chưa cập nhật";
+}
+
+function needsAddressNormalization(profile: {
+  province_code?: string;
+  ward_code?: string;
+  address?: string;
+}) {
+  const hasLegacyAddress = Boolean((profile.address || "").trim());
+  const hasStructured = Boolean((profile.province_code || "").trim()) && Boolean((profile.ward_code || "").trim());
+  return hasLegacyAddress && !hasStructured;
+}
+
 export default function InvestorsPage() {
   const queryClient = useQueryClient();
   const token = useAuthStore((state) => state.accessToken);
@@ -37,8 +77,22 @@ export default function InvestorsPage() {
   const [name, setName] = useState("");
   const [phone, setPhone] = useState("");
   const [email, setEmail] = useState("");
-  const [address, setAddress] = useState("");
-  const [editingId, setEditingId] = useState<number | null>(null);
+  const [joinDate, setJoinDate] = useState(todayIsoDate());
+  const [provinceCode, setProvinceCode] = useState("");
+  const [provinceName, setProvinceName] = useState("");
+  const [wardCode, setWardCode] = useState("");
+  const [wardName, setWardName] = useState("");
+  const [addressLine, setAddressLine] = useState("");
+  const [editingInvestor, setEditingInvestor] = useState<InvestorCardDTO | null>(null);
+  const [editName, setEditName] = useState("");
+  const [editPhone, setEditPhone] = useState("");
+  const [editEmail, setEditEmail] = useState("");
+  const [editJoinDate, setEditJoinDate] = useState(todayIsoDate());
+  const [editProvinceCode, setEditProvinceCode] = useState("");
+  const [editProvinceName, setEditProvinceName] = useState("");
+  const [editWardCode, setEditWardCode] = useState("");
+  const [editWardName, setEditWardName] = useState("");
+  const [editAddressLine, setEditAddressLine] = useState("");
   const [viewMode, setViewMode] = useState<InvestorViewMode>("card");
   const [selectedInvestor, setSelectedInvestor] = useState<InvestorCardDTO | null>(null);
   const [detailNavDigits, setDetailNavDigits] = useState("");
@@ -73,6 +127,30 @@ export default function InvestorsPage() {
     enabled: !!token && !!selectedInvestor,
   });
 
+  const provincesQuery = useQuery({
+    queryKey: queryKeys.provinces(safeToken),
+    queryFn: () => apiClient.listProvinces(safeToken),
+    enabled: !!token,
+    staleTime: 24 * 60 * 60 * 1000,
+    gcTime: 48 * 60 * 60 * 1000,
+  });
+
+  const createWardsQuery = useQuery({
+    queryKey: queryKeys.wards(safeToken, provinceCode),
+    queryFn: () => apiClient.listWards(safeToken, provinceCode),
+    enabled: !!token && !!provinceCode,
+    staleTime: 24 * 60 * 60 * 1000,
+    gcTime: 48 * 60 * 60 * 1000,
+  });
+
+  const editWardsQuery = useQuery({
+    queryKey: queryKeys.wards(safeToken, editProvinceCode),
+    queryFn: () => apiClient.listWards(safeToken, editProvinceCode),
+    enabled: !!token && !!editingInvestor?.id && !!editProvinceCode,
+    staleTime: 24 * 60 * 60 * 1000,
+    gcTime: 48 * 60 * 60 * 1000,
+  });
+
   const investorItems = useMemo(
     () => cardsQuery.data?.pages.flatMap((page) => page.items) ?? [],
     [cardsQuery.data],
@@ -99,19 +177,51 @@ export default function InvestorsPage() {
     };
   }, [investorDetailQuery.data]);
 
+  const provinceOptions = useMemo<LocationOption[]>(
+    () => (provincesQuery.data ?? []).map((row) => ({ code: row.code, name: row.name })),
+    [provincesQuery.data],
+  );
+  const createWardOptions = useMemo<LocationOption[]>(
+    () => (createWardsQuery.data ?? []).map((row) => ({ code: row.code, name: row.name })),
+    [createWardsQuery.data],
+  );
+  const editWardOptions = useMemo<LocationOption[]>(
+    () => (editWardsQuery.data ?? []).map((row) => ({ code: row.code, name: row.name })),
+    [editWardsQuery.data],
+  );
+
+  const createAddressPreview = buildAddress(addressLine, wardName, provinceName);
+  const createPhoneInvalid = phone.trim().length > 0 && !isValidVietnamPhone(phone.trim());
+  const createAddressPairInvalid = Boolean(provinceCode) !== Boolean(wardCode);
+
+  const editAddressPreview = buildAddress(editAddressLine, editWardName, editProvinceName);
+  const editPhoneInvalid = editPhone.trim().length > 0 && !isValidVietnamPhone(editPhone.trim());
+  const editAddressPairInvalid = Boolean(editProvinceCode) !== Boolean(editWardCode);
+
   const createMutation = useMutation({
     mutationFn: () =>
       apiClient.createInvestor(safeToken, {
-        name,
-        phone,
-        email,
-        address,
+        name: name.trim(),
+        phone: phone.trim(),
+        email: email.trim(),
+        join_date: joinDate || undefined,
+        province_code: provinceCode || undefined,
+        province_name: provinceName || undefined,
+        ward_code: wardCode || undefined,
+        ward_name: wardName || undefined,
+        address_line: addressLine.trim() || undefined,
+        address: createAddressPreview || addressLine.trim() || undefined,
       }),
     onSuccess: () => {
       setName("");
       setPhone("");
       setEmail("");
-      setAddress("");
+      setJoinDate(todayIsoDate());
+      setProvinceCode("");
+      setProvinceName("");
+      setWardCode("");
+      setWardName("");
+      setAddressLine("");
       pushToast({ title: "Đã tạo nhà đầu tư", variant: "success" });
       queryClient.invalidateQueries({ queryKey: queryKeys.investorCards(safeToken), exact: true });
       queryClient.invalidateQueries({ queryKey: queryKeys.dashboard(safeToken), exact: true });
@@ -126,18 +236,49 @@ export default function InvestorsPage() {
   });
 
   const updateMutation = useMutation({
-    mutationFn: (payload: { investorId: number; name: string }) =>
-      apiClient.updateInvestor(safeToken, payload.investorId, { name: payload.name }),
-    onSuccess: (_, payload) => {
-      setEditingId(null);
-      pushToast({ title: "Đã cập nhật tên nhà đầu tư", variant: "success" });
+    mutationFn: () => {
+      if (!editingInvestor) {
+        throw new Error("Không có nhà đầu tư cần cập nhật.");
+      }
+      return apiClient.updateInvestor(safeToken, editingInvestor.id, {
+        name: editName.trim(),
+        phone: editPhone.trim(),
+        email: editEmail.trim(),
+        join_date: editJoinDate || undefined,
+        province_code: editProvinceCode || undefined,
+        province_name: editProvinceName || undefined,
+        ward_code: editWardCode || undefined,
+        ward_name: editWardName || undefined,
+        address_line: editAddressLine.trim() || undefined,
+        address: editAddressPreview || editAddressLine.trim() || undefined,
+      });
+    },
+    onSuccess: () => {
+      const editedId = editingInvestor?.id;
+      setEditingInvestor(null);
+      pushToast({ title: "Đã cập nhật thông tin nhà đầu tư", variant: "success" });
       queryClient.invalidateQueries({ queryKey: queryKeys.investorCards(safeToken), exact: true });
-      if (selectedInvestor?.id === payload.investorId) {
+      queryClient.invalidateQueries({ queryKey: queryKeys.dashboard(safeToken), exact: true });
+      if (selectedInvestor?.id && editedId && selectedInvestor.id === editedId) {
         setSelectedInvestor((current) =>
-          current ? { ...current, display_name: `${payload.name} (ID: ${payload.investorId})` } : current,
+          current
+            ? {
+                ...current,
+                display_name: `${editName.trim()} (ID: ${editedId})`,
+                phone: editPhone.trim(),
+                email: editEmail.trim(),
+                join_date: editJoinDate,
+                province_code: editProvinceCode,
+                province_name: editProvinceName,
+                ward_code: editWardCode,
+                ward_name: editWardName,
+                address_line: editAddressLine.trim(),
+                address: editAddressPreview || editAddressLine.trim(),
+              }
+            : current,
         );
         queryClient.invalidateQueries({
-          queryKey: queryKeys.investorDetail(safeToken, payload.investorId),
+          queryKey: queryKeys.investorDetail(safeToken, editedId),
           exact: false,
         });
       }
@@ -158,6 +299,19 @@ export default function InvestorsPage() {
     setDetailNavApplied(undefined);
   }
 
+  function openEditInvestor(item: InvestorCardDTO) {
+    setEditingInvestor(item);
+    setEditName(item.display_name.split(" (ID")[0]);
+    setEditPhone(item.phone || "");
+    setEditEmail(item.email || "");
+    setEditJoinDate((item.join_date || todayIsoDate()).slice(0, 10));
+    setEditProvinceCode(item.province_code || "");
+    setEditProvinceName(item.province_name || "");
+    setEditWardCode(item.ward_code || "");
+    setEditWardName(item.ward_name || "");
+    setEditAddressLine(item.address_line || "");
+  }
+
   const detailNavNumber = digitsToNumber(detailNavDigits);
 
   return (
@@ -166,11 +320,59 @@ export default function InvestorsPage() {
         <h2 className="section-title">Thêm nhà đầu tư</h2>
         <div className="grid gap-2 sm:grid-cols-2">
           <Input placeholder="Tên" value={name} onChange={(e) => setName(e.target.value)} />
-          <Input placeholder="Số điện thoại" value={phone} onChange={(e) => setPhone(e.target.value)} />
+          <Input
+            placeholder="Số điện thoại"
+            value={phone}
+            onChange={(e) => setPhone(e.target.value.trim())}
+            inputMode="numeric"
+            pattern="0[0-9]{9}"
+            maxLength={10}
+            aria-invalid={createPhoneInvalid}
+          />
           <Input placeholder="Email" value={email} onChange={(e) => setEmail(e.target.value)} />
-          <Input placeholder="Địa chỉ" value={address} onChange={(e) => setAddress(e.target.value)} />
+          <Input type="date" value={joinDate} onChange={(e) => setJoinDate(e.target.value)} />
         </div>
-        <Button className="w-full" onClick={() => createMutation.mutate()} disabled={!name.trim() || createMutation.isPending}>
+        <div className="grid gap-2 sm:grid-cols-2">
+          <LocationCombobox
+            options={provinceOptions}
+            value={provinceCode}
+            onChange={(option) => {
+              setProvinceCode(option?.code || "");
+              setProvinceName(option?.name || "");
+              setWardCode("");
+              setWardName("");
+            }}
+            placeholder="Chọn Tỉnh/Thành"
+            disabled={provincesQuery.isLoading}
+            invalid={createAddressPairInvalid}
+          />
+          <LocationCombobox
+            options={createWardOptions}
+            value={wardCode}
+            onChange={(option) => {
+              setWardCode(option?.code || "");
+              setWardName(option?.name || "");
+            }}
+            placeholder="Chọn Phường/Xã"
+            disabled={!provinceCode || createWardsQuery.isLoading}
+            invalid={createAddressPairInvalid}
+          />
+        </div>
+        <Input
+          placeholder="Địa chỉ chi tiết (số nhà, đường...)"
+          value={addressLine}
+          onChange={(e) => setAddressLine(e.target.value)}
+        />
+        <p className="input-helper">Địa chỉ đầy đủ: {createAddressPreview || "Chưa có"}</p>
+        {createPhoneInvalid ? <p className="inline-error">Số điện thoại phải có định dạng 0xxxxxxxxx.</p> : null}
+        {createAddressPairInvalid ? (
+          <p className="inline-error">Tỉnh/Thành và Phường/Xã cần chọn đồng thời.</p>
+        ) : null}
+        <Button
+          className="w-full"
+          onClick={() => createMutation.mutate()}
+          disabled={!name.trim() || createPhoneInvalid || createAddressPairInvalid || createMutation.isPending}
+        >
           {createMutation.isPending ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
           Tạo nhà đầu tư
         </Button>
@@ -221,7 +423,9 @@ export default function InvestorsPage() {
                   <tr>
                     <th className="sticky left-0 z-30 bg-[var(--color-surface-3)] px-3 py-2 text-left">ID</th>
                     <th className="px-3 py-2 text-left">Tên</th>
+                    <th className="px-3 py-2 text-left">SĐT</th>
                     <th className="px-3 py-2 text-left">Email</th>
+                    <th className="px-3 py-2 text-left">Địa chỉ</th>
                     <th className="px-3 py-2 text-left">Giá trị</th>
                     <th className="px-3 py-2 text-left">Lãi/Lỗ</th>
                     <th className="px-3 py-2 text-left">Thao tác</th>
@@ -232,16 +436,24 @@ export default function InvestorsPage() {
                     <tr key={item.id} className="border-t border-[var(--color-border)] bg-[var(--color-surface)]">
                       <td className="sticky left-0 z-10 bg-[var(--color-surface)] px-3 py-2">#{item.id}</td>
                       <td className="px-3 py-2">{item.display_name}</td>
+                      <td className="px-3 py-2">{item.phone || "-"}</td>
                       <td className="px-3 py-2">{item.email || "-"}</td>
+                      <td className="px-3 py-2">{buildAddressLabel(item)}</td>
                       <td className="px-3 py-2">{formatCurrency(item.current_value)}</td>
                       <td className="px-3 py-2">
                         {formatCurrency(item.pnl)} ({formatPercent(item.pnl_percent)})
                       </td>
                       <td className="px-3 py-2">
-                        <Button variant="secondary" className="h-9 px-3 py-1 text-xs" onClick={() => openInvestorDetail(item)}>
-                          <Eye className="mr-1 h-4 w-4" />
-                          Chi tiết
-                        </Button>
+                        <div className="flex gap-2">
+                          <Button variant="secondary" className="h-9 px-3 py-1 text-xs" onClick={() => openInvestorDetail(item)}>
+                            <Eye className="mr-1 h-4 w-4" />
+                            Chi tiết
+                          </Button>
+                          <Button variant="secondary" className="h-9 px-3 py-1 text-xs" onClick={() => openEditInvestor(item)}>
+                            <Pencil className="mr-1 h-4 w-4" />
+                            Sửa
+                          </Button>
+                        </div>
                       </td>
                     </tr>
                   ))}
@@ -260,24 +472,15 @@ export default function InvestorsPage() {
               >
                 <div className="flex items-start justify-between gap-2">
                   <div className="space-y-1">
-                    {editingId === item.id ? (
-                      <Input
-                        defaultValue={item.display_name.split(" (ID")[0]}
-                        onBlur={(e) => {
-                          const nextName = e.target.value.trim();
-                          if (nextName) {
-                            updateMutation.mutate({ investorId: item.id, name: nextName });
-                          } else {
-                            setEditingId(null);
-                          }
-                        }}
-                        autoFocus
-                      />
-                    ) : (
-                      <p className="text-sm font-semibold">{item.display_name}</p>
-                    )}
+                    <p className="text-sm font-semibold">{item.display_name}</p>
                     <p className="text-xs text-[var(--color-muted)]">{item.phone || "Chưa có số điện thoại"}</p>
                     <p className="text-xs text-[var(--color-muted)]">{item.email || "Chưa có email"}</p>
+                    <p className="text-xs text-[var(--color-muted)]">{buildAddressLabel(item)}</p>
+                    {needsAddressNormalization(item) ? (
+                      <span className="inline-flex rounded-full border border-[var(--color-warning-border)] bg-[var(--color-warning-bg)] px-2 py-1 text-[11px] text-[var(--color-warning-text)]">
+                        Địa chỉ cần chuẩn hóa
+                      </span>
+                    ) : null}
                   </div>
                   <div className="flex gap-2">
                     <Button variant="secondary" className="h-9 w-9 p-0" onClick={() => openInvestorDetail(item)} aria-label="Xem chi tiết">
@@ -286,8 +489,8 @@ export default function InvestorsPage() {
                     <Button
                       variant="secondary"
                       className="h-9 w-9 p-0"
-                      onClick={() => setEditingId(item.id)}
-                      aria-label="Sửa tên nhà đầu tư"
+                      onClick={() => openEditInvestor(item)}
+                      aria-label="Sửa nhà đầu tư"
                     >
                       <Pencil className="h-4 w-4" />
                     </Button>
@@ -414,9 +617,14 @@ export default function InvestorsPage() {
                       Email: {investorDetailQuery.data.investor.email || "Chưa cập nhật"}
                     </p>
                     <p className="rounded-lg bg-[var(--color-surface-2)] px-2 py-2">
-                      Địa chỉ: {investorDetailQuery.data.investor.address || "Chưa cập nhật"}
+                      Địa chỉ: {buildAddressLabel(investorDetailQuery.data.investor)}
                     </p>
                   </div>
+                  {needsAddressNormalization(investorDetailQuery.data.investor) ? (
+                    <span className="inline-flex rounded-full border border-[var(--color-warning-border)] bg-[var(--color-warning-bg)] px-2 py-1 text-[11px] text-[var(--color-warning-text)]">
+                      Địa chỉ cần chuẩn hóa lên Tỉnh/Phường
+                    </span>
+                  ) : null}
                 </Card>
 
                 <div className="grid grid-cols-2 gap-2 md:grid-cols-4">
@@ -602,6 +810,96 @@ export default function InvestorsPage() {
             ) : (
               <EmptyState title="Chọn nhà đầu tư để xem chi tiết." />
             )}
+          </Dialog.Content>
+        </Dialog.Portal>
+      </Dialog.Root>
+
+      <Dialog.Root
+        open={!!editingInvestor}
+        onOpenChange={(open) => {
+          if (!open) {
+            setEditingInvestor(null);
+          }
+        }}
+      >
+        <Dialog.Portal>
+          <Dialog.Overlay className="fixed inset-0 z-50 bg-black/40 data-[state=open]:animate-[overlay-in_180ms_ease-out]" />
+          <Dialog.Content className="fixed inset-0 z-50 overflow-y-auto border border-[var(--color-border)] bg-[var(--color-surface)] p-4 shadow-2xl data-[state=open]:animate-[fade-up_220ms_ease-out] md:inset-x-auto md:left-1/2 md:top-1/2 md:h-auto md:max-h-[86vh] md:w-[640px] md:-translate-x-1/2 md:-translate-y-1/2 md:rounded-2xl md:p-5">
+            <div className="sticky top-0 z-10 mb-3 flex items-center justify-between gap-2 border-b border-[var(--color-border)] bg-[var(--color-surface)] pb-3">
+              <Dialog.Title className="section-title">
+                Chỉnh sửa nhà đầu tư {editingInvestor ? `#${editingInvestor.id}` : ""}
+              </Dialog.Title>
+              <Dialog.Close asChild>
+                <Button variant="secondary" className="h-9 w-9 p-0" aria-label="Đóng chỉnh sửa nhà đầu tư">
+                  <X className="h-4 w-4" />
+                </Button>
+              </Dialog.Close>
+            </div>
+
+            <div className="space-y-3">
+              <div className="grid gap-2 sm:grid-cols-2">
+                <Input placeholder="Tên" value={editName} onChange={(e) => setEditName(e.target.value)} />
+                <Input
+                  placeholder="Số điện thoại"
+                  value={editPhone}
+                  onChange={(e) => setEditPhone(e.target.value.trim())}
+                  inputMode="numeric"
+                  pattern="0[0-9]{9}"
+                  maxLength={10}
+                  aria-invalid={editPhoneInvalid}
+                />
+                <Input placeholder="Email" value={editEmail} onChange={(e) => setEditEmail(e.target.value)} />
+                <Input type="date" value={editJoinDate} onChange={(e) => setEditJoinDate(e.target.value)} />
+              </div>
+
+              <div className="grid gap-2 sm:grid-cols-2">
+                <LocationCombobox
+                  options={provinceOptions}
+                  value={editProvinceCode}
+                  onChange={(option) => {
+                    setEditProvinceCode(option?.code || "");
+                    setEditProvinceName(option?.name || "");
+                    setEditWardCode("");
+                    setEditWardName("");
+                  }}
+                  placeholder="Chọn Tỉnh/Thành"
+                  disabled={provincesQuery.isLoading}
+                  invalid={editAddressPairInvalid}
+                />
+                <LocationCombobox
+                  options={editWardOptions}
+                  value={editWardCode}
+                  onChange={(option) => {
+                    setEditWardCode(option?.code || "");
+                    setEditWardName(option?.name || "");
+                  }}
+                  placeholder="Chọn Phường/Xã"
+                  disabled={!editProvinceCode || editWardsQuery.isLoading}
+                  invalid={editAddressPairInvalid}
+                />
+              </div>
+
+              <Input
+                placeholder="Địa chỉ chi tiết (số nhà, đường...)"
+                value={editAddressLine}
+                onChange={(e) => setEditAddressLine(e.target.value)}
+              />
+
+              <p className="input-helper">Địa chỉ đầy đủ: {editAddressPreview || "Chưa có"}</p>
+              {editPhoneInvalid ? <p className="inline-error">Số điện thoại phải có định dạng 0xxxxxxxxx.</p> : null}
+              {editAddressPairInvalid ? (
+                <p className="inline-error">Tỉnh/Thành và Phường/Xã cần chọn đồng thời.</p>
+              ) : null}
+
+              <Button
+                className="w-full"
+                onClick={() => updateMutation.mutate()}
+                disabled={!editName.trim() || editPhoneInvalid || editAddressPairInvalid || updateMutation.isPending}
+              >
+                {updateMutation.isPending ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
+                Lưu thay đổi
+              </Button>
+            </div>
           </Dialog.Content>
         </Dialog.Portal>
       </Dialog.Root>

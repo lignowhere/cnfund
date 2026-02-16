@@ -1,6 +1,13 @@
-﻿"use client";
+"use client";
 
 import dynamic from "next/dynamic";
+import {
+  BarChart3,
+  CircleDollarSign,
+  Landmark,
+  Wallet,
+  type LucideIcon,
+} from "lucide-react";
 import { useMemo } from "react";
 import { useQuery } from "@tanstack/react-query";
 
@@ -25,14 +32,13 @@ const DashboardNavAreaChart = dynamic(
   { ssr: false },
 );
 
-const DashboardTxTypePieChart = dynamic(
-  () => import("@/components/charts/dashboard-charts").then((module) => module.DashboardTxTypePieChart),
+const DashboardInvestorConcentrationChart = dynamic(
+  () => import("@/components/charts/dashboard-charts").then((module) => module.DashboardInvestorConcentrationChart),
   { ssr: false },
 );
 
-const DashboardTopInvestorsBarChart = dynamic(
-  () =>
-    import("@/components/charts/dashboard-charts").then((module) => module.DashboardTopInvestorsBarChart),
+const DashboardMonthlyFlowChart = dynamic(
+  () => import("@/components/charts/dashboard-charts").then((module) => module.DashboardMonthlyFlowChart),
   { ssr: false },
 );
 
@@ -56,6 +62,21 @@ function DashboardSkeleton() {
         <div className="h-72 rounded-[var(--radius-card)] bg-[var(--color-surface-3)]" />
         <div className="h-72 rounded-[var(--radius-card)] bg-[var(--color-surface-3)]" />
       </div>
+    </div>
+  );
+}
+
+function Sparkline({ values }: { values: number[] }) {
+  const max = Math.max(...values, 1);
+  return (
+    <div className="mt-2 flex h-6 items-end gap-1">
+      {values.map((value, index) => (
+        <span
+          key={index}
+          className="w-2 rounded-sm bg-[var(--color-primary)]/40"
+          style={{ height: `${Math.max(22, (value / max) * 100)}%` }}
+        />
+      ))}
     </div>
   );
 }
@@ -93,22 +114,64 @@ export default function DashboardPage() {
       }));
   }, [navHistoryQuery.data]);
 
-  const topInvestorsChart = useMemo(() => {
+  const concentrationSeries = useMemo(() => {
     if (!dashboardQuery.data) return [];
-    return dashboardQuery.data.top_investors.slice(0, 6).map((item) => ({
-      name: item.investor_name,
-      balance: item.balance,
-      profit: item.profit,
+    const { top_investors, kpis } = dashboardQuery.data;
+    const totalNav = kpis.total_nav;
+
+    if (totalNav <= 0) return [];
+
+    const top5 = top_investors.slice(0, 5).map((inv, idx) => ({
+      name: inv.investor_name,
+      value: inv.balance,
+      percent: (inv.balance / totalNav) * 100,
+      color: CHART_COLORS[idx % CHART_COLORS.length],
     }));
+
+    const topSum = top5.reduce((sum, item) => sum + item.value, 0);
+    const othersValue = Math.max(0, totalNav - topSum);
+
+    if (othersValue > 0) {
+      top5.push({
+        name: "Khác",
+        value: othersValue,
+        percent: (othersValue / totalNav) * 100,
+        color: "var(--color-surface-3)",
+      });
+    }
+
+    return top5;
   }, [dashboardQuery.data]);
 
-  const txTypeSeries = useMemo(() => {
+  const monthlyFlowSeries = useMemo(() => {
     if (!txSummaryQuery.data) return [];
-    return Object.entries(txSummaryQuery.data.summary.by_type).map(([type, count], index) => ({
-      name: type,
-      value: count,
-      color: CHART_COLORS[index % CHART_COLORS.length],
-    }));
+    const items = txSummaryQuery.data.items;
+
+    const groups: Record<string, { deposit: number; withdraw: number }> = {};
+
+    items.forEach((item) => {
+      const d = new Date(item.date);
+      const key = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
+      if (!groups[key]) groups[key] = { deposit: 0, withdraw: 0 };
+
+      if (item.type.toLowerCase().includes("deposit") || item.type.toLowerCase().includes("nạp")) {
+        groups[key].deposit += item.amount;
+      } else if (item.type.toLowerCase().includes("withdraw") || item.type.toLowerCase().includes("rút")) {
+        groups[key].withdraw += item.amount;
+      }
+    });
+
+    return Object.entries(groups)
+      .map(([key, vals]) => ({
+        month: key.split("-")[1] + "/" + key.split("-")[0].slice(2),
+        ...vals,
+      }))
+      .sort((a, b) => {
+        const [am, ay] = a.month.split("/");
+        const [bm, by] = b.month.split("/");
+        return Number(ay + am) - Number(by + bm);
+      })
+      .slice(-6);
   }, [txSummaryQuery.data]);
 
   if (dashboardQuery.isLoading) {
@@ -120,15 +183,46 @@ export default function DashboardPage() {
   }
 
   const { kpis, top_investors } = dashboardQuery.data;
+  const kpiCards: Array<{
+    label: string;
+    value: string;
+    icon: LucideIcon;
+    sparkline: number[];
+  }> = [
+      {
+        label: "Nhà đầu tư",
+        value: String(kpis.total_investors),
+        icon: Landmark,
+        sparkline: [58, 62, 66, 71, 74, 78],
+      },
+      {
+        label: "Tổng đơn vị quỹ",
+        value: kpis.total_units.toFixed(2),
+        icon: BarChart3,
+        sparkline: [45, 50, 56, 62, 70, 80],
+      },
+      {
+        label: "Tổng phí đã thu",
+        value: formatCurrency(kpis.total_fees_paid),
+        icon: CircleDollarSign,
+        sparkline: [30, 38, 46, 52, 68, 84],
+      },
+      {
+        label: "Giá trị Fund Manager",
+        value: formatCurrency(kpis.fund_manager_value),
+        icon: Wallet,
+        sparkline: [34, 44, 49, 57, 64, 76],
+      },
+    ];
 
   return (
     <div className="app-page">
-      <Card className="relative overflow-hidden border-none bg-gradient-to-r from-[var(--hero-start)] via-[var(--hero-mid)] to-[var(--hero-end)] text-[var(--color-text-inverse)] shadow-xl">
+      <Card className="relative overflow-hidden border-none bg-gradient-to-r from-[var(--hero-start)] via-[var(--hero-mid)] to-[var(--hero-end)] py-4 text-[var(--color-text-inverse)] shadow-xl sm:py-5">
         <div className="absolute -right-12 -top-14 h-40 w-40 rounded-full bg-[var(--hero-orb-a)]" />
         <div className="absolute -bottom-10 left-8 h-28 w-28 rounded-full bg-[var(--hero-orb-b)]" />
         <div className="relative space-y-2">
-          <p className="text-xs uppercase tracking-[0.2em] text-[var(--hero-text-muted)]">Tổng quan quỹ</p>
-          <h2 className="text-2xl font-semibold">{formatCurrency(kpis.total_nav)}</h2>
+          <p className="hidden text-xs uppercase tracking-[0.2em] text-[var(--hero-text-muted)] sm:block">Tổng quan quỹ</p>
+          <h2 className="text-xl font-semibold sm:text-2xl">{formatCurrency(kpis.total_nav)}</h2>
           <p className="text-sm text-[var(--hero-text-muted)]">
             Hiệu suất gộp: <span className="font-semibold">{formatPercent(kpis.gross_return)}</span>
           </p>
@@ -136,22 +230,21 @@ export default function DashboardPage() {
       </Card>
 
       <section className="grid grid-cols-2 gap-3 xl:grid-cols-4">
-        <Card>
-          <p className="kpi-label">Nhà đầu tư</p>
-          <p className="kpi-value">{kpis.total_investors}</p>
-        </Card>
-        <Card>
-          <p className="kpi-label">Tổng đơn vị quỹ</p>
-          <p className="kpi-value">{kpis.total_units.toFixed(2)}</p>
-        </Card>
-        <Card>
-          <p className="kpi-label">Tổng phí đã thu</p>
-          <p className="kpi-value">{formatCurrency(kpis.total_fees_paid)}</p>
-        </Card>
-        <Card>
-          <p className="kpi-label">Giá trị Fund Manager</p>
-          <p className="kpi-value">{formatCurrency(kpis.fund_manager_value)}</p>
-        </Card>
+        {kpiCards.map((item) => {
+          const Icon = item.icon;
+          return (
+            <Card key={item.label} className="space-y-1">
+              <div className="flex items-center justify-between gap-2">
+                <p className="kpi-label">{item.label}</p>
+                <span className="inline-flex h-7 w-7 items-center justify-center rounded-lg bg-[var(--color-primary-50)] text-[var(--color-primary)]">
+                  <Icon className="h-4 w-4" />
+                </span>
+              </div>
+              <p className="kpi-value">{item.value}</p>
+              <Sparkline values={item.sparkline} />
+            </Card>
+          );
+        })}
       </section>
 
       <section className="grid grid-cols-1 gap-4 lg:grid-cols-2">
@@ -167,27 +260,25 @@ export default function DashboardPage() {
         </Card>
 
         <Card className="space-y-3">
-          <h3 className="section-title">Cơ cấu loại giao dịch</h3>
-          {txSummaryQuery.isLoading ? (
-            <LoadingState label="Đang tải cơ cấu giao dịch..." />
-          ) : txTypeSeries.length ? (
+          <h3 className="section-title">Tỉ trọng nhà đầu tư</h3>
+          {concentrationSeries.length ? (
             <div className="h-64">
-              <DashboardTxTypePieChart data={txTypeSeries} />
+              <DashboardInvestorConcentrationChart data={concentrationSeries} />
             </div>
           ) : (
-            <LoadingState label="Chưa có dữ liệu giao dịch." />
+            <LoadingState label="Chưa có dữ liệu tỉ trọng." />
           )}
         </Card>
       </section>
 
       <Card className="space-y-3">
-        <h3 className="section-title">Top nhà đầu tư theo giá trị</h3>
-        {topInvestorsChart.length ? (
+        <h3 className="section-title">Dòng tiền nạp/rút hàng tháng</h3>
+        {monthlyFlowSeries.length ? (
           <div className="h-72">
-            <DashboardTopInvestorsBarChart data={topInvestorsChart} formatCompactMoney={formatCompactMoney} />
+            <DashboardMonthlyFlowChart data={monthlyFlowSeries} />
           </div>
         ) : (
-          <p className="text-sm text-[var(--color-muted)]">Chưa có dữ liệu nhà đầu tư.</p>
+          <LoadingState label="Chưa có dữ liệu dòng tiền." />
         )}
 
         <div className="list-stagger space-y-2">

@@ -7,3 +7,13 @@ class FeatureFlagsDTO(BaseModel):
     fee_safety: bool
     transactions_load_more: bool
 
+
+class LocationProvinceDTO(BaseModel):
+    code: str
+    name: str
+
+
+class LocationWardDTO(BaseModel):
+    code: str
+    name: str
+    province_code: str

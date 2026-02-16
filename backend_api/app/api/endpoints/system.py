@@ -1,9 +1,10 @@
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, Query
 
 from ...api.deps import require_read_access
 from ...core.config import get_settings
 from ...schemas.common import ApiResponse
-from ...schemas.system import FeatureFlagsDTO
+from ...schemas.system import FeatureFlagsDTO, LocationProvinceDTO, LocationWardDTO
+from ...services.location_catalog import get_provinces, get_wards
 
 
 router = APIRouter()
@@ -21,3 +22,17 @@ def feature_flags(_user=Depends(require_read_access)):
         )
     )
 
+
+@router.get("/locations/provinces", response_model=ApiResponse[list[LocationProvinceDTO]])
+def location_provinces(_user=Depends(require_read_access)):
+    return ApiResponse(data=[LocationProvinceDTO(**row) for row in get_provinces()])
+
+
+@router.get("/locations/wards", response_model=ApiResponse[list[LocationWardDTO]])
+def location_wards(
+    province_code: str = Query(min_length=1),
+    _user=Depends(require_read_access),
+):
+    return ApiResponse(
+        data=[LocationWardDTO(**row) for row in get_wards(province_code)]
+    )

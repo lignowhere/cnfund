@@ -12,6 +12,11 @@ def investor_to_dto(investor) -> InvestorDTO:
         name=investor.name,
         phone=investor.phone or "",
         address=investor.address or "",
+        province_code=getattr(investor, "province_code", "") or "",
+        province_name=getattr(investor, "province_name", "") or "",
+        ward_code=getattr(investor, "ward_code", "") or "",
+        ward_name=getattr(investor, "ward_name", "") or "",
+        address_line=getattr(investor, "address_line", "") or "",
         email=investor.email or "",
         join_date=investor.join_date,
         is_fund_manager=bool(investor.is_fund_manager),
@@ -24,6 +29,13 @@ def investor_to_card_dto(investor, balance: float, profit: float, profit_percent
         display_name=f"{investor.name} (ID: {investor.id})",
         phone=investor.phone or "",
         email=investor.email or "",
+        address=investor.address or "",
+        province_code=getattr(investor, "province_code", "") or "",
+        province_name=getattr(investor, "province_name", "") or "",
+        ward_code=getattr(investor, "ward_code", "") or "",
+        ward_name=getattr(investor, "ward_name", "") or "",
+        address_line=getattr(investor, "address_line", "") or "",
+        join_date=investor.join_date,
         current_value=balance,
         pnl=profit,
         pnl_percent=profit_percent,
@@ -79,4 +91,3 @@ def _to_datetime(value) -> datetime:
     if isinstance(value, datetime):
         return value
     return datetime.fromisoformat(str(value))
-

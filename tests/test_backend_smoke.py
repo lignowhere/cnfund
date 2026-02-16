@@ -1,13 +1,25 @@
-﻿import importlib
+import importlib
+from pathlib import Path
+import sys
+import tempfile
+import uuid
 
 from fastapi.testclient import TestClient
 
 
 def _load_app(monkeypatch):
-    monkeypatch.setenv("API_DATABASE_URL", "sqlite:///./backend_api_smoke.db")
+    db_file = Path(tempfile.gettempdir()) / f"backend_api_smoke_{uuid.uuid4().hex}.db"
+    monkeypatch.setenv("API_DATABASE_URL", f"sqlite:///{db_file.as_posix()}")
     monkeypatch.setenv("API_JWT_SECRET_KEY", "test-secret")
     monkeypatch.setenv("API_ADMIN_USERNAME", "admin")
     monkeypatch.setenv("API_ADMIN_PASSWORD", "admin123")
+
+    for module_name in list(sys.modules):
+        if module_name.startswith("backend_api.app"):
+            del sys.modules[module_name]
+
+    config_module = importlib.import_module("backend_api.app.core.config")
+    config_module.get_settings.cache_clear()
 
     main_module = importlib.import_module("backend_api.app.main")
     return main_module.app

@@ -130,6 +130,7 @@ class EnhancedFundManager:
             name=name.strip(),
             phone=phone.strip(),
             address=address.strip(),
+            address_line=address.strip(),
             email=email.strip(),
             is_fund_manager=False,
         )

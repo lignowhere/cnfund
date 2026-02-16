@@ -42,8 +42,11 @@ export function ReportsTxTypePieChart({
           contentStyle={{
             backgroundColor: "var(--color-surface)",
             borderColor: "var(--color-border)",
-            color: "var(--color-text)",
+            borderRadius: "12px",
+            boxShadow: "var(--shadow-card)",
           }}
+          itemStyle={{ color: "var(--color-text)", fontSize: "12px" }}
+          labelStyle={{ color: "var(--color-text)", fontWeight: "bold", marginBottom: "4px" }}
         />
       </PieChart>
     </ResponsiveContainer>
@@ -68,8 +71,11 @@ export function ReportsInvestorTxBarChart({
           contentStyle={{
             backgroundColor: "var(--color-surface)",
             borderColor: "var(--color-border)",
-            color: "var(--color-text)",
+            borderRadius: "12px",
+            boxShadow: "var(--shadow-card)",
           }}
+          itemStyle={{ color: "var(--color-text)", fontSize: "12px" }}
+          labelStyle={{ color: "var(--color-text)", fontWeight: "bold", marginBottom: "4px" }}
         />
         <Bar dataKey="amount" fill="var(--chart-2)" radius={[8, 8, 0, 0]} />
       </BarChart>

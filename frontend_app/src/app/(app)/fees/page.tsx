@@ -7,6 +7,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { MoneyInput } from "@/components/form/money-input";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
+import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import { Input } from "@/components/ui/input";
 import { EmptyState, ErrorState, LoadingState } from "@/components/ui/states";
 import { apiClient } from "@/lib/api";
@@ -30,6 +31,7 @@ export default function FeesPage() {
     endDate: string;
     totalNavDigits: string;
   } | null>(null);
+  const [confirmApplyOpen, setConfirmApplyOpen] = useState(false);
   const [acknowledgeRisk, setAcknowledgeRisk] = useState(false);
   const [acknowledgeBackup, setAcknowledgeBackup] = useState(false);
 
@@ -83,6 +85,7 @@ export default function FeesPage() {
       });
     },
     onSuccess: async () => {
+      setConfirmApplyOpen(false);
       pushToast({ title: "Đã áp dụng phí thành công", variant: "success" });
       await Promise.all([
         queryClient.invalidateQueries({ queryKey: queryKeys.feeHistory(safeToken), exact: true }),
@@ -173,7 +176,7 @@ export default function FeesPage() {
             {previewMutation.isPending ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
             Xem trước
           </Button>
-          <Button onClick={() => applyMutation.mutate()} disabled={!canApply}>
+          <Button onClick={() => setConfirmApplyOpen(true)} disabled={!canApply}>
             {applyMutation.isPending ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
             Áp dụng phí
           </Button>
@@ -244,6 +247,16 @@ export default function FeesPage() {
           <EmptyState title="Chưa có dữ liệu phí." />
         )}
       </Card>
+
+      <ConfirmDialog
+        open={confirmApplyOpen}
+        onOpenChange={setConfirmApplyOpen}
+        title="Xác nhận áp dụng phí"
+        description="Hệ thống sẽ ghi nhận bút toán phí theo dữ liệu xem trước hiện tại. Bạn có chắc muốn tiếp tục?"
+        confirmLabel="Áp dụng phí"
+        onConfirm={() => applyMutation.mutate()}
+        isPending={applyMutation.isPending}
+      />
     </div>
   );
 }
