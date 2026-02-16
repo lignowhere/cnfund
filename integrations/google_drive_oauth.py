@@ -88,6 +88,46 @@ if GOOGLE_OAUTH_AVAILABLE:
             except Exception as e:
                 print(f"❌ OAuth initialization failed: {e}")
                 self.connected = False
+
+        def _get_secret_value(self, key: str):
+            """
+            Read a secret value from either:
+            - top-level: st.secrets[key]
+            - nested default: st.secrets['default'][key]
+            """
+            try:
+                if not hasattr(st, "secrets"):
+                    return None
+
+                if key in st.secrets:
+                    return st.secrets[key]
+
+                if "default" in st.secrets and key in st.secrets["default"]:
+                    return st.secrets["default"][key]
+            except Exception as e:
+                print(f"⚠️ Could not read secret '{key}': {e}")
+
+            return None
+
+        def _get_oauth_credentials_from_secrets(self):
+            """
+            Support both structures:
+            - [oauth_credentials.installed]
+            - [default.oauth_credentials.installed]
+            """
+            try:
+                if not hasattr(st, "secrets"):
+                    return None
+
+                if "oauth_credentials" in st.secrets:
+                    return st.secrets["oauth_credentials"]
+
+                if "default" in st.secrets and "oauth_credentials" in st.secrets["default"]:
+                    return st.secrets["default"]["oauth_credentials"]
+            except Exception as e:
+                print(f"⚠️ Could not read oauth_credentials from secrets: {e}")
+
+            return None
     
         def _load_saved_credentials(self) -> Optional['Credentials']:
             """Load saved OAuth credentials from file or Streamlit secrets"""
@@ -112,13 +152,14 @@ if GOOGLE_OAUTH_AVAILABLE:
 
             # Try from Streamlit secrets (for Streamlit Cloud)
             try:
-                if hasattr(st, 'secrets') and 'oauth_token_base64' in st.secrets:
+                oauth_token_base64 = self._get_secret_value("oauth_token_base64")
+                if oauth_token_base64:
                     import base64
 
                     print("🔐 Loading OAuth token from Streamlit secrets...")
 
                     # Decode base64 token
-                    token_data = base64.b64decode(st.secrets['oauth_token_base64'])
+                    token_data = base64.b64decode(str(oauth_token_base64).strip())
                     creds = pickle.loads(token_data)
 
                     # Refresh if expired
@@ -150,7 +191,8 @@ if GOOGLE_OAUTH_AVAILABLE:
             """Perform OAuth 2.0 flow"""
             try:
                 # Try to get credentials from Streamlit secrets (for cloud)
-                if hasattr(st, 'secrets') and 'oauth_credentials' in st.secrets:
+                oauth_credentials = self._get_oauth_credentials_from_secrets()
+                if oauth_credentials:
                     print("🔐 Using OAuth credentials from Streamlit secrets...")
                     try:
                         import json
@@ -169,7 +211,7 @@ if GOOGLE_OAUTH_AVAILABLE:
                                 return obj
 
                         # Create temp credentials file from secrets
-                        creds_dict = convert_to_dict(st.secrets['oauth_credentials'])
+                        creds_dict = convert_to_dict(oauth_credentials)
 
                         with tempfile.NamedTemporaryFile(mode='w', suffix='.json', delete=False) as f:
                             json.dump(creds_dict, f)
