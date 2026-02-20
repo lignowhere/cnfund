@@ -296,40 +296,46 @@ export default function ReportsPage() {
         </div>
 
         {/* Global Filters */}
-        <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
-          <InvestorCombobox
-            options={investorsQuery.data ?? []}
-            value={investorFilter?.id ?? null}
-            onChange={(option) => {
-              setTxPage(1);
-              setInvestorFilter(option);
-            }}
-            placeholder="Chọn nhà đầu tư..."
-            allowClear
-          />
-          <Select
-            value={txTypeFilter}
-            onChange={(e) => {
-              setTxPage(1);
-              setTxTypeFilter(e.target.value);
-            }}
-          >
-            <option value="">Tất cả loại giao dịch</option>
-            <option value="deposit">Nạp tiền (Deposit)</option>
-            <option value="withdraw">Rút tiền (Withdraw)</option>
-            <option value="fee">Thu phí (Fee)</option>
-            <option value="nav_update">Cập nhật NAV (NAV Update)</option>
-          </Select>
-          <div className="sm:col-span-2 lg:col-span-2">
-            <DateRangePicker
-              startDate={dateRange.startDate}
-              endDate={dateRange.endDate}
-              onChange={(nextValue) => {
-                setTxPage(1);
-                setDateRange(nextValue);
-              }}
-              disabled={txReportQuery.isFetching || isExporting}
-            />
+        <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between rounded-xl bg-[var(--color-surface-2)] p-2 sm:p-3 border border-[var(--color-border)]">
+          <div className="grid w-full grid-cols-1 gap-3 sm:grid-cols-2 lg:flex lg:w-auto lg:flex-1 lg:items-center">
+            <div className="lg:w-64">
+              <InvestorCombobox
+                options={investorsQuery.data ?? []}
+                value={investorFilter?.id ?? null}
+                onChange={(option) => {
+                  setTxPage(1);
+                  setInvestorFilter(option);
+                }}
+                placeholder="Chọn nhà đầu tư..."
+                allowClear
+              />
+            </div>
+            <div className="lg:w-56">
+              <Select
+                value={txTypeFilter}
+                onChange={(e) => {
+                  setTxPage(1);
+                  setTxTypeFilter(e.target.value);
+                }}
+              >
+                <option value="">Tất cả giao dịch</option>
+                <option value="deposit">Nạp tiền (Deposit)</option>
+                <option value="withdraw">Rút tiền (Withdraw)</option>
+                <option value="fee">Thu phí (Fee)</option>
+                <option value="nav_update">Cập nhật NAV</option>
+              </Select>
+            </div>
+            <div className="sm:col-span-2 lg:w-[320px]">
+              <DateRangePicker
+                startDate={dateRange.startDate}
+                endDate={dateRange.endDate}
+                onChange={(nextValue) => {
+                  setTxPage(1);
+                  setDateRange(nextValue);
+                }}
+                disabled={txReportQuery.isFetching || isExporting}
+              />
+            </div>
           </div>
         </div>
 

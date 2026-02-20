@@ -66,20 +66,7 @@ function DashboardSkeleton() {
   );
 }
 
-function Sparkline({ values }: { values: number[] }) {
-  const max = Math.max(...values, 1);
-  return (
-    <div className="mt-2 flex h-6 items-end gap-1">
-      {values.map((value, index) => (
-        <span
-          key={index}
-          className="w-2 rounded-sm bg-[var(--color-primary)]/40"
-          style={{ height: `${Math.max(22, (value / max) * 100)}%` }}
-        />
-      ))}
-    </div>
-  );
-}
+
 
 export default function DashboardPage() {
   const token = useAuthStore((state) => state.accessToken);
@@ -187,31 +174,26 @@ export default function DashboardPage() {
     label: string;
     value: string;
     icon: LucideIcon;
-    sparkline: number[];
   }> = [
       {
         label: "Nhà đầu tư",
         value: String(kpis.total_investors),
         icon: Landmark,
-        sparkline: [58, 62, 66, 71, 74, 78],
       },
       {
         label: "Tổng đơn vị quỹ",
         value: kpis.total_units.toFixed(2),
         icon: BarChart3,
-        sparkline: [45, 50, 56, 62, 70, 80],
       },
       {
         label: "Tổng phí đã thu",
         value: formatCurrency(kpis.total_fees_paid),
         icon: CircleDollarSign,
-        sparkline: [30, 38, 46, 52, 68, 84],
       },
       {
         label: "Giá trị Fund Manager",
         value: formatCurrency(kpis.fund_manager_value),
         icon: Wallet,
-        sparkline: [34, 44, 49, 57, 64, 76],
       },
     ];
 
@@ -247,7 +229,6 @@ export default function DashboardPage() {
                 </span>
               </div>
               <p className="kpi-value">{item.value}</p>
-              <Sparkline values={item.sparkline} />
             </Card>
           );
         })}
@@ -277,40 +258,45 @@ export default function DashboardPage() {
         </Card>
       </section>
 
-      <Card className="space-y-3">
-        <h3 className="section-title">Dòng tiền nạp/rút hàng tháng</h3>
-        {monthlyFlowSeries.length ? (
-          <div className="h-72">
-            <DashboardMonthlyFlowChart data={monthlyFlowSeries} />
-          </div>
-        ) : (
-          <LoadingState label="Chưa có dữ liệu dòng tiền." />
-        )}
+      <div className="grid grid-cols-1 gap-4 lg:grid-cols-3">
+        <Card className="space-y-3 lg:col-span-2">
+          <h3 className="section-title">Dòng tiền nạp/rút hàng tháng</h3>
+          {monthlyFlowSeries.length ? (
+            <div className="h-72">
+              <DashboardMonthlyFlowChart data={monthlyFlowSeries} />
+            </div>
+          ) : (
+            <LoadingState label="Chưa có dữ liệu dòng tiền." />
+          )}
+        </Card>
 
-        <div className="list-stagger space-y-2">
-          {top_investors.slice(0, 4).map((investor) => (
-            <article
-              key={investor.investor_id}
-              className="flex items-center justify-between rounded-xl border border-[var(--color-border)] bg-[var(--color-surface-2)] px-3 py-3"
-            >
-              <div>
-                <p className="text-sm font-medium">{investor.investor_name}</p>
-                <p className="text-xs text-[var(--color-muted)]">
-                  Lãi/lỗ:{" "}
-                  <span
-                    className={
-                      investor.profit >= 0 ? "text-[var(--color-success)]" : "text-[var(--color-danger)]"
-                    }
-                  >
-                    {formatCurrency(investor.profit)} ({formatPercent(investor.profit_percent)})
-                  </span>
-                </p>
-              </div>
-              <p className="text-sm font-semibold">{formatCurrency(investor.balance)}</p>
-            </article>
-          ))}
-        </div>
-      </Card>
+        <Card className="space-y-3">
+          <h3 className="section-title">Hiệu quả Nhà đầu tư (Top)</h3>
+          <div className="list-stagger space-y-2">
+            {top_investors.slice(0, 4).map((investor) => (
+              <article
+                key={investor.investor_id}
+                className="flex items-center justify-between rounded-xl border border-[var(--color-border)] bg-[var(--color-surface-2)] px-3 py-3"
+              >
+                <div>
+                  <p className="text-sm font-medium">{investor.investor_name}</p>
+                  <p className="text-xs text-[var(--color-muted)]">
+                    Lãi/lỗ:{" "}
+                    <span
+                      className={
+                        investor.profit >= 0 ? "text-[var(--color-success)]" : "text-[var(--color-danger)]"
+                      }
+                    >
+                      {formatCurrency(investor.profit)} ({formatPercent(investor.profit_percent)})
+                    </span>
+                  </p>
+                </div>
+                <p className="text-sm font-semibold">{formatCurrency(investor.balance)}</p>
+              </article>
+            ))}
+          </div>
+        </Card>
+      </div>
     </div>
   );
 }

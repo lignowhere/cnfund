@@ -1,7 +1,7 @@
 ﻿"use client";
 
 import * as Dialog from "@radix-ui/react-dialog";
-import { Eye, Loader2, Pencil, X } from "lucide-react";
+import { Eye, Loader2, Pencil, Plus, X } from "lucide-react";
 import { useMemo, useState } from "react";
 import { useInfiniteQuery, useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 
@@ -83,6 +83,7 @@ export default function InvestorsPage() {
   const [wardCode, setWardCode] = useState("");
   const [wardName, setWardName] = useState("");
   const [addressLine, setAddressLine] = useState("");
+  const [isCreateModalOpen, setIsCreateModalOpen] = useState(false);
   const [editingInvestor, setEditingInvestor] = useState<InvestorCardDTO | null>(null);
   const [editName, setEditName] = useState("");
   const [editPhone, setEditPhone] = useState("");
@@ -222,6 +223,7 @@ export default function InvestorsPage() {
       setWardCode("");
       setWardName("");
       setAddressLine("");
+      setIsCreateModalOpen(false);
       pushToast({ title: "Đã tạo nhà đầu tư", variant: "success" });
       queryClient.invalidateQueries({ queryKey: queryKeys.investorCards(safeToken), exact: true });
       queryClient.invalidateQueries({ queryKey: queryKeys.dashboard(safeToken), exact: true });
@@ -316,97 +318,116 @@ export default function InvestorsPage() {
 
   return (
     <div className="app-page">
-      <Card className="space-y-3">
-        <h2 className="section-title">Thêm nhà đầu tư</h2>
-        <div className="grid gap-2 sm:grid-cols-2">
-          <Input placeholder="Tên" value={name} onChange={(e) => setName(e.target.value)} />
-          <Input
-            placeholder="Số điện thoại"
-            value={phone}
-            onChange={(e) => setPhone(e.target.value.trim())}
-            inputMode="numeric"
-            pattern="0[0-9]{9}"
-            maxLength={10}
-            aria-invalid={createPhoneInvalid}
-          />
-          <Input placeholder="Email" value={email} onChange={(e) => setEmail(e.target.value)} />
-          <Input type="date" value={joinDate} onChange={(e) => setJoinDate(e.target.value)} />
-        </div>
-        <div className="grid gap-2 sm:grid-cols-2">
-          <LocationCombobox
-            options={provinceOptions}
-            value={provinceCode}
-            onChange={(option) => {
-              setProvinceCode(option?.code || "");
-              setProvinceName(option?.name || "");
-              setWardCode("");
-              setWardName("");
-            }}
-            placeholder="Chọn Tỉnh/Thành"
-            disabled={provincesQuery.isLoading}
-            invalid={createAddressPairInvalid}
-          />
-          <LocationCombobox
-            options={createWardOptions}
-            value={wardCode}
-            onChange={(option) => {
-              setWardCode(option?.code || "");
-              setWardName(option?.name || "");
-            }}
-            placeholder="Chọn Phường/Xã"
-            disabled={!provinceCode || createWardsQuery.isLoading}
-            invalid={createAddressPairInvalid}
-          />
-        </div>
-        <Input
-          placeholder="Địa chỉ chi tiết (số nhà, đường...)"
-          value={addressLine}
-          onChange={(e) => setAddressLine(e.target.value)}
-        />
-        <p className="input-helper">Địa chỉ đầy đủ: {createAddressPreview || "Chưa có"}</p>
-        {createPhoneInvalid ? <p className="inline-error">Số điện thoại phải có định dạng 0xxxxxxxxx.</p> : null}
-        {createAddressPairInvalid ? (
-          <p className="inline-error">Tỉnh/Thành và Phường/Xã cần chọn đồng thời.</p>
-        ) : null}
-        <Button
-          className="w-full"
-          onClick={() => createMutation.mutate()}
-          disabled={!name.trim() || createPhoneInvalid || createAddressPairInvalid || createMutation.isPending}
-        >
-          {createMutation.isPending ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
-          Tạo nhà đầu tư
-        </Button>
-      </Card>
-
-      <Card className="space-y-3">
-        <div className="flex flex-wrap items-center justify-between gap-2">
-          <h2 className="section-title">Danh sách nhà đầu tư</h2>
-          {tableViewEnabled ? (
-            <div className="flex rounded-xl border border-[var(--color-border)] bg-[var(--color-surface)] p-1">
-              <button
-                className={`rounded-lg px-3 py-1 text-xs font-medium ${viewMode === "card"
-                    ? "bg-[var(--color-primary-50)] text-[var(--color-primary)]"
-                    : "text-[var(--color-muted)]"
-                  }`}
-                onClick={() => setViewMode("card")}
-                type="button"
-              >
-                Thẻ
-              </button>
-              <button
-                className={`rounded-lg px-3 py-1 text-xs font-medium ${viewMode === "table"
-                    ? "bg-[var(--color-primary-50)] text-[var(--color-primary)]"
-                    : "text-[var(--color-muted)]"
-                  }`}
-                onClick={() => setViewMode("table")}
-                type="button"
-              >
-                Bảng
-              </button>
+      <Dialog.Root open={isCreateModalOpen} onOpenChange={setIsCreateModalOpen}>
+        <Dialog.Portal>
+          <Dialog.Overlay className="fixed inset-0 z-50 bg-black/40 data-[state=open]:animate-[overlay-in_180ms_ease-out]" />
+          <Dialog.Content className="fixed inset-0 z-50 overflow-y-auto border border-[var(--color-border)] bg-[var(--color-surface)] p-4 shadow-2xl data-[state=open]:animate-[fade-up_220ms_ease-out] sm:inset-x-auto sm:left-1/2 sm:top-1/2 sm:h-auto sm:max-h-[90vh] sm:w-[600px] sm:-translate-x-1/2 sm:-translate-y-1/2 sm:rounded-2xl sm:p-5">
+            <div className="sticky top-0 z-10 mb-4 flex items-center justify-between border-b border-[var(--color-border)] bg-[var(--color-surface)] pb-3">
+              <Dialog.Title className="section-title">Thêm nhà đầu tư</Dialog.Title>
+              <Dialog.Close asChild>
+                <Button variant="secondary" className="h-8 w-8 p-0" aria-label="Đóng">
+                  <X className="h-4 w-4" />
+                </Button>
+              </Dialog.Close>
             </div>
-          ) : (
-            <p className="text-xs text-[var(--color-muted)]">Chế độ dạng thẻ</p>
-          )}
+
+            <div className="space-y-3">
+              <div className="grid gap-2 sm:grid-cols-2">
+                <Input placeholder="Tên" value={name} onChange={(e) => setName(e.target.value)} />
+                <Input
+                  placeholder="Số điện thoại"
+                  value={phone}
+                  onChange={(e) => setPhone(e.target.value.trim())}
+                  inputMode="numeric"
+                  pattern="0[0-9]{9}"
+                  maxLength={10}
+                  aria-invalid={createPhoneInvalid}
+                />
+                <Input placeholder="Email" value={email} onChange={(e) => setEmail(e.target.value)} />
+                <Input type="date" value={joinDate} onChange={(e) => setJoinDate(e.target.value)} />
+              </div>
+              <div className="grid gap-2 sm:grid-cols-2">
+                <LocationCombobox
+                  options={provinceOptions}
+                  value={provinceCode}
+                  onChange={(option) => {
+                    setProvinceCode(option?.code || "");
+                    setProvinceName(option?.name || "");
+                    setWardCode("");
+                    setWardName("");
+                  }}
+                  placeholder="Chọn Tỉnh/Thành"
+                  disabled={provincesQuery.isLoading}
+                  invalid={createAddressPairInvalid}
+                />
+                <LocationCombobox
+                  options={createWardOptions}
+                  value={wardCode}
+                  onChange={(option) => {
+                    setWardCode(option?.code || "");
+                    setWardName(option?.name || "");
+                  }}
+                  placeholder="Chọn Phường/Xã"
+                  disabled={!provinceCode || createWardsQuery.isLoading}
+                  invalid={createAddressPairInvalid}
+                />
+              </div>
+              <Input
+                placeholder="Địa chỉ chi tiết (số nhà, đường...)"
+                value={addressLine}
+                onChange={(e) => setAddressLine(e.target.value)}
+              />
+              <p className="input-helper">Địa chỉ đầy đủ: {createAddressPreview || "Chưa có"}</p>
+              {createPhoneInvalid ? <p className="inline-error">Số điện thoại phải có định dạng 0xxxxxxxxx.</p> : null}
+              {createAddressPairInvalid ? (
+                <p className="inline-error">Tỉnh/Thành và Phường/Xã cần chọn đồng thời.</p>
+              ) : null}
+              <Button
+                className="w-full mt-2"
+                onClick={() => createMutation.mutate()}
+                disabled={!name.trim() || createPhoneInvalid || createAddressPairInvalid || createMutation.isPending}
+              >
+                {createMutation.isPending ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
+                Lưu nhà đầu tư
+              </Button>
+            </div>
+          </Dialog.Content>
+        </Dialog.Portal>
+      </Dialog.Root>
+
+      <Card className="space-y-4">
+        <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between border-b border-[var(--color-border)] pb-4">
+          <h2 className="section-title">Danh sách nhà đầu tư</h2>
+          <div className="flex items-center gap-2">
+            <Button size="sm" onClick={() => setIsCreateModalOpen(true)} className="h-9">
+              <Plus className="mr-1.5 h-4 w-4" />
+              Thêm mới
+            </Button>
+            {tableViewEnabled ? (
+              <div className="flex rounded-lg border border-[var(--color-border)] bg-[var(--color-surface)] p-1">
+                <button
+                  className={`rounded-md px-3 py-1.5 text-xs font-medium transition-colors ${viewMode === "card"
+                    ? "bg-[var(--color-primary-50)] text-[var(--color-primary)] shadow-sm"
+                    : "text-[var(--color-muted)] hover:text-[var(--color-text)]"
+                    }`}
+                  onClick={() => setViewMode("card")}
+                  type="button"
+                >
+                  Thẻ
+                </button>
+                <button
+                  className={`rounded-md px-3 py-1.5 text-xs font-medium transition-colors ${viewMode === "table"
+                    ? "bg-[var(--color-primary-50)] text-[var(--color-primary)] shadow-sm"
+                    : "text-[var(--color-muted)] hover:text-[var(--color-text)]"
+                    }`}
+                  onClick={() => setViewMode("table")}
+                  type="button"
+                >
+                  Bảng
+                </button>
+              </div>
+            ) : null}
+          </div>
         </div>
 
         {cardsQuery.isLoading ? (
