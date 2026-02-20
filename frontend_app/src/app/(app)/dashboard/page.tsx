@@ -224,7 +224,13 @@ export default function DashboardPage() {
           <p className="hidden text-xs uppercase tracking-[0.2em] text-[var(--hero-text-muted)] sm:block">Tổng quan quỹ</p>
           <h2 className="text-xl font-semibold sm:text-2xl">{formatCurrency(kpis.total_nav)}</h2>
           <p className="text-sm text-[var(--hero-text-muted)]">
-            Hiệu suất gộp: <span className="font-semibold">{formatPercent(kpis.gross_return)}</span>
+            Hiệu suất gộp:{" "}
+            <span
+              className={`font-semibold ${kpis.gross_return >= 0 ? "text-[var(--color-success)]" : "text-[var(--color-danger)]"
+                }`}
+            >
+              {formatPercent(kpis.gross_return)}
+            </span>
           </p>
         </div>
       </Card>
@@ -290,7 +296,14 @@ export default function DashboardPage() {
               <div>
                 <p className="text-sm font-medium">{investor.investor_name}</p>
                 <p className="text-xs text-[var(--color-muted)]">
-                  Lãi/lỗ: {formatCurrency(investor.profit)} ({formatPercent(investor.profit_percent)})
+                  Lãi/lỗ:{" "}
+                  <span
+                    className={
+                      investor.profit >= 0 ? "text-[var(--color-success)]" : "text-[var(--color-danger)]"
+                    }
+                  >
+                    {formatCurrency(investor.profit)} ({formatPercent(investor.profit_percent)})
+                  </span>
                 </p>
               </div>
               <p className="text-sm font-semibold">{formatCurrency(investor.balance)}</p>

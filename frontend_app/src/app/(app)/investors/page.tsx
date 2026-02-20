@@ -263,18 +263,18 @@ export default function InvestorsPage() {
         setSelectedInvestor((current) =>
           current
             ? {
-                ...current,
-                display_name: `${editName.trim()} (ID: ${editedId})`,
-                phone: editPhone.trim(),
-                email: editEmail.trim(),
-                join_date: editJoinDate,
-                province_code: editProvinceCode,
-                province_name: editProvinceName,
-                ward_code: editWardCode,
-                ward_name: editWardName,
-                address_line: editAddressLine.trim(),
-                address: editAddressPreview || editAddressLine.trim(),
-              }
+              ...current,
+              display_name: `${editName.trim()} (ID: ${editedId})`,
+              phone: editPhone.trim(),
+              email: editEmail.trim(),
+              join_date: editJoinDate,
+              province_code: editProvinceCode,
+              province_name: editProvinceName,
+              ward_code: editWardCode,
+              ward_name: editWardName,
+              address_line: editAddressLine.trim(),
+              address: editAddressPreview || editAddressLine.trim(),
+            }
             : current,
         );
         queryClient.invalidateQueries({
@@ -384,22 +384,20 @@ export default function InvestorsPage() {
           {tableViewEnabled ? (
             <div className="flex rounded-xl border border-[var(--color-border)] bg-[var(--color-surface)] p-1">
               <button
-                className={`rounded-lg px-3 py-1 text-xs font-medium ${
-                  viewMode === "card"
+                className={`rounded-lg px-3 py-1 text-xs font-medium ${viewMode === "card"
                     ? "bg-[var(--color-primary-50)] text-[var(--color-primary)]"
                     : "text-[var(--color-muted)]"
-                }`}
+                  }`}
                 onClick={() => setViewMode("card")}
                 type="button"
               >
                 Thẻ
               </button>
               <button
-                className={`rounded-lg px-3 py-1 text-xs font-medium ${
-                  viewMode === "table"
+                className={`rounded-lg px-3 py-1 text-xs font-medium ${viewMode === "table"
                     ? "bg-[var(--color-primary-50)] text-[var(--color-primary)]"
                     : "text-[var(--color-muted)]"
-                }`}
+                  }`}
                 onClick={() => setViewMode("table")}
                 type="button"
               >
@@ -440,7 +438,10 @@ export default function InvestorsPage() {
                       <td className="px-3 py-2">{item.email || "-"}</td>
                       <td className="px-3 py-2">{buildAddressLabel(item)}</td>
                       <td className="px-3 py-2">{formatCurrency(item.current_value)}</td>
-                      <td className="px-3 py-2">
+                      <td
+                        className={`px-3 py-2 ${item.pnl >= 0 ? "text-[var(--color-success)]" : "text-[var(--color-danger)]"
+                          }`}
+                      >
                         {formatCurrency(item.pnl)} ({formatPercent(item.pnl_percent)})
                       </td>
                       <td className="px-3 py-2">

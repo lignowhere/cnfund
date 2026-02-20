@@ -32,6 +32,13 @@ type RequestOptions = {
   retryOnAuth?: boolean;
 };
 
+type BlobRequestOptions = {
+  method?: string;
+  token?: string | null;
+  retryOnAuth?: boolean;
+  accept?: string;
+};
+
 let refreshInFlight: Promise<void> | null = null;
 
 async function ensureSessionRefreshed(): Promise<void> {
@@ -118,6 +125,51 @@ async function request<T>(path: string, options: RequestOptions = {}): Promise<T
   return payload.data;
 }
 
+async function requestBlob(path: string, options: BlobRequestOptions = {}): Promise<Blob> {
+  const token = options.token ?? useAuthStore.getState().accessToken;
+  const headers: HeadersInit = {};
+  if (options.accept) {
+    headers.Accept = options.accept;
+  }
+  if (token) {
+    headers.Authorization = `Bearer ${token}`;
+  }
+
+  let response: Response;
+  try {
+    response = await fetch(buildApiUrl(API_BASE_URL, path), {
+      method: options.method || "GET",
+      headers,
+      cache: "no-store",
+    });
+  } catch (error) {
+    throw buildNetworkError(error, API_BASE_URL);
+  }
+
+  if (response.status === 401 && options.retryOnAuth !== false) {
+    const canRefresh = Boolean(useAuthStore.getState().refreshToken);
+    if (canRefresh) {
+      try {
+        await ensureSessionRefreshed();
+        const renewedToken = useAuthStore.getState().accessToken;
+        return requestBlob(path, {
+          ...options,
+          token: renewedToken,
+          retryOnAuth: false,
+        });
+      } catch {
+        throw new Error("Phiên đăng nhập đã hết hạn. Vui lòng đăng nhập lại.");
+      }
+    }
+  }
+
+  if (!response.ok) {
+    throw new Error(await getErrorDetail(response));
+  }
+
+  return response.blob();
+}
+
 export const apiClient = {
   async login(username: string, password: string): Promise<TokenPair> {
     return authApi.login(username, password);
@@ -151,6 +203,8 @@ export const apiClient = {
       page_size?: number;
       investor_id?: number;
       tx_type?: string;
+      start_date?: string;
+      end_date?: string;
     },
   ): Promise<TransactionsReportDTO> {
     const search = new URLSearchParams();
@@ -158,9 +212,33 @@ export const apiClient = {
     if (params?.page_size) search.set("page_size", String(params.page_size));
     if (params?.investor_id !== undefined) search.set("investor_id", String(params.investor_id));
     if (params?.tx_type) search.set("tx_type", params.tx_type);
+    if (params?.start_date) search.set("start_date", params.start_date);
+    if (params?.end_date) search.set("end_date", params.end_date);
     const query = search.toString();
     return request<TransactionsReportDTO>(`/reports/transactions${query ? `?${query}` : ""}`, {
       token,
+    });
+  },
+
+  async exportTransactions(
+    token: string,
+    params: {
+      start_date?: string;
+      end_date?: string;
+      investor_id?: number;
+      tx_type?: string;
+      format: "csv" | "pdf";
+    },
+  ): Promise<Blob> {
+    const search = new URLSearchParams();
+    if (params.start_date) search.set("start_date", params.start_date);
+    if (params.end_date) search.set("end_date", params.end_date);
+    if (params.investor_id !== undefined) search.set("investor_id", String(params.investor_id));
+    if (params.tx_type) search.set("tx_type", params.tx_type);
+    search.set("format", params.format);
+    return requestBlob(`/reports/transactions/export?${search.toString()}`, {
+      token,
+      accept: params.format === "pdf" ? "application/pdf" : "text/csv",
     });
   },
 

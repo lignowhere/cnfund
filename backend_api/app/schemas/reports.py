@@ -96,6 +96,12 @@ class TransactionReportSummaryDTO(BaseModel):
     total_count: int
     total_volume: float
     net_cash_flow: float
+    total_deposits: float
+    total_withdrawals: float
+    # Market P/L for selected period: excludes deposits/withdrawals and fee drag.
+    gross_profit_loss: float
+    # gross_profit_loss / start_value_of_selected_period (0 if start_value is 0).
+    gross_profit_loss_percent: float
     by_type: dict[str, int]
     earliest_date: str | None = None
     latest_date: str | None = None

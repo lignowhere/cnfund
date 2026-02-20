@@ -233,6 +233,10 @@ export type TransactionsReportSummaryDTO = {
   total_count: number;
   total_volume: number;
   net_cash_flow: number;
+  total_deposits: number;
+  total_withdrawals: number;
+  gross_profit_loss: number;
+  gross_profit_loss_percent: number;
   by_type: Record<string, number>;
   earliest_date: string | null;
   latest_date: string | null;

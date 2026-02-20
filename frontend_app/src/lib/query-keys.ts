@@ -18,6 +18,8 @@ export const queryKeys = {
       pageSize: number;
       txType?: string;
       investorId?: number;
+      startDate?: string;
+      endDate?: string;
     },
   ) =>
     [
@@ -27,6 +29,8 @@ export const queryKeys = {
       params.pageSize,
       params.txType ?? null,
       params.investorId ?? null,
+      params.startDate ?? null,
+      params.endDate ?? null,
     ] as const,
   investorReport: (token: string, investorId: number, nav?: number) =>
     ["investor-report", token, investorId, nav ?? null] as const,
