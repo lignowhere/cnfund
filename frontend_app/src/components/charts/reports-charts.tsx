@@ -48,7 +48,7 @@ export function ReportsTxTypeBarChart({
           width={80}
         />
         <Tooltip
-          formatter={(value: number | undefined) => [value !== undefined ? formatCurrency(value) : "0", "Giá trị"]}
+          formatter={(value) => [formatCurrency(Number(value ?? 0)), "Giá trị"]}
           contentStyle={{
             backgroundColor: "var(--color-surface)",
             borderColor: "var(--color-border)",
@@ -65,7 +65,7 @@ export function ReportsTxTypeBarChart({
           <LabelList
             dataKey="value"
             position="right"
-            formatter={(value: number | undefined) => (value !== undefined ? formatCurrency(value) : "0")}
+            formatter={(label) => formatCurrency(Number(label ?? 0))}
             style={{ fontSize: 11, fill: "var(--color-muted)" }}
           />
         </Bar>
@@ -115,7 +115,7 @@ export function ReportsTxTypeStackedBarChart({
           width={80}
         />
         <Tooltip
-          formatter={(value: number | undefined, name: string) => [value !== undefined ? formatCurrency(value) : "0", name]}
+          formatter={(value, name) => [formatCurrency(Number(value ?? 0)), String(name)]}
           contentStyle={{
             backgroundColor: "var(--color-surface)",
             borderColor: "var(--color-border)",
