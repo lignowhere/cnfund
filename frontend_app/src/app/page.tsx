@@ -5,6 +5,10 @@ import { useEffect } from "react";
 
 import { useAuthStore } from "@/store/auth-store";
 
+function resolveHomeRoute(role?: string | null) {
+  return role === "investor" ? "/reports" : "/dashboard";
+}
+
 export default function HomePage() {
   const router = useRouter();
   const token = useAuthStore((state) => state.accessToken);
@@ -12,7 +16,8 @@ export default function HomePage() {
 
   useEffect(() => {
     if (!isHydrated) return;
-    router.replace(token ? "/dashboard" : "/login");
+    const role = useAuthStore.getState().user?.role;
+    router.replace(token ? resolveHomeRoute(role) : "/login");
   }, [isHydrated, token, router]);
 
   return (

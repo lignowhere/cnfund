@@ -1,4 +1,4 @@
-export type UserRole = "viewer" | "admin" | "fund_manager";
+export type UserRole = "viewer" | "admin" | "fund_manager" | "investor";
 
 export type ThemePreference = "system" | "light" | "dark";
 export type ResolvedTheme = "light" | "dark";
@@ -37,8 +37,18 @@ export type PaginatedResponse<T> = {
 export type UserInfo = {
   username: string;
   role: UserRole;
+  investor_id: number | null;
   is_active: boolean;
   created_at: string;
+};
+
+export type InvestorAccountAdminItemDTO = {
+  investor_id: number;
+  investor_name: string;
+  has_account: boolean;
+  username: string | null;
+  is_active: boolean | null;
+  created_at: string | null;
 };
 
 export type TokenPair = {

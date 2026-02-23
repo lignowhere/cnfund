@@ -9,7 +9,6 @@ import { InvestorCombobox } from "@/components/form/investor-combobox";
 import { Select } from "@/components/ui/select";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
-import { Input } from "@/components/ui/input";
 import { EmptyState, ErrorState, LoadingState } from "@/components/ui/states";
 import { apiClient } from "@/lib/api";
 import { queryKeys } from "@/lib/query-keys";
@@ -62,8 +61,10 @@ function formatCompactMoney(value: number) {
 
 export default function ReportsPage() {
   const token = useAuthStore((state) => state.accessToken);
+  const user = useAuthStore((state) => state.user);
   const safeToken = token || "";
   const pushToast = useToastStore((state) => state.push);
+  const isInvestorUser = user?.role === "investor";
 
   const [txPage, setTxPage] = useState(1);
   const [txTypeFilter, setTxTypeFilter] = useState("");
@@ -80,42 +81,63 @@ export default function ReportsPage() {
       const investors = await apiClient.investorCards(safeToken);
       return investors.map((item) => toInvestorOption(item.display_name, item.id));
     },
-    enabled: !!token,
+    enabled: !!token && !isInvestorUser,
   });
 
   const effectiveInvestorId = investorFilter?.id ?? 0;
 
   const txReportQuery = useQuery({
-    queryKey: queryKeys.transactionsReport(safeToken, {
-      page: txPage,
-      pageSize: 20,
-      txType: txTypeFilter || undefined,
-      investorId: investorFilter?.id,
-      startDate: dateRange.startDate || undefined,
-      endDate: dateRange.endDate || undefined,
-    }),
-    queryFn: () =>
-      apiClient.transactionsReport(safeToken, {
+    queryKey: isInvestorUser
+      ? queryKeys.myTransactionsReport(safeToken, {
         page: txPage,
-        page_size: 20,
-        tx_type: txTypeFilter || undefined,
-        investor_id: investorFilter?.id,
-        start_date: dateRange.startDate || undefined,
-        end_date: dateRange.endDate || undefined,
+        pageSize: 20,
+        txType: txTypeFilter || undefined,
+        startDate: dateRange.startDate || undefined,
+        endDate: dateRange.endDate || undefined,
+      })
+      : queryKeys.transactionsReport(safeToken, {
+        page: txPage,
+        pageSize: 20,
+        txType: txTypeFilter || undefined,
+        investorId: investorFilter?.id,
+        startDate: dateRange.startDate || undefined,
+        endDate: dateRange.endDate || undefined,
       }),
+    queryFn: () =>
+      isInvestorUser
+        ? apiClient.myTransactionsReport(safeToken, {
+          page: txPage,
+          page_size: 20,
+          tx_type: txTypeFilter || undefined,
+          start_date: dateRange.startDate || undefined,
+          end_date: dateRange.endDate || undefined,
+        })
+        : apiClient.transactionsReport(safeToken, {
+          page: txPage,
+          page_size: 20,
+          tx_type: txTypeFilter || undefined,
+          investor_id: investorFilter?.id,
+          start_date: dateRange.startDate || undefined,
+          end_date: dateRange.endDate || undefined,
+        }),
     enabled: !!token,
   });
 
   const investorReportQuery = useQuery({
-    queryKey: queryKeys.investorReport(safeToken, effectiveInvestorId),
-    queryFn: () => apiClient.investorReport(safeToken, effectiveInvestorId),
-    enabled: !!token && !!investorFilter?.id,
+    queryKey: isInvestorUser
+      ? queryKeys.myInvestorReport(safeToken)
+      : queryKeys.investorReport(safeToken, effectiveInvestorId),
+    queryFn: () =>
+      isInvestorUser
+        ? apiClient.myInvestorReport(safeToken)
+        : apiClient.investorReport(safeToken, effectiveInvestorId),
+    enabled: !!token && (isInvestorUser || !!investorFilter?.id),
   });
 
   const navHistoryQuery = useQuery({
     queryKey: ["navHistory", safeToken],
     queryFn: () => apiClient.navHistory(safeToken),
-    enabled: !!token && !investorFilter,
+    enabled: !!token && !investorFilter && !isInvestorUser,
   });
 
   const txTotalPages = useMemo(() => {
@@ -151,7 +173,7 @@ export default function ReportsPage() {
     const stacked: Array<{ name: string;[key: string]: number | string }> = [];
     const investorColors: Record<string, string> = {};
 
-    if (!investorFilter && txReportQuery.data.items.length > 0) {
+    if (!investorFilter && !isInvestorUser && txReportQuery.data.items.length > 0) {
       const depositByInvestor: Record<string, number> = {};
       const withdrawByInvestor: Record<string, number> = {};
 
@@ -199,7 +221,7 @@ export default function ReportsPage() {
     }
 
     return { simple, stacked, colors: investorColors };
-  }, [txReportQuery.data, investorFilter]);
+  }, [txReportQuery.data, investorFilter, isInvestorUser]);
 
   const investorTxBars = useMemo(() => {
     if (!investorReportQuery.data) return [];
@@ -213,7 +235,7 @@ export default function ReportsPage() {
   }, [investorReportQuery.data]);
 
   const endAUM = useMemo(() => {
-    if (investorFilter) return null;
+    if (investorFilter || isInvestorUser) return null;
     if (dateRange.endDate && navHistoryQuery.data) {
       const sorted = [...navHistoryQuery.data].sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
       const found = sorted.find(p => p.date <= dateRange.endDate);
@@ -223,7 +245,7 @@ export default function ReportsPage() {
       return txReportQuery.data.items[0].nav;
     }
     return 0;
-  }, [dateRange.endDate, navHistoryQuery.data, txReportQuery.data, investorFilter]);
+  }, [dateRange.endDate, navHistoryQuery.data, txReportQuery.data, investorFilter, isInvestorUser]);
 
   async function handleExport(format: "csv" | "pdf") {
     if (!token || isExporting) {
@@ -231,13 +253,20 @@ export default function ReportsPage() {
     }
     setIsExporting(true);
     try {
-      const blob = await apiClient.exportTransactions(token, {
-        start_date: dateRange.startDate || undefined,
-        end_date: dateRange.endDate || undefined,
-        investor_id: investorFilter?.id,
-        tx_type: txTypeFilter || undefined,
-        format,
-      });
+      const blob = isInvestorUser
+        ? await apiClient.exportMyTransactions(token, {
+          start_date: dateRange.startDate || undefined,
+          end_date: dateRange.endDate || undefined,
+          tx_type: txTypeFilter || undefined,
+          format,
+        })
+        : await apiClient.exportTransactions(token, {
+          start_date: dateRange.startDate || undefined,
+          end_date: dateRange.endDate || undefined,
+          investor_id: investorFilter?.id,
+          tx_type: txTypeFilter || undefined,
+          format,
+        });
       const url = window.URL.createObjectURL(blob);
       const anchor = document.createElement("a");
       anchor.href = url;
@@ -261,7 +290,7 @@ export default function ReportsPage() {
     }
   }
 
-  const showInvestorDetail = !!investorFilter?.id;
+  const showInvestorDetail = isInvestorUser || !!investorFilter?.id;
 
   return (
     <div className="app-page">
@@ -272,7 +301,9 @@ export default function ReportsPage() {
               {showInvestorDetail ? "Chi tiết Nhà đầu tư" : "Báo cáo Tổng hợp"}
             </h2>
             <p className="section-note">
-              {showInvestorDetail
+              {isInvestorUser
+                ? "Dữ liệu hiệu suất cá nhân"
+                : showInvestorDetail
                 ? `Đang xem dữ liệu của: ${investorFilter?.displayName.split("·")[0]}`
                 : "Tổng quan giao dịch toàn quỹ"}
             </p>
@@ -298,18 +329,20 @@ export default function ReportsPage() {
         {/* Global Filters */}
         <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between rounded-xl bg-[var(--color-surface-2)] p-2 sm:p-3 border border-[var(--color-border)]">
           <div className="grid w-full grid-cols-1 gap-3 sm:grid-cols-2 lg:flex lg:w-auto lg:flex-1 lg:items-center">
-            <div className="lg:w-64">
-              <InvestorCombobox
-                options={investorsQuery.data ?? []}
-                value={investorFilter?.id ?? null}
-                onChange={(option) => {
-                  setTxPage(1);
-                  setInvestorFilter(option);
-                }}
-                placeholder="Chọn nhà đầu tư..."
-                allowClear
-              />
-            </div>
+            {!isInvestorUser ? (
+              <div className="lg:w-64">
+                <InvestorCombobox
+                  options={investorsQuery.data ?? []}
+                  value={investorFilter?.id ?? null}
+                  onChange={(option) => {
+                    setTxPage(1);
+                    setInvestorFilter(option);
+                  }}
+                  placeholder="Chọn nhà đầu tư..."
+                  allowClear
+                />
+              </div>
+            ) : null}
             <div className="lg:w-56">
               <Select
                 value={txTypeFilter}
@@ -421,7 +454,7 @@ export default function ReportsPage() {
                 {showInvestorDetail ? (
                   <ReportsInvestorTxBarChart data={investorTxBars} formatCompactMoney={formatCompactMoney} />
                 ) : (
-                  !investorFilter && txTypeChartData.stacked.length > 0 ? (
+                  !investorFilter && !isInvestorUser && txTypeChartData.stacked.length > 0 ? (
                     <ReportsTxTypeStackedBarChart data={txTypeChartData.stacked} colors={txTypeChartData.colors} />
                   ) : (
                     <ReportsTxTypeBarChart data={txTypeChartData.simple} />

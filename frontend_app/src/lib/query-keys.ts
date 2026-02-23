@@ -34,6 +34,28 @@ export const queryKeys = {
     ] as const,
   investorReport: (token: string, investorId: number, nav?: number) =>
     ["investor-report", token, investorId, nav ?? null] as const,
+  myInvestorReport: (token: string, nav?: number) =>
+    ["my-investor-report", token, nav ?? null] as const,
+  myTransactionsReport: (
+    token: string,
+    params: {
+      page: number;
+      pageSize: number;
+      txType?: string;
+      startDate?: string;
+      endDate?: string;
+    },
+  ) =>
+    [
+      "my-transactions-report",
+      token,
+      params.page,
+      params.pageSize,
+      params.txType ?? null,
+      params.startDate ?? null,
+      params.endDate ?? null,
+    ] as const,
+  accountsInvestors: (token: string) => ["accounts-investors", token] as const,
   feeHistory: (token: string) => ["fee-history", token] as const,
   backups: (token: string) => ["backups", token] as const,
 };

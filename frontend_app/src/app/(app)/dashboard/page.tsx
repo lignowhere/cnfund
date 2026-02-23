@@ -208,7 +208,7 @@ export default function DashboardPage() {
           <p className="text-sm text-[var(--hero-text-muted)]">
             Hiệu suất gộp:{" "}
             <span
-              className={`font-semibold ${kpis.gross_return >= 0 ? "text-[var(--color-success)]" : "text-[var(--color-danger)]"
+              className={`font-semibold ${kpis.gross_return >= 0 ? "text-[var(--hero-success)]" : "text-[var(--hero-danger)]"
                 }`}
             >
               {formatPercent(kpis.gross_return)}

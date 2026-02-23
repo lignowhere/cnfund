@@ -16,12 +16,14 @@ const titles: Record<string, string> = {
   "/fees": "Tính phí",
   "/reports": "Báo cáo",
   "/backup": "Sao lưu",
+  "/accounts": "Tài khoản",
 };
 
 const roleLabel: Record<string, string> = {
   viewer: "Người xem",
   admin: "Quản trị viên",
   fund_manager: "Quản lý quỹ",
+  investor: "Nhà đầu tư",
 };
 
 export function AppShell({ children }: { children: React.ReactNode }) {

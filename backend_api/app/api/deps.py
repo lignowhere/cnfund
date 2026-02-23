@@ -1,4 +1,5 @@
 from collections.abc import Generator
+from dataclasses import dataclass
 from datetime import datetime
 
 from fastapi import Depends, HTTPException, status
@@ -8,10 +9,16 @@ from sqlalchemy.orm import Session
 from ..core.database import SessionLocal
 from ..core.rbac import ADMIN_ONLY_ROLES, MUTATE_ROLES, READ_ROLES, has_role
 from ..core.security import decode_token
-from ..models.auth import User
+from ..models.auth import InvestorAccount, User
 
 
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/api/v1/auth/login")
+
+
+@dataclass
+class InvestorAccessContext:
+    user: User
+    investor_id: int
 
 
 def get_db() -> Generator[Session, None, None]:
@@ -66,3 +73,16 @@ def require_admin_access(user: User = Depends(get_current_user)) -> User:
         raise HTTPException(status_code=403, detail="Admin permission required")
     return user
 
+
+def require_investor_access(
+    user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+) -> InvestorAccessContext:
+    if user.role != "investor":
+        raise HTTPException(status_code=403, detail="Investor permission required")
+
+    link = db.query(InvestorAccount).filter(InvestorAccount.user_id == user.id).first()
+    if link is None:
+        raise HTTPException(status_code=403, detail="Investor account link not configured")
+
+    return InvestorAccessContext(user=user, investor_id=int(link.investor_id))

@@ -11,6 +11,10 @@ import { Input } from "@/components/ui/input";
 import { useAuthStore } from "@/store/auth-store";
 import { useApplyTheme } from "@/store/theme-store";
 
+function resolveHomeRoute(role?: string | null) {
+  return role === "investor" ? "/reports" : "/dashboard";
+}
+
 export default function LoginPage() {
   const router = useRouter();
   const login = useAuthStore((state) => state.login);
@@ -26,7 +30,8 @@ export default function LoginPage() {
 
   useEffect(() => {
     if (isHydrated && token) {
-      router.replace("/dashboard");
+      const role = useAuthStore.getState().user?.role;
+      router.replace(resolveHomeRoute(role));
     }
   }, [isHydrated, token, router]);
 
@@ -36,7 +41,8 @@ export default function LoginPage() {
     setSubmitting(true);
     try {
       await login(username.trim(), password);
-      router.replace("/dashboard");
+      const role = useAuthStore.getState().user?.role;
+      router.replace(resolveHomeRoute(role));
     } catch (err) {
       setError(err instanceof Error ? err.message : "Đăng nhập thất bại");
     } finally {

@@ -19,6 +19,9 @@ class User(Base):
     refresh_tokens: Mapped[list["RefreshToken"]] = relationship(
         back_populates="user", cascade="all, delete-orphan"
     )
+    investor_account: Mapped["InvestorAccount | None"] = relationship(
+        back_populates="user", cascade="all, delete-orphan", uselist=False
+    )
 
 
 class RefreshToken(Base):
@@ -35,6 +38,17 @@ class RefreshToken(Base):
     user: Mapped[User] = relationship(back_populates="refresh_tokens")
 
 
+class InvestorAccount(Base):
+    __tablename__ = "investor_accounts"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id"), unique=True, index=True)
+    investor_id: Mapped[int] = mapped_column(Integer, unique=True, index=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+
+    user: Mapped[User] = relationship(back_populates="investor_account")
+
+
 class AuditLog(Base):
     __tablename__ = "audit_logs"
 
@@ -46,4 +60,3 @@ class AuditLog(Base):
     status_code: Mapped[int] = mapped_column(Integer)
     details: Mapped[str] = mapped_column(Text, default="")
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
-

@@ -12,13 +12,14 @@ import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import { cn } from "@/lib/utils";
 import { useAuthStore } from "@/store/auth-store";
 
-import { drawerNav } from "./nav-config";
+import { getDrawerNav } from "./nav-config";
 
 export function SideDrawer() {
   const pathname = usePathname();
   const router = useRouter();
   const logout = useAuthStore((state) => state.logout);
   const user = useAuthStore((state) => state.user);
+  const drawerNav = getDrawerNav(user?.role);
   const [confirmLogoutOpen, setConfirmLogoutOpen] = useState(false);
 
   return (

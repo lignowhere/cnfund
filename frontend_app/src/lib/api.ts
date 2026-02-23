@@ -8,6 +8,7 @@ import type {
   LocationProvinceDTO,
   LocationWardDTO,
   FeePreviewBundleDTO,
+  InvestorAccountAdminItemDTO,
   InvestorReportDTO,
   InvestorCardDTO,
   NavPointDTO,
@@ -196,6 +197,11 @@ export const apiClient = {
     return request<InvestorReportDTO>(`/reports/investor/${investorId}${query}`, { token });
   },
 
+  async myInvestorReport(token: string, nav?: number): Promise<InvestorReportDTO> {
+    const query = nav !== undefined ? `?nav=${nav}` : "";
+    return request<InvestorReportDTO>(`/reports/me${query}`, { token });
+  },
+
   async transactionsReport(
     token: string,
     params?: {
@@ -237,6 +243,48 @@ export const apiClient = {
     if (params.tx_type) search.set("tx_type", params.tx_type);
     search.set("format", params.format);
     return requestBlob(`/reports/transactions/export?${search.toString()}`, {
+      token,
+      accept: params.format === "pdf" ? "application/pdf" : "text/csv",
+    });
+  },
+
+  async myTransactionsReport(
+    token: string,
+    params?: {
+      page?: number;
+      page_size?: number;
+      tx_type?: string;
+      start_date?: string;
+      end_date?: string;
+    },
+  ): Promise<TransactionsReportDTO> {
+    const search = new URLSearchParams();
+    if (params?.page) search.set("page", String(params.page));
+    if (params?.page_size) search.set("page_size", String(params.page_size));
+    if (params?.tx_type) search.set("tx_type", params.tx_type);
+    if (params?.start_date) search.set("start_date", params.start_date);
+    if (params?.end_date) search.set("end_date", params.end_date);
+    const query = search.toString();
+    return request<TransactionsReportDTO>(`/reports/me/transactions${query ? `?${query}` : ""}`, {
+      token,
+    });
+  },
+
+  async exportMyTransactions(
+    token: string,
+    params: {
+      start_date?: string;
+      end_date?: string;
+      tx_type?: string;
+      format: "csv" | "pdf";
+    },
+  ): Promise<Blob> {
+    const search = new URLSearchParams();
+    if (params.start_date) search.set("start_date", params.start_date);
+    if (params.end_date) search.set("end_date", params.end_date);
+    if (params.tx_type) search.set("tx_type", params.tx_type);
+    search.set("format", params.format);
+    return requestBlob(`/reports/me/transactions/export?${search.toString()}`, {
       token,
       accept: params.format === "pdf" ? "application/pdf" : "text/csv",
     });
@@ -427,6 +475,45 @@ export const apiClient = {
       method: "POST",
       token,
       body: payload,
+    });
+  },
+
+  async accountsInvestors(token: string): Promise<InvestorAccountAdminItemDTO[]> {
+    return request<InvestorAccountAdminItemDTO[]>("/accounts/investors", { token });
+  },
+
+  async createInvestorAccount(
+    token: string,
+    payload: { investor_id: number; username: string; password: string },
+  ): Promise<InvestorAccountAdminItemDTO> {
+    return request<InvestorAccountAdminItemDTO>("/accounts/investors", {
+      method: "POST",
+      token,
+      body: payload,
+    });
+  },
+
+  async updateInvestorAccount(
+    token: string,
+    investorId: number,
+    payload: { username?: string; is_active?: boolean },
+  ): Promise<InvestorAccountAdminItemDTO> {
+    return request<InvestorAccountAdminItemDTO>(`/accounts/investors/${investorId}`, {
+      method: "PATCH",
+      token,
+      body: payload,
+    });
+  },
+
+  async resetInvestorAccountPassword(
+    token: string,
+    investorId: number,
+    newPassword: string,
+  ): Promise<{ reset: boolean }> {
+    return request<{ reset: boolean }>(`/accounts/investors/${investorId}/reset-password`, {
+      method: "POST",
+      token,
+      body: { new_password: newPassword },
     });
   },
 };

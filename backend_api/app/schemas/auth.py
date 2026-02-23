@@ -4,7 +4,7 @@ from typing import Literal
 from pydantic import BaseModel, Field
 
 
-UserRole = Literal["viewer", "admin", "fund_manager"]
+UserRole = Literal["viewer", "admin", "fund_manager", "investor"]
 
 
 class LoginRequest(BaseModel):
@@ -30,6 +30,6 @@ class LogoutRequest(BaseModel):
 class UserInfo(BaseModel):
     username: str
     role: UserRole
+    investor_id: int | None = None
     is_active: bool
     created_at: datetime
-

@@ -4,15 +4,25 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 
 import { cn } from "@/lib/utils";
+import { useAuthStore } from "@/store/auth-store";
 
-import { primaryNav } from "./nav-config";
+import { getPrimaryNav } from "./nav-config";
 
 export function BottomNav() {
   const pathname = usePathname();
+  const user = useAuthStore((state) => state.user);
+  const primaryNav = getPrimaryNav(user?.role);
+
+  if (!primaryNav.length) {
+    return null;
+  }
 
   return (
     <nav className="fixed inset-x-0 bottom-0 z-40 border-t border-[var(--color-border)] bg-[var(--color-surface)]/92 px-2 pb-[max(0.5rem,env(safe-area-inset-bottom))] pt-2 backdrop-blur md:hidden">
-      <ul className="grid grid-cols-4 gap-1">
+      <ul
+        className="grid gap-1"
+        style={{ gridTemplateColumns: `repeat(${primaryNav.length}, minmax(0, 1fr))` }}
+      >
         {primaryNav.map((item) => {
           const active = pathname.startsWith(item.href);
           const Icon = item.icon;

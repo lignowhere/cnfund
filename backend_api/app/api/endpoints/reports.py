@@ -3,7 +3,7 @@ from datetime import date, datetime
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Response
 
-from ...api.deps import require_read_access
+from ...api.deps import InvestorAccessContext, require_investor_access, require_read_access
 from ...schemas.common import ApiResponse
 from ...schemas.reports import (
     DashboardKPIDTO,
@@ -379,6 +379,99 @@ def dashboard(nav: float | None = Query(default=None, ge=0), _user=Depends(requi
     return ApiResponse(data=runtime.read(_read))
 
 
+def _build_investor_report_payload(manager, investor_id: int, nav: float | None) -> InvestorReportDTO:
+    investor = manager.get_investor_by_id(investor_id)
+    if investor is None or investor.is_fund_manager:
+        raise HTTPException(status_code=404, detail="Investor not found")
+
+    current_nav = nav if nav is not None else (manager.get_latest_total_nav() or 0.0)
+    report = manager.get_investor_individual_report(investor_id, current_nav)
+
+    name_map = {inv.id: inv.name for inv in manager.investors}
+    tx_rows = [
+        transaction_to_dto(tx, name_map.get(tx.investor_id, f"Investor {tx.investor_id}"))
+        for tx in sorted(
+            report.get("transactions", []),
+            key=lambda tx: (_to_datetime(tx.date), tx.id),
+            reverse=True,
+        )
+    ]
+    fee_rows = [
+        fee_record_to_dto(row)
+        for row in sorted(
+            report.get("fee_history", []),
+            key=lambda fee: fee.id,
+            reverse=True,
+        )
+    ]
+
+    tranches = [
+        InvestorTrancheDTO(
+            tranche_id=str(getattr(tranche, "tranche_id", "")),
+            entry_date=_to_datetime(getattr(tranche, "entry_date", datetime.utcnow())),
+            entry_nav=_safe_float(getattr(tranche, "entry_nav", 0.0)),
+            units=_safe_float(getattr(tranche, "units", 0.0)),
+            hwm=_safe_float(getattr(tranche, "hwm", 0.0)),
+            invested_value=_safe_float(getattr(tranche, "invested_value", 0.0)),
+            original_invested_value=_safe_float(
+                getattr(tranche, "original_invested_value", 0.0)
+            ),
+            cumulative_fees_paid=_safe_float(getattr(tranche, "cumulative_fees_paid", 0.0)),
+        )
+        for tranche in report.get("tranches", [])
+    ]
+
+    lifetime_data = report.get("lifetime_performance", {})
+    fee_details_data = report.get("fee_details", {})
+
+    return InvestorReportDTO(
+        investor=InvestorProfileDTO(
+            id=investor.id,
+            name=investor.name,
+            phone=investor.phone or "",
+            email=investor.email or "",
+            address=investor.address or "",
+            province_code=getattr(investor, "province_code", "") or "",
+            province_name=getattr(investor, "province_name", "") or "",
+            ward_code=getattr(investor, "ward_code", "") or "",
+            ward_name=getattr(investor, "ward_name", "") or "",
+            address_line=getattr(investor, "address_line", "") or "",
+            join_date=investor.join_date,
+        ),
+        current_balance=_safe_float(report.get("current_balance", 0.0)),
+        current_profit=_safe_float(report.get("current_profit", 0.0)),
+        current_profit_perc=_safe_float(report.get("current_profit_perc", 0.0)),
+        lifetime_performance=InvestorLifetimeDTO(
+            original_invested=_safe_float(lifetime_data.get("original_invested", 0.0)),
+            current_value=_safe_float(lifetime_data.get("current_value", 0.0)),
+            total_fees_paid=_safe_float(lifetime_data.get("total_fees_paid", 0.0)),
+            gross_profit=_safe_float(lifetime_data.get("gross_profit", 0.0)),
+            net_profit=_safe_float(lifetime_data.get("net_profit", 0.0)),
+            gross_return=_safe_float(lifetime_data.get("gross_return", 0.0)),
+            net_return=_safe_float(lifetime_data.get("net_return", 0.0)),
+            current_units=_safe_float(lifetime_data.get("current_units", 0.0)),
+        ),
+        fee_details=InvestorFeeDetailsDTO(
+            total_fee=_safe_float(fee_details_data.get("total_fee", 0.0)),
+            balance=_safe_float(fee_details_data.get("balance", 0.0)),
+            invested_value=_safe_float(fee_details_data.get("invested_value", 0.0)),
+            profit=_safe_float(fee_details_data.get("profit", 0.0)),
+            profit_perc=_safe_float(fee_details_data.get("profit_perc", 0.0)),
+            hurdle_value=_safe_float(fee_details_data.get("hurdle_value", 0.0)),
+            hwm_value=_safe_float(fee_details_data.get("hwm_value", 0.0)),
+            excess_profit=_safe_float(fee_details_data.get("excess_profit", 0.0)),
+            units_before=_safe_float(fee_details_data.get("units_before", 0.0)),
+            units_after=_safe_float(fee_details_data.get("units_after", 0.0)),
+        ),
+        tranches=tranches,
+        transactions=tx_rows,
+        fee_history=fee_rows,
+        report_date=_to_datetime(report.get("report_date", datetime.utcnow())),
+        current_nav=_safe_float(report.get("current_nav", current_nav)),
+        current_price=_safe_float(report.get("current_price", 0.0)),
+    )
+
+
 @router.get("/investor/{investor_id}", response_model=ApiResponse[InvestorReportDTO])
 def investor_report(
     investor_id: int,
@@ -386,95 +479,21 @@ def investor_report(
     _user=Depends(require_read_access),
 ):
     def _read(manager):
-        investor = manager.get_investor_by_id(investor_id)
-        if investor is None or investor.is_fund_manager:
-            raise HTTPException(status_code=404, detail="Investor not found")
+        return _build_investor_report_payload(manager=manager, investor_id=investor_id, nav=nav)
 
-        current_nav = nav if nav is not None else (manager.get_latest_total_nav() or 0.0)
-        report = manager.get_investor_individual_report(investor_id, current_nav)
+    return ApiResponse(data=runtime.read(_read))
 
-        name_map = {inv.id: inv.name for inv in manager.investors}
-        tx_rows = [
-            transaction_to_dto(tx, name_map.get(tx.investor_id, f"Investor {tx.investor_id}"))
-            for tx in sorted(
-                report.get("transactions", []),
-                key=lambda tx: (_to_datetime(tx.date), tx.id),
-                reverse=True,
-            )
-        ]
-        fee_rows = [
-            fee_record_to_dto(row)
-            for row in sorted(
-                report.get("fee_history", []),
-                key=lambda fee: fee.id,
-                reverse=True,
-            )
-        ]
 
-        tranches = [
-            InvestorTrancheDTO(
-                tranche_id=str(getattr(tranche, "tranche_id", "")),
-                entry_date=_to_datetime(getattr(tranche, "entry_date", datetime.utcnow())),
-                entry_nav=_safe_float(getattr(tranche, "entry_nav", 0.0)),
-                units=_safe_float(getattr(tranche, "units", 0.0)),
-                hwm=_safe_float(getattr(tranche, "hwm", 0.0)),
-                invested_value=_safe_float(getattr(tranche, "invested_value", 0.0)),
-                original_invested_value=_safe_float(
-                    getattr(tranche, "original_invested_value", 0.0)
-                ),
-                cumulative_fees_paid=_safe_float(getattr(tranche, "cumulative_fees_paid", 0.0)),
-            )
-            for tranche in report.get("tranches", [])
-        ]
-
-        lifetime_data = report.get("lifetime_performance", {})
-        fee_details_data = report.get("fee_details", {})
-
-        return InvestorReportDTO(
-            investor=InvestorProfileDTO(
-                id=investor.id,
-                name=investor.name,
-                phone=investor.phone or "",
-                email=investor.email or "",
-                address=investor.address or "",
-                province_code=getattr(investor, "province_code", "") or "",
-                province_name=getattr(investor, "province_name", "") or "",
-                ward_code=getattr(investor, "ward_code", "") or "",
-                ward_name=getattr(investor, "ward_name", "") or "",
-                address_line=getattr(investor, "address_line", "") or "",
-                join_date=investor.join_date,
-            ),
-            current_balance=_safe_float(report.get("current_balance", 0.0)),
-            current_profit=_safe_float(report.get("current_profit", 0.0)),
-            current_profit_perc=_safe_float(report.get("current_profit_perc", 0.0)),
-            lifetime_performance=InvestorLifetimeDTO(
-                original_invested=_safe_float(lifetime_data.get("original_invested", 0.0)),
-                current_value=_safe_float(lifetime_data.get("current_value", 0.0)),
-                total_fees_paid=_safe_float(lifetime_data.get("total_fees_paid", 0.0)),
-                gross_profit=_safe_float(lifetime_data.get("gross_profit", 0.0)),
-                net_profit=_safe_float(lifetime_data.get("net_profit", 0.0)),
-                gross_return=_safe_float(lifetime_data.get("gross_return", 0.0)),
-                net_return=_safe_float(lifetime_data.get("net_return", 0.0)),
-                current_units=_safe_float(lifetime_data.get("current_units", 0.0)),
-            ),
-            fee_details=InvestorFeeDetailsDTO(
-                total_fee=_safe_float(fee_details_data.get("total_fee", 0.0)),
-                balance=_safe_float(fee_details_data.get("balance", 0.0)),
-                invested_value=_safe_float(fee_details_data.get("invested_value", 0.0)),
-                profit=_safe_float(fee_details_data.get("profit", 0.0)),
-                profit_perc=_safe_float(fee_details_data.get("profit_perc", 0.0)),
-                hurdle_value=_safe_float(fee_details_data.get("hurdle_value", 0.0)),
-                hwm_value=_safe_float(fee_details_data.get("hwm_value", 0.0)),
-                excess_profit=_safe_float(fee_details_data.get("excess_profit", 0.0)),
-                units_before=_safe_float(fee_details_data.get("units_before", 0.0)),
-                units_after=_safe_float(fee_details_data.get("units_after", 0.0)),
-            ),
-            tranches=tranches,
-            transactions=tx_rows,
-            fee_history=fee_rows,
-            report_date=_to_datetime(report.get("report_date", datetime.utcnow())),
-            current_nav=_safe_float(report.get("current_nav", current_nav)),
-            current_price=_safe_float(report.get("current_price", 0.0)),
+@router.get("/me", response_model=ApiResponse[InvestorReportDTO])
+def my_investor_report(
+    nav: float | None = Query(default=None, ge=0),
+    investor_ctx: InvestorAccessContext = Depends(require_investor_access),
+):
+    def _read(manager):
+        return _build_investor_report_payload(
+            manager=manager,
+            investor_id=investor_ctx.investor_id,
+            nav=nav,
         )
 
     return ApiResponse(data=runtime.read(_read))
@@ -519,21 +538,51 @@ def transaction_report(
     return ApiResponse(data=runtime.read(_read))
 
 
-@router.get("/transactions/export")
-def export_transactions(
-    investor_id: int | None = Query(default=None, ge=0),
+@router.get("/me/transactions", response_model=ApiResponse[TransactionReportDTO])
+def my_transaction_report(
+    page: int = Query(default=1, ge=1),
+    page_size: int = Query(default=20, ge=1, le=200),
     tx_type: str | None = Query(default=None),
     start_date: str | None = Query(default=None),
     end_date: str | None = Query(default=None),
-    format: str = Query(default="csv"),
-    _user=Depends(require_read_access),
+    investor_ctx: InvestorAccessContext = Depends(require_investor_access),
 ):
-    export_format = format.strip().lower()
-    if export_format not in {"csv", "pdf"}:
-        raise HTTPException(status_code=422, detail="format must be either csv or pdf")
-
     normalized_start_date, normalized_end_date = _normalize_date_range(start_date, end_date)
 
+    def _read(manager):
+        name_map, filtered, summary = _prepare_transactions_data(
+            manager=manager,
+            investor_id=investor_ctx.investor_id,
+            tx_type=tx_type,
+            start_date=normalized_start_date,
+            end_date=normalized_end_date,
+        )
+
+        start = (page - 1) * page_size
+        end = start + page_size
+        items = [
+            transaction_to_dto(tx, name_map.get(tx.investor_id, f"Investor {tx.investor_id}"))
+            for tx in filtered[start:end]
+        ]
+
+        return TransactionReportDTO(
+            summary=summary,
+            items=items,
+            total=len(filtered),
+            page=page,
+            page_size=page_size,
+        )
+
+    return ApiResponse(data=runtime.read(_read))
+
+
+def _build_export_payload(
+    export_format: str,
+    investor_id: int | None,
+    tx_type: str | None,
+    normalized_start_date: date | None,
+    normalized_end_date: date | None,
+):
     def _read(manager):
         name_map, filtered, summary = _prepare_transactions_data(
             manager=manager,
@@ -583,4 +632,49 @@ def export_transactions(
         content=payload["content"],
         media_type=payload["media_type"],
         headers=headers,
+    )
+
+
+@router.get("/transactions/export")
+def export_transactions(
+    investor_id: int | None = Query(default=None, ge=0),
+    tx_type: str | None = Query(default=None),
+    start_date: str | None = Query(default=None),
+    end_date: str | None = Query(default=None),
+    format: str = Query(default="csv"),
+    _user=Depends(require_read_access),
+):
+    export_format = format.strip().lower()
+    if export_format not in {"csv", "pdf"}:
+        raise HTTPException(status_code=422, detail="format must be either csv or pdf")
+
+    normalized_start_date, normalized_end_date = _normalize_date_range(start_date, end_date)
+    return _build_export_payload(
+        export_format=export_format,
+        investor_id=investor_id,
+        tx_type=tx_type,
+        normalized_start_date=normalized_start_date,
+        normalized_end_date=normalized_end_date,
+    )
+
+
+@router.get("/me/transactions/export")
+def export_my_transactions(
+    tx_type: str | None = Query(default=None),
+    start_date: str | None = Query(default=None),
+    end_date: str | None = Query(default=None),
+    format: str = Query(default="csv"),
+    investor_ctx: InvestorAccessContext = Depends(require_investor_access),
+):
+    export_format = format.strip().lower()
+    if export_format not in {"csv", "pdf"}:
+        raise HTTPException(status_code=422, detail="format must be either csv or pdf")
+
+    normalized_start_date, normalized_end_date = _normalize_date_range(start_date, end_date)
+    return _build_export_payload(
+        export_format=export_format,
+        investor_id=investor_ctx.investor_id,
+        tx_type=tx_type,
+        normalized_start_date=normalized_start_date,
+        normalized_end_date=normalized_end_date,
     )

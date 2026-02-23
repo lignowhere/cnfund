@@ -13,7 +13,7 @@ from ...core.security import (
     hash_token,
     verify_password,
 )
-from ...models.auth import RefreshToken, User
+from ...models.auth import InvestorAccount, RefreshToken, User
 from ...schemas.auth import (
     LoginRequest,
     LogoutRequest,
@@ -125,11 +125,14 @@ def logout(payload: LogoutRequest, db: Session = Depends(get_db)):
 
 
 @router.get("/me", response_model=ApiResponse[UserInfo])
-def me(user: User = Depends(get_current_user)):
+def me(user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+    investor_link = db.query(InvestorAccount).filter(InvestorAccount.user_id == user.id).first()
+    investor_id = int(investor_link.investor_id) if investor_link else None
     return ApiResponse(
         data=UserInfo(
             username=user.username,
             role=user.role,  # type: ignore[arg-type]
+            investor_id=investor_id,
             is_active=user.is_active,
             created_at=user.created_at,
         )
