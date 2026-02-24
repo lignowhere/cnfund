@@ -21,6 +21,8 @@ class EnhancedFundManager:
         self.tranches: List[Tranche] = []
         self.transactions: List[Transaction] = []
         self.fee_records: List[FeeRecord] = []
+        self.fee_global_config: Dict[str, Any] = self._default_fee_config()
+        self.fee_investor_overrides: Dict[int, Dict[str, Any]] = {}
         self._operation_backups: List[Dict[str, Any]] = []
         
         # Backup handled by APIBackupFlow (integrated via legacy UI)
@@ -49,11 +51,29 @@ class EnhancedFundManager:
             self.tranches = executor.submit(self.data_handler.load_tranches).result()
             self.transactions = executor.submit(self.data_handler.load_transactions).result()
             self.fee_records = executor.submit(self.data_handler.load_fee_records).result()
+        if hasattr(self.data_handler, "load_fee_global_config"):
+            loaded_global = self.data_handler.load_fee_global_config() or {}
+            self.fee_global_config = self._normalize_global_fee_config(loaded_global)
+        else:
+            self.fee_global_config = self._default_fee_config()
+        if hasattr(self.data_handler, "load_fee_investor_overrides"):
+            loaded_overrides = self.data_handler.load_fee_investor_overrides() or {}
+            self.fee_investor_overrides = self._normalize_fee_overrides(loaded_overrides)
+        else:
+            self.fee_investor_overrides = {}
 
     def save_data(self) -> bool:
-        return self.data_handler.save_all_data_enhanced(
+        success = self.data_handler.save_all_data_enhanced(
             self.investors, self.tranches, self.transactions, self.fee_records
         )
+        if not success:
+            return False
+        if hasattr(self.data_handler, "save_fee_config"):
+            return self.data_handler.save_fee_config(
+                self._normalize_global_fee_config(self.fee_global_config),
+                self._normalize_fee_overrides(self.fee_investor_overrides),
+            )
+        return True
     
     def _auto_backup_if_enabled(self, operation_type: str, description: str = None):
         """
@@ -100,6 +120,188 @@ class EnhancedFundManager:
 
     def get_investor_by_id(self, investor_id: int) -> Optional[Investor]:
         return next((inv for inv in self.investors if inv.id == investor_id), None)
+
+    def _default_fee_config(self) -> Dict[str, Any]:
+        return {
+            "performance_fee_rate": float(PERFORMANCE_FEE_RATE),
+            "hurdle_rate_annual": float(HURDLE_RATE_ANNUAL),
+            "updated_at": None,
+        }
+
+    def _normalize_rate_value(self, value: Any, fallback: float) -> float:
+        try:
+            numeric = float(value)
+        except Exception:
+            return float(fallback)
+        if numeric < 0 or numeric > 1:
+            return float(fallback)
+        return numeric
+
+    def _normalize_global_fee_config(self, payload: Dict[str, Any] | None) -> Dict[str, Any]:
+        source = payload or {}
+        defaults = self._default_fee_config()
+        return {
+            "performance_fee_rate": self._normalize_rate_value(
+                source.get("performance_fee_rate"),
+                defaults["performance_fee_rate"],
+            ),
+            "hurdle_rate_annual": self._normalize_rate_value(
+                source.get("hurdle_rate_annual"),
+                defaults["hurdle_rate_annual"],
+            ),
+            "updated_at": source.get("updated_at"),
+        }
+
+    def _normalize_fee_overrides(self, payload: Dict[int, Dict[str, Any]] | None) -> Dict[int, Dict[str, Any]]:
+        if not payload:
+            return {}
+        normalized: Dict[int, Dict[str, Any]] = {}
+        defaults = self._default_fee_config()
+        for raw_investor_id, row in payload.items():
+            try:
+                investor_id = int(raw_investor_id)
+            except Exception:
+                continue
+            perf_value = row.get("performance_fee_rate")
+            hurdle_value = row.get("hurdle_rate_annual")
+            normalized[investor_id] = {
+                "performance_fee_rate": (
+                    self._normalize_rate_value(perf_value, defaults["performance_fee_rate"])
+                    if perf_value is not None
+                    else None
+                ),
+                "hurdle_rate_annual": (
+                    self._normalize_rate_value(hurdle_value, defaults["hurdle_rate_annual"])
+                    if hurdle_value is not None
+                    else None
+                ),
+                "updated_at": row.get("updated_at"),
+            }
+        return normalized
+
+    def resolve_fee_config_for_investor(self, investor_id: int) -> Dict[str, Any]:
+        global_config = self._normalize_global_fee_config(self.fee_global_config)
+        override = self._normalize_fee_overrides(self.fee_investor_overrides).get(int(investor_id))
+        if override and (
+            override.get("performance_fee_rate") is not None
+            or override.get("hurdle_rate_annual") is not None
+        ):
+            return {
+                "performance_fee_rate": (
+                    override.get("performance_fee_rate")
+                    if override.get("performance_fee_rate") is not None
+                    else global_config["performance_fee_rate"]
+                ),
+                "hurdle_rate_annual": (
+                    override.get("hurdle_rate_annual")
+                    if override.get("hurdle_rate_annual") is not None
+                    else global_config["hurdle_rate_annual"]
+                ),
+                "fee_source": "override",
+            }
+        return {
+            "performance_fee_rate": global_config["performance_fee_rate"],
+            "hurdle_rate_annual": global_config["hurdle_rate_annual"],
+            "fee_source": "global",
+        }
+
+    def get_fee_config_bundle(self) -> Dict[str, Any]:
+        global_config = self._normalize_global_fee_config(self.fee_global_config)
+        overrides = self._normalize_fee_overrides(self.fee_investor_overrides)
+        rows = [
+            {
+                "investor_id": investor_id,
+                "performance_fee_rate": row.get("performance_fee_rate"),
+                "hurdle_rate_annual": row.get("hurdle_rate_annual"),
+                "updated_at": row.get("updated_at"),
+            }
+            for investor_id, row in sorted(overrides.items(), key=lambda item: item[0])
+        ]
+        return {"global_config": global_config, "overrides": rows}
+
+    def get_fee_config_snapshot(self) -> Dict[str, Any]:
+        bundle = self.get_fee_config_bundle()
+        return {
+            "global_config": {
+                "performance_fee_rate": round(bundle["global_config"]["performance_fee_rate"], 8),
+                "hurdle_rate_annual": round(bundle["global_config"]["hurdle_rate_annual"], 8),
+            },
+            "overrides": [
+                {
+                    "investor_id": int(row["investor_id"]),
+                    "performance_fee_rate": (
+                        round(float(row["performance_fee_rate"]), 8)
+                        if row["performance_fee_rate"] is not None
+                        else None
+                    ),
+                    "hurdle_rate_annual": (
+                        round(float(row["hurdle_rate_annual"]), 8)
+                        if row["hurdle_rate_annual"] is not None
+                        else None
+                    ),
+                }
+                for row in bundle["overrides"]
+            ],
+        }
+
+    def update_global_fee_config(
+        self,
+        performance_fee_rate: Optional[float] = None,
+        hurdle_rate_annual: Optional[float] = None,
+    ) -> Dict[str, Any]:
+        current = self._normalize_global_fee_config(self.fee_global_config)
+        next_config = {
+            "performance_fee_rate": (
+                self._normalize_rate_value(performance_fee_rate, current["performance_fee_rate"])
+                if performance_fee_rate is not None
+                else current["performance_fee_rate"]
+            ),
+            "hurdle_rate_annual": (
+                self._normalize_rate_value(hurdle_rate_annual, current["hurdle_rate_annual"])
+                if hurdle_rate_annual is not None
+                else current["hurdle_rate_annual"]
+            ),
+            "updated_at": datetime.utcnow().isoformat(),
+        }
+        self.fee_global_config = next_config
+        return next_config
+
+    def upsert_investor_fee_override(
+        self,
+        investor_id: int,
+        performance_fee_rate: Optional[float] = None,
+        hurdle_rate_annual: Optional[float] = None,
+    ) -> Dict[str, Any]:
+        normalized = self._normalize_fee_overrides(self.fee_investor_overrides)
+        current = normalized.get(int(investor_id), {})
+        defaults = self._default_fee_config()
+        updated = {
+            "performance_fee_rate": (
+                self._normalize_rate_value(performance_fee_rate, defaults["performance_fee_rate"])
+                if performance_fee_rate is not None
+                else current.get("performance_fee_rate")
+            ),
+            "hurdle_rate_annual": (
+                self._normalize_rate_value(hurdle_rate_annual, defaults["hurdle_rate_annual"])
+                if hurdle_rate_annual is not None
+                else current.get("hurdle_rate_annual")
+            ),
+            "updated_at": datetime.utcnow().isoformat(),
+        }
+        normalized[int(investor_id)] = updated
+        self.fee_investor_overrides = normalized
+        return {
+            "investor_id": int(investor_id),
+            "performance_fee_rate": updated["performance_fee_rate"],
+            "hurdle_rate_annual": updated["hurdle_rate_annual"],
+            "updated_at": updated["updated_at"],
+        }
+
+    def delete_investor_fee_override(self, investor_id: int) -> bool:
+        normalized = self._normalize_fee_overrides(self.fee_investor_overrides)
+        removed = normalized.pop(int(investor_id), None)
+        self.fee_investor_overrides = normalized
+        return removed is not None
 
     # ================================
     # Investor CRUD
@@ -493,7 +695,11 @@ class EnhancedFundManager:
             logging.info(f"Investor {investor_id} performed a full withdrawal. All tranches removed.")
         else:
             if performance_fee > EPSILON:
-                fee_details = {"total_fee": performance_fee, "current_price": current_price}
+                fee_details = {
+                    "total_fee": performance_fee,
+                    "current_price": current_price,
+                    "applied_hurdle_rate": fee_info.get("applied_hurdle_rate", HURDLE_RATE_ANNUAL),
+                }
                 self._apply_fee_to_investor_tranches(investor_id, fee_details, trans_date, crystallize=False)
             self._process_unit_reduction_fixed(investor_id, withdrawal_units, is_full=False)
                 
@@ -551,6 +757,11 @@ class EnhancedFundManager:
         if not tranches or ending_total_nav <= 0:
             return self._empty_fee_details()
 
+        applied_config = self.resolve_fee_config_for_investor(investor_id)
+        performance_fee_rate = float(applied_config["performance_fee_rate"])
+        hurdle_rate_annual = float(applied_config["hurdle_rate_annual"])
+        fee_source = str(applied_config["fee_source"])
+
         current_price = self.calculate_price_per_unit(ending_total_nav)
         balance = sum(t.units for t in tranches) * current_price
         invested_value = sum(getattr(t, "invested_value", t.units * t.entry_nav) for t in tranches)
@@ -568,19 +779,25 @@ class EnhancedFundManager:
                 continue
             
             # Sá»­a Ä‘á»•i: Truyá»n ending_date vÃ o hÃ m tÃ­nh toÃ¡n
-            tranche_excess_profit = tranche.calculate_excess_profit(current_price, ending_date)
-            hurdle_price = tranche.calculate_hurdle_price(ending_date)
+            tranche_excess_profit = tranche.calculate_excess_profit(
+                current_price,
+                ending_date,
+                hurdle_rate_annual,
+            )
+            hurdle_price = tranche.calculate_hurdle_price(ending_date, hurdle_rate_annual)
 
-            total_fee += PERFORMANCE_FEE_RATE * tranche_excess_profit
+            total_fee += performance_fee_rate * tranche_excess_profit
             hurdle_value += hurdle_price * tranche.units
             hwm_value += tranche.hwm * tranche.units
             excess_profit += tranche_excess_profit
 
         total_fee = round(total_fee, 0)
-        units_after = units_before - (total_fee / current_price) if current_price > 0 else units_before
+        units_to_transfer = (total_fee / current_price) if current_price > 0 else 0.0
+        units_after = units_before - units_to_transfer
 
         return {
             "total_fee": total_fee,
+            "fee": total_fee,
             "balance": round(balance, 2),
             "invested_value": round(invested_value, 2),
             "profit": round(profit, 2),
@@ -590,6 +807,11 @@ class EnhancedFundManager:
             "excess_profit": round(excess_profit, 2),
             "units_before": units_before,
             "units_after": units_after,
+            "units_to_transfer": units_to_transfer,
+            "current_price": current_price,
+            "applied_performance_fee_rate": performance_fee_rate,
+            "applied_hurdle_rate": hurdle_rate_annual,
+            "fee_source": fee_source,
         }
 
     def _apply_fee_to_investor_tranches(
@@ -602,6 +824,7 @@ class EnhancedFundManager:
         try:
             total_fee = fee_details.get("total_fee", 0.0)
             current_price = fee_details.get("current_price")
+            applied_hurdle_rate = fee_details.get("applied_hurdle_rate", HURDLE_RATE_ANNUAL)
             
             tranches_original = self.get_investor_tranches(investor_id)
             if not tranches_original or total_fee <= EPSILON or not current_price:
@@ -609,14 +832,15 @@ class EnhancedFundManager:
 
             tranches_with_profit = [
                 t for t in tranches_original 
-                if t.calculate_excess_profit(current_price, fee_date) > EPSILON
+                if t.calculate_excess_profit(current_price, fee_date, applied_hurdle_rate) > EPSILON
             ]
             if not tranches_with_profit:
                 logging.warning(f"Investor {investor_id} has a total fee but no tranches with excess profit. Skipping fee application.")
                 return False
 
             total_excess_profit_for_allocation = sum(
-                t.calculate_excess_profit(current_price, fee_date) for t in tranches_with_profit
+                t.calculate_excess_profit(current_price, fee_date, applied_hurdle_rate)
+                for t in tranches_with_profit
             )
             if total_excess_profit_for_allocation < EPSILON: return False
 
@@ -630,7 +854,11 @@ class EnhancedFundManager:
                 if i == len(tranches_with_profit) - 1:
                     units_reduction = total_units_to_reduce - units_reduced_so_far
                 else:
-                    tranche_excess_profit = tranche.calculate_excess_profit(current_price, fee_date)
+                    tranche_excess_profit = tranche.calculate_excess_profit(
+                        current_price,
+                        fee_date,
+                        applied_hurdle_rate,
+                    )
                     fee_proportion = tranche_excess_profit / total_excess_profit_for_allocation
                     fee_for_this_tranche = total_fee * fee_proportion
                     units_reduction = round(fee_for_this_tranche / current_price, 8)
@@ -1963,6 +2191,7 @@ class EnhancedFundManager:
     def _empty_fee_details(self) -> Dict[str, Any]:
         return {
             "total_fee": 0.0,
+            "fee": 0.0,
             "balance": 0.0,
             "invested_value": 0.0,
             "profit": 0.0,
@@ -1972,6 +2201,11 @@ class EnhancedFundManager:
             "excess_profit": 0.0,
             "units_before": 0.0,
             "units_after": 0.0,
+            "units_to_transfer": 0.0,
+            "current_price": 0.0,
+            "applied_performance_fee_rate": float(PERFORMANCE_FEE_RATE),
+            "applied_hurdle_rate": float(HURDLE_RATE_ANNUAL),
+            "fee_source": "global",
         }
 
     def _empty_performance_stats(self) -> Dict:

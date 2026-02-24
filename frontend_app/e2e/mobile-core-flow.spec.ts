@@ -58,11 +58,12 @@ test("fee preview renders result cards on mobile", async ({ page }) => {
   await page.getByRole("link", { name: "Phí" }).click();
   await expect(page).toHaveURL(/\/fees$/);
 
-  await page.getByPlaceholder("Tổng NAV").fill("100000000");
+  await page.getByPlaceholder("2,500,000,000").fill("100000000");
   await page.getByRole("button", { name: "Xem trước" }).click();
 
   await expect(page.getByText("Kết quả xem trước")).toBeVisible();
   await expect(page.locator("text=Phí:").first()).toBeVisible();
+  await expect(page.locator("text=Config áp dụng:").first()).toBeVisible();
 });
 
 test("fee apply requires both acknowledgements", async ({ page }) => {
@@ -70,7 +71,7 @@ test("fee apply requires both acknowledgements", async ({ page }) => {
   await page.getByRole("link", { name: "Phí" }).click();
   await expect(page).toHaveURL(/\/fees$/);
 
-  await page.getByPlaceholder("Tổng NAV").fill("100000000");
+  await page.getByPlaceholder("2,500,000,000").fill("100000000");
   await page.getByRole("button", { name: "Xem trước" }).click();
 
   const applyButton = page.getByRole("button", { name: "Áp dụng phí" });

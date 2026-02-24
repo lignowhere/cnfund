@@ -152,6 +152,32 @@ class FeeRecordRow(Base):
     description: Mapped[str] = mapped_column(String(1024), nullable=False, default="")
 
 
+class FeeGlobalConfigRow(Base):
+    __tablename__ = "fund_fee_global_config"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, default=1)
+    performance_fee_rate: Mapped[float] = mapped_column(Float, nullable=False)
+    hurdle_rate_annual: Mapped[float] = mapped_column(Float, nullable=False)
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime,
+        nullable=False,
+        default=datetime.utcnow,
+    )
+
+
+class FeeInvestorOverrideRow(Base):
+    __tablename__ = "fund_fee_investor_overrides"
+
+    investor_id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    performance_fee_rate: Mapped[float | None] = mapped_column(Float, nullable=True)
+    hurdle_rate_annual: Mapped[float | None] = mapped_column(Float, nullable=True)
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime,
+        nullable=False,
+        default=datetime.utcnow,
+    )
+
+
 class PostgresDataHandler:
     """
     SQL-backed data handler compatible with EnhancedFundManager.
@@ -477,6 +503,41 @@ class PostgresDataHandler:
             for row in rows
         ]
 
+    def load_fee_global_config(self) -> Dict[str, Any]:
+        with self._session() as session:
+            row = session.execute(
+                select(FeeGlobalConfigRow).where(FeeGlobalConfigRow.id == 1)
+            ).scalar_one_or_none()
+        if row is None:
+            return {}
+        return {
+            "performance_fee_rate": safe_float_conversion(row.performance_fee_rate),
+            "hurdle_rate_annual": safe_float_conversion(row.hurdle_rate_annual),
+            "updated_at": row.updated_at.isoformat() if row.updated_at else None,
+        }
+
+    def load_fee_investor_overrides(self) -> Dict[int, Dict[str, Any]]:
+        with self._session() as session:
+            rows = session.execute(
+                select(FeeInvestorOverrideRow).order_by(FeeInvestorOverrideRow.investor_id.asc())
+            ).scalars().all()
+        overrides: Dict[int, Dict[str, Any]] = {}
+        for row in rows:
+            overrides[safe_int_conversion(row.investor_id)] = {
+                "performance_fee_rate": (
+                    safe_float_conversion(row.performance_fee_rate)
+                    if row.performance_fee_rate is not None
+                    else None
+                ),
+                "hurdle_rate_annual": (
+                    safe_float_conversion(row.hurdle_rate_annual)
+                    if row.hurdle_rate_annual is not None
+                    else None
+                ),
+                "updated_at": row.updated_at.isoformat() if row.updated_at else None,
+            }
+        return overrides
+
     # Save methods
     def save_all_data_enhanced(
         self,
@@ -593,6 +654,58 @@ class PostgresDataHandler:
                             ],
                         )
 
+            self.connected = True
+            return True
+        except Exception:
+            self.connected = False
+            return False
+
+    def save_fee_config(
+        self,
+        global_config: Dict[str, Any],
+        investor_overrides: Dict[int, Dict[str, Any]],
+    ) -> bool:
+        try:
+            now = datetime.utcnow()
+            with self._lock:
+                with self.engine.begin() as conn:
+                    conn.execute(text("DELETE FROM fund_fee_global_config"))
+                    conn.execute(text("DELETE FROM fund_fee_investor_overrides"))
+
+                    conn.execute(
+                        FeeGlobalConfigRow.__table__.insert(),
+                        {
+                            "id": 1,
+                            "performance_fee_rate": safe_float_conversion(
+                                global_config.get("performance_fee_rate", 0.0)
+                            ),
+                            "hurdle_rate_annual": safe_float_conversion(
+                                global_config.get("hurdle_rate_annual", 0.0)
+                            ),
+                            "updated_at": now,
+                        },
+                    )
+
+                    if investor_overrides:
+                        rows = []
+                        for investor_id, payload in investor_overrides.items():
+                            rows.append(
+                                {
+                                    "investor_id": safe_int_conversion(investor_id),
+                                    "performance_fee_rate": (
+                                        safe_float_conversion(payload.get("performance_fee_rate"))
+                                        if payload.get("performance_fee_rate") is not None
+                                        else None
+                                    ),
+                                    "hurdle_rate_annual": (
+                                        safe_float_conversion(payload.get("hurdle_rate_annual"))
+                                        if payload.get("hurdle_rate_annual") is not None
+                                        else None
+                                    ),
+                                    "updated_at": now,
+                                }
+                            )
+                        conn.execute(FeeInvestorOverrideRow.__table__.insert(), rows)
             self.connected = True
             return True
         except Exception:

@@ -15,7 +15,7 @@ class InvestorAccountAdminDTO(BaseModel):
 class InvestorAccountCreateRequest(BaseModel):
     investor_id: int = Field(ge=1)
     username: str = Field(min_length=3, max_length=64)
-    password: str = Field(min_length=6, max_length=128)
+    password: str = Field(min_length=1, max_length=128)
 
 
 class InvestorAccountUpdateRequest(BaseModel):
@@ -24,4 +24,4 @@ class InvestorAccountUpdateRequest(BaseModel):
 
 
 class InvestorAccountResetPasswordRequest(BaseModel):
-    new_password: str = Field(min_length=6, max_length=128)
+    new_password: str = Field(min_length=1, max_length=128)

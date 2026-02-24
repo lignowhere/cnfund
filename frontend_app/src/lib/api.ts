@@ -4,6 +4,9 @@ import type {
   ApiResponse,
   BackupListItemDTO,
   DashboardDTO,
+  FeeConfigBundleDTO,
+  FeeGlobalConfigDTO,
+  FeeInvestorOverrideDTO,
   FeatureFlagsDTO,
   LocationProvinceDTO,
   LocationWardDTO,
@@ -437,6 +440,40 @@ export const apiClient = {
     }>
   > {
     return request("/fees/history", { token });
+  },
+
+  async feeConfig(token: string): Promise<FeeConfigBundleDTO> {
+    return request<FeeConfigBundleDTO>("/fees/config", { token });
+  },
+
+  async updateGlobalFeeConfig(
+    token: string,
+    payload: { performance_fee_rate?: number; hurdle_rate_annual?: number },
+  ): Promise<FeeGlobalConfigDTO> {
+    return request<FeeGlobalConfigDTO>("/fees/config/global", {
+      method: "PATCH",
+      token,
+      body: payload,
+    });
+  },
+
+  async upsertInvestorFeeOverride(
+    token: string,
+    investorId: number,
+    payload: { performance_fee_rate?: number; hurdle_rate_annual?: number },
+  ): Promise<FeeInvestorOverrideDTO> {
+    return request<FeeInvestorOverrideDTO>(`/fees/config/overrides/${investorId}`, {
+      method: "PUT",
+      token,
+      body: payload,
+    });
+  },
+
+  async deleteInvestorFeeOverride(token: string, investorId: number): Promise<{ deleted: boolean }> {
+    return request<{ deleted: boolean }>(`/fees/config/overrides/${investorId}`, {
+      method: "DELETE",
+      token,
+    });
   },
 
   async backups(token: string): Promise<BackupListItemDTO[]> {

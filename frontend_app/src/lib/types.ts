@@ -114,6 +114,9 @@ export type FeePreviewDTO = {
   fee_rate_percent: number;
   units_to_transfer: number;
   excess_profit: number;
+  applied_performance_fee_rate: number;
+  applied_hurdle_rate: number;
+  fee_source: "global" | "override";
 };
 
 export type FeePreviewBundleDTO = {
@@ -125,6 +128,24 @@ export type FeePreviewBundleDTO = {
   };
   confirm_token: string;
   generated_at: string;
+};
+
+export type FeeGlobalConfigDTO = {
+  performance_fee_rate: number;
+  hurdle_rate_annual: number;
+  updated_at: string | null;
+};
+
+export type FeeInvestorOverrideDTO = {
+  investor_id: number;
+  performance_fee_rate: number | null;
+  hurdle_rate_annual: number | null;
+  updated_at: string | null;
+};
+
+export type FeeConfigBundleDTO = {
+  global_config: FeeGlobalConfigDTO;
+  overrides: FeeInvestorOverrideDTO[];
 };
 
 export type FeatureFlagsDTO = {

@@ -18,6 +18,8 @@ type DraftCredential = {
   password: string;
 };
 
+const MIN_PASSWORD_LENGTH = 1;
+
 export default function AccountsPage() {
   const router = useRouter();
   const queryClient = useQueryClient();
@@ -210,7 +212,7 @@ export default function AccountsPage() {
                       disabled={
                         createMutation.isPending ||
                         createDraft.username.trim().length < 3 ||
-                        createDraft.password.length < 6
+                        createDraft.password.length < MIN_PASSWORD_LENGTH
                       }
                     >
                       Tạo tài khoản
@@ -275,7 +277,7 @@ export default function AccountsPage() {
                             newPassword: resetDraft,
                           })
                         }
-                        disabled={resetMutation.isPending || resetDraft.length < 6}
+                        disabled={resetMutation.isPending || resetDraft.length < MIN_PASSWORD_LENGTH}
                       >
                         Reset mật khẩu
                       </Button>

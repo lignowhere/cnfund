@@ -8,6 +8,7 @@ from typing import Any
 
 import pandas as pd
 
+from config import HURDLE_RATE_ANNUAL, PERFORMANCE_FEE_RATE
 from core.models import FeeRecord, Investor, Transaction, Tranche
 from helpers import parse_currency
 from utils.type_safety_fixes import safe_float_conversion, safe_int_conversion
@@ -258,12 +259,49 @@ def _write_backup_excel(fund_manager, filename: str) -> Path:
             for fr in getattr(fund_manager, "fee_records", [])
         ]
     )
+    fee_global_config = getattr(fund_manager, "fee_global_config", {}) or {}
+    fee_overrides = getattr(fund_manager, "fee_investor_overrides", {}) or {}
+    fee_global_df = pd.DataFrame(
+        [
+            {
+                "id": 1,
+                "performance_fee_rate": safe_float_conversion(
+                    fee_global_config.get("performance_fee_rate", PERFORMANCE_FEE_RATE)
+                ),
+                "hurdle_rate_annual": safe_float_conversion(
+                    fee_global_config.get("hurdle_rate_annual", HURDLE_RATE_ANNUAL)
+                ),
+                "updated_at": fee_global_config.get("updated_at"),
+            }
+        ]
+    )
+    fee_overrides_df = pd.DataFrame(
+        [
+            {
+                "investor_id": safe_int_conversion(investor_id),
+                "performance_fee_rate": (
+                    _as_number(payload.get("performance_fee_rate"))
+                    if payload.get("performance_fee_rate") is not None
+                    else None
+                ),
+                "hurdle_rate_annual": (
+                    _as_number(payload.get("hurdle_rate_annual"))
+                    if payload.get("hurdle_rate_annual") is not None
+                    else None
+                ),
+                "updated_at": payload.get("updated_at"),
+            }
+            for investor_id, payload in sorted(fee_overrides.items(), key=lambda item: int(item[0]))
+        ]
+    )
 
     with pd.ExcelWriter(output_path, engine="openpyxl") as writer:
         investors_df.to_excel(writer, sheet_name="Investors", index=False)
         tranches_df.to_excel(writer, sheet_name="Tranches", index=False)
         transactions_df.to_excel(writer, sheet_name="Transactions", index=False)
         fees_df.to_excel(writer, sheet_name="Fee Records", index=False)
+        fee_global_df.to_excel(writer, sheet_name="Fee Config Global", index=False)
+        fee_overrides_df.to_excel(writer, sheet_name="Fee Config Overrides", index=False)
 
     return output_path
 
@@ -572,10 +610,54 @@ def restore_from_local_backup(
                 continue
         restored_sheets.append("Fee Records")
 
+    fee_global_config = {
+        "performance_fee_rate": float(PERFORMANCE_FEE_RATE),
+        "hurdle_rate_annual": float(HURDLE_RATE_ANNUAL),
+        "updated_at": None,
+    }
+    fee_global_sheet = _pick_sheet(excel_data, ["Fee Config Global", "Fee_Config_Global"])
+    if fee_global_sheet is not None and not fee_global_sheet.empty:
+        df = _normalize_columns(fee_global_sheet)
+        first_row = df.iloc[0]
+        perf_rate = _as_number(_row_pick(first_row, "performance_fee_rate"), PERFORMANCE_FEE_RATE)
+        hurdle_rate = _as_number(_row_pick(first_row, "hurdle_rate_annual"), HURDLE_RATE_ANNUAL)
+        if 0 <= perf_rate <= 1:
+            fee_global_config["performance_fee_rate"] = perf_rate
+        if 0 <= hurdle_rate <= 1:
+            fee_global_config["hurdle_rate_annual"] = hurdle_rate
+        fee_global_config["updated_at"] = _row_pick(first_row, "updated_at")
+        restored_sheets.append("Fee Config Global")
+
+    fee_investor_overrides: dict[int, dict[str, Any]] = {}
+    fee_overrides_sheet = _pick_sheet(excel_data, ["Fee Config Overrides", "Fee_Config_Overrides"])
+    if fee_overrides_sheet is not None and not fee_overrides_sheet.empty:
+        df = _normalize_columns(fee_overrides_sheet)
+        for _, row in df.iterrows():
+            investor_id_raw = _row_pick(row, "investor_id")
+            if investor_id_raw is None:
+                continue
+            investor_id = safe_int_conversion(investor_id_raw)
+            perf_rate_raw = _row_pick(row, "performance_fee_rate")
+            hurdle_rate_raw = _row_pick(row, "hurdle_rate_annual")
+            perf_rate = _as_number(perf_rate_raw) if perf_rate_raw is not None else None
+            hurdle_rate = _as_number(hurdle_rate_raw) if hurdle_rate_raw is not None else None
+            if perf_rate is not None and not (0 <= perf_rate <= 1):
+                perf_rate = None
+            if hurdle_rate is not None and not (0 <= hurdle_rate <= 1):
+                hurdle_rate = None
+            fee_investor_overrides[investor_id] = {
+                "performance_fee_rate": perf_rate,
+                "hurdle_rate_annual": hurdle_rate,
+                "updated_at": _row_pick(row, "updated_at"),
+            }
+        restored_sheets.append("Fee Config Overrides")
+
     fund_manager.investors = investors
     fund_manager.tranches = tranches
     fund_manager.transactions = transactions
     fund_manager.fee_records = fee_records
+    fund_manager.fee_global_config = fee_global_config
+    fund_manager.fee_investor_overrides = fee_investor_overrides
     fund_manager._ensure_fund_manager_exists()
 
     if not fund_manager.save_data():

@@ -57,5 +57,6 @@ export const queryKeys = {
     ] as const,
   accountsInvestors: (token: string) => ["accounts-investors", token] as const,
   feeHistory: (token: string) => ["fee-history", token] as const,
+  feeConfig: (token: string) => ["fee-config", token] as const,
   backups: (token: string) => ["backups", token] as const,
 };

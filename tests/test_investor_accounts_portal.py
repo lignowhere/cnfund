@@ -107,6 +107,40 @@ def test_create_investor_account_conflicts(monkeypatch):
         assert duplicate_username_response.status_code == 409
 
 
+def test_investor_account_accepts_text_only_and_number_only_passwords(monkeypatch):
+    app = _load_app(monkeypatch)
+    with TestClient(app) as client:
+        admin_headers = _auth_header(client, "admin", "admin123")
+        investor_id = _create_investor(client, admin_headers, f"Investor Pwd {uuid.uuid4().hex[:6]}")
+
+        create_response = client.post(
+            "/api/v1/accounts/investors",
+            headers=admin_headers,
+            json={
+                "investor_id": investor_id,
+                "username": "pwd_user",
+                "password": "onlytext",
+            },
+        )
+        assert create_response.status_code == 200
+
+        text_only_login = _login(client, "pwd_user", "onlytext")
+        assert text_only_login.status_code == 200
+
+        reset_response = client.post(
+            f"/api/v1/accounts/investors/{investor_id}/reset-password",
+            headers=admin_headers,
+            json={"new_password": "1234"},
+        )
+        assert reset_response.status_code == 200
+
+        old_password_login = _login(client, "pwd_user", "onlytext")
+        assert old_password_login.status_code == 401
+
+        number_only_login = _login(client, "pwd_user", "1234")
+        assert number_only_login.status_code == 200
+
+
 def test_investor_self_endpoints_and_permissions(monkeypatch):
     app = _load_app(monkeypatch)
     with TestClient(app) as client:
