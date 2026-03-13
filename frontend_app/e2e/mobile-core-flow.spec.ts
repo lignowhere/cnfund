@@ -30,6 +30,7 @@ test("create investor from mobile flow", async ({ page }) => {
   await page.getByRole("link", { name: "Nhà đầu tư" }).click();
   await expect(page).toHaveURL(/\/investors$/);
 
+  await page.getByRole("button", { name: "Thêm mới" }).click();
   await page.getByPlaceholder("Tên").fill(uniqueName);
   await page.getByPlaceholder("Số điện thoại").fill("0900000000");
   await page.getByPlaceholder("Email").fill("e2e@example.com");

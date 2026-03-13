@@ -74,8 +74,40 @@ Có thể truyền DB URL trực tiếp:
 .\.venv\Scripts\python scripts/migrate_drive_latest_to_postgres.py --database-url "<postgres-url>" --local-file "D:\...\backup.xlsx"
 ```
 
+## Chạy local khi Railway không khả dụng
+
+Nếu Railway hết hạn hoặc không truy cập được, có thể chạy hoàn toàn local với PostgreSQL cài trên máy.
+
+**Yêu cầu:** PostgreSQL cài local + bản backup `.xlsx` mới nhất (trong `exports/` hoặc tải từ Google Drive).
+
+```powershell
+# Setup database local từ backup mới nhất (1 lệnh)
+.\.venv\Scripts\python scripts/setup_local_db.py
+
+# Hoặc chỉ định file cụ thể
+.\.venv\Scripts\python scripts/setup_local_db.py --file exports/Fund_Export_20260313_manual.xlsx
+
+# Chạy app bình thường
+npm run dev
+```
+
+**Backup định kỳ** (khuyến nghị chạy hàng ngày khi hệ thống đang hoạt động):
+
+```powershell
+.\.venv\Scripts\python scripts/scheduled_backup.py
+```
+
 ## Deploy
 
 Xem chi tiết tại:
-- `docs/DEPLOYMENT_LOW_COST_STABLE.md`
-- `docs/CUTOVER_AND_ROLLBACK_PLAYBOOK.md`
+- `docs/deployment-guide.md` — tổng hợp env vars, Railway/Vercel setup, backup, rollback
+- `docs/DEPLOYMENT_LOW_COST_STABLE.md` — detailed Railway + Vercel runbook
+- `docs/CUTOVER_AND_ROLLBACK_PLAYBOOK.md` — release checklist + rollback
+
+## Documentation
+
+Toàn bộ tài liệu tại `docs/README.md`:
+- `docs/project-overview-pdr.md` — business rules, fee logic, RBAC
+- `docs/system-architecture.md` — architecture diagrams, API map, DB schema
+- `docs/codebase-summary.md` — directory structure, key files
+- `docs/project-roadmap.md` — security issues, technical debt priorities

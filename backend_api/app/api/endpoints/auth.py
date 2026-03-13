@@ -5,10 +5,11 @@ def _utcnow() -> datetime:
     """Naive UTC now — compatible with existing naive-UTC columns."""
     return datetime.now(timezone.utc).replace(tzinfo=None)
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Request
 from sqlalchemy.orm import Session
 
 from ...api.deps import get_current_user, get_db
+from ...core.rate_limit import limiter
 from ...core.config import get_settings
 from ...core.security import (
     create_access_token,
@@ -34,7 +35,8 @@ settings = get_settings()
 
 
 @router.post("/login", response_model=ApiResponse[TokenPair])
-def login(payload: LoginRequest, db: Session = Depends(get_db)):
+@limiter.limit("10/minute")
+def login(request: Request, payload: LoginRequest, db: Session = Depends(get_db)):
     user = db.query(User).filter(User.username == payload.username).first()
     if not user or not verify_password(payload.password, user.password_hash):
         raise HTTPException(status_code=401, detail="Invalid username or password")

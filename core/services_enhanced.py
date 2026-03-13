@@ -1,6 +1,6 @@
 ﻿import copy as cp
 import uuid
-from datetime import datetime, date
+from datetime import datetime, date, timezone
 from typing import List, Tuple, Optional, Dict, Any
 from config import HURDLE_RATE_ANNUAL, PERFORMANCE_FEE_RATE, DEFAULT_UNIT_PRICE, EPSILON
 from .models import Investor, Tranche, Transaction, FeeRecord
@@ -261,7 +261,7 @@ class EnhancedFundManager:
                 if hurdle_rate_annual is not None
                 else current["hurdle_rate_annual"]
             ),
-            "updated_at": datetime.utcnow().isoformat(),
+            "updated_at": datetime.now(timezone.utc).replace(tzinfo=None).isoformat(),
         }
         self.fee_global_config = next_config
         return next_config
@@ -286,7 +286,7 @@ class EnhancedFundManager:
                 if hurdle_rate_annual is not None
                 else current.get("hurdle_rate_annual")
             ),
-            "updated_at": datetime.utcnow().isoformat(),
+            "updated_at": datetime.now(timezone.utc).replace(tzinfo=None).isoformat(),
         }
         normalized[int(investor_id)] = updated
         self.fee_investor_overrides = normalized
@@ -675,7 +675,7 @@ class EnhancedFundManager:
                 investor_id, trans_date, "PhÃ­", -performance_fee, authoritative_nav_after, -fee_units
             )
             self.fee_records.append(FeeRecord(
-                id=len(self.fee_records) + 1,
+                id=(max((fr.id for fr in self.fee_records), default=0) + 1),
                 period=f"Withdrawal {trans_date.strftime('%Y-%m-%d')}", investor_id=investor_id,
                 fee_amount=performance_fee, fee_units=fee_units, calculation_date=trans_date,
                 units_before=units_before, units_after=units_before - fee_units - withdrawal_units, 
@@ -980,7 +980,7 @@ class EnhancedFundManager:
                             )
                             
                             fee_record = FeeRecord(
-                                id=len(self.fee_records) + 1,
+                                id=(max((fr.id for fr in self.fee_records), default=0) + 1),
                                 period=fee_date.strftime("%Y"),
                                 investor_id=investor.id,
                                 fee_amount=fee_calculation["total_fee"],

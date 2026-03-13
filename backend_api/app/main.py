@@ -6,9 +6,13 @@ from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy.orm import Session
 
+from slowapi import _rate_limit_exceeded_handler
+from slowapi.errors import RateLimitExceeded
+
 from .api.router import api_router
 from .core.config import get_settings
 from .core.database import Base, SessionLocal, engine
+from .core.rate_limit import limiter
 from .core.security import decode_token, get_password_hash
 from .models.auth import AuditLog, User
 
@@ -59,6 +63,9 @@ app = FastAPI(
     version="0.1.0",
     lifespan=lifespan,
 )
+
+app.state.limiter = limiter
+app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
 
 app.add_middleware(
     CORSMiddleware,

@@ -13,7 +13,7 @@ from __future__ import annotations
 
 import os
 import threading
-from datetime import date, datetime
+from datetime import date, datetime, timezone
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
@@ -71,7 +71,7 @@ def _as_datetime(value: Any, fallback: Optional[datetime] = None) -> datetime:
             return as_dt
     except Exception:
         pass
-    return fallback or datetime.utcnow()
+    return fallback or datetime.now(timezone.utc).replace(tzinfo=None)
 
 
 def _as_bool(value: Any, fallback: bool = False) -> bool:
@@ -161,7 +161,7 @@ class FeeGlobalConfigRow(Base):
     updated_at: Mapped[datetime] = mapped_column(
         DateTime,
         nullable=False,
-        default=datetime.utcnow,
+        default=lambda: datetime.now(timezone.utc).replace(tzinfo=None),
     )
 
 
@@ -174,7 +174,7 @@ class FeeInvestorOverrideRow(Base):
     updated_at: Mapped[datetime] = mapped_column(
         DateTime,
         nullable=False,
-        default=datetime.utcnow,
+        default=lambda: datetime.now(timezone.utc).replace(tzinfo=None),
     )
 
 
@@ -666,7 +666,7 @@ class PostgresDataHandler:
         investor_overrides: Dict[int, Dict[str, Any]],
     ) -> bool:
         try:
-            now = datetime.utcnow()
+            now = datetime.now(timezone.utc).replace(tzinfo=None)
             with self._lock:
                 with self.engine.begin() as conn:
                     conn.execute(text("DELETE FROM fund_fee_global_config"))
@@ -714,7 +714,7 @@ class PostgresDataHandler:
 
     def create_backup(self) -> Optional[str]:
         # Backups are handled by backup service (xlsx export + volume/DB backup).
-        return datetime.utcnow().strftime("%Y%m%d_%H%M%S")
+        return datetime.now(timezone.utc).replace(tzinfo=None).strftime("%Y%m%d_%H%M%S")
 
     def get_database_stats(self) -> Dict[str, Any]:
         try:
