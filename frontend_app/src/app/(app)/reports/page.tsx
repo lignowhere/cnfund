@@ -76,7 +76,7 @@ export default function ReportsPage() {
   const [isExporting, setIsExporting] = useState(false);
 
   const investorsQuery = useQuery({
-    queryKey: queryKeys.investorOptions(safeToken),
+    queryKey: queryKeys.investorOptions(),
     queryFn: async () => {
       const investors = await apiClient.investorCards(safeToken);
       return investors.map((item) => toInvestorOption(item.display_name, item.id));
@@ -88,14 +88,14 @@ export default function ReportsPage() {
 
   const txReportQuery = useQuery({
     queryKey: isInvestorUser
-      ? queryKeys.myTransactionsReport(safeToken, {
+      ? queryKeys.myTransactionsReport({
         page: txPage,
         pageSize: 20,
         txType: txTypeFilter || undefined,
         startDate: dateRange.startDate || undefined,
         endDate: dateRange.endDate || undefined,
       })
-      : queryKeys.transactionsReport(safeToken, {
+      : queryKeys.transactionsReport({
         page: txPage,
         pageSize: 20,
         txType: txTypeFilter || undefined,
@@ -125,8 +125,8 @@ export default function ReportsPage() {
 
   const investorReportQuery = useQuery({
     queryKey: isInvestorUser
-      ? queryKeys.myInvestorReport(safeToken)
-      : queryKeys.investorReport(safeToken, effectiveInvestorId),
+      ? queryKeys.myInvestorReport()
+      : queryKeys.investorReport(effectiveInvestorId),
     queryFn: () =>
       isInvestorUser
         ? apiClient.myInvestorReport(safeToken)

@@ -1,5 +1,5 @@
 import unicodedata
-from datetime import date, datetime
+from datetime import date, datetime, timezone
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Response
 
@@ -408,7 +408,7 @@ def _build_investor_report_payload(manager, investor_id: int, nav: float | None)
     tranches = [
         InvestorTrancheDTO(
             tranche_id=str(getattr(tranche, "tranche_id", "")),
-            entry_date=_to_datetime(getattr(tranche, "entry_date", datetime.utcnow())),
+            entry_date=_to_datetime(getattr(tranche, "entry_date", datetime.now(timezone.utc).replace(tzinfo=None))),
             entry_nav=_safe_float(getattr(tranche, "entry_nav", 0.0)),
             units=_safe_float(getattr(tranche, "units", 0.0)),
             hwm=_safe_float(getattr(tranche, "hwm", 0.0)),
@@ -466,7 +466,7 @@ def _build_investor_report_payload(manager, investor_id: int, nav: float | None)
         tranches=tranches,
         transactions=tx_rows,
         fee_history=fee_rows,
-        report_date=_to_datetime(report.get("report_date", datetime.utcnow())),
+        report_date=_to_datetime(report.get("report_date", datetime.now(timezone.utc).replace(tzinfo=None))),
         current_nav=_safe_float(report.get("current_nav", current_nav)),
         current_price=_safe_float(report.get("current_price", 0.0)),
     )
@@ -591,7 +591,7 @@ def _build_export_payload(
             start_date=normalized_start_date,
             end_date=normalized_end_date,
         )
-        generated_at = datetime.utcnow()
+        generated_at = datetime.now(timezone.utc).replace(tzinfo=None)
 
         if export_format == "pdf":
             content = build_transactions_pdf(

@@ -1,9 +1,10 @@
 import base64
+import json
+import logging
 import os
-import pickle
-from datetime import datetime, timedelta
-from pathlib import Path
 import re
+from datetime import datetime, timedelta, timezone
+from pathlib import Path
 from typing import Any
 
 import pandas as pd
@@ -13,14 +14,16 @@ from core.models import FeeRecord, Investor, Transaction, Tranche
 from helpers import parse_currency
 from utils.type_safety_fixes import safe_float_conversion, safe_int_conversion
 
-EXPORT_DIR = Path("exports")
+logger = logging.getLogger(__name__)
+
+EXPORT_DIR = Path(__file__).resolve().parents[3] / "exports"
 
 
 def _as_date(value: Any):
     parsed = pd.to_datetime(value, errors="coerce")
     if pd.notna(parsed):
         return parsed.date()
-    return datetime.utcnow().date()
+    return datetime.now(timezone.utc).date()
 
 
 def _as_datetime(value: Any):
@@ -30,7 +33,7 @@ def _as_datetime(value: Any):
         if as_dt.tzinfo is not None:
             return as_dt.replace(tzinfo=None)
         return as_dt
-    return datetime.utcnow()
+    return datetime.now(timezone.utc).replace(tzinfo=None)
 
 
 def _canonical_name(name: Any) -> str:
@@ -330,26 +333,26 @@ def _load_google_credentials():
         or os.getenv("OAUTH_TOKEN_BASE64")
         or os.getenv("oauth_token_base64")
     )
-    token_file = Path("token.pickle")
-    token_encoded_file = Path("token_encoded.txt")
+    token_json_file = Path(__file__).resolve().parents[3] / "token.json"
 
     creds = None
     if token_b64:
         try:
-            creds = pickle.loads(base64.b64decode(token_b64.strip()))
+            from google.oauth2.credentials import Credentials
+
+            token_data = json.loads(base64.b64decode(token_b64.strip()))
+            creds = Credentials.from_authorized_user_info(token_data)
         except Exception:
+            logger.warning("Failed to load Google credentials from env var")
             creds = None
-    elif token_file.exists():
+    elif token_json_file.exists():
         try:
-            with token_file.open("rb") as f:
-                creds = pickle.load(f)
+            from google.oauth2.credentials import Credentials
+
+            token_data = json.loads(token_json_file.read_text(encoding="utf-8"))
+            creds = Credentials.from_authorized_user_info(token_data)
         except Exception:
-            creds = None
-    elif token_encoded_file.exists():
-        try:
-            encoded = token_encoded_file.read_text(encoding="utf-8").strip()
-            creds = pickle.loads(base64.b64decode(encoded))
-        except Exception:
+            logger.warning("Failed to load Google credentials from token.json")
             creds = None
 
     if creds is None:
@@ -474,7 +477,9 @@ def restore_from_local_backup(
     *,
     create_safety_backup: bool = True,
 ) -> dict[str, Any]:
-    target = EXPORT_DIR / backup_id
+    target = (EXPORT_DIR / backup_id).resolve()
+    if not target.is_relative_to(EXPORT_DIR.resolve()):
+        raise ValueError(f"Invalid backup_id: {backup_id}")
     if not target.exists():
         raise FileNotFoundError(f"backup file not found: {backup_id}")
 
@@ -516,6 +521,7 @@ def restore_from_local_backup(
                     )
                 )
             except Exception:
+                logger.warning("Skipping malformed investor row %s", _, exc_info=True)
                 continue
         restored_sheets.append("Investors")
 
@@ -557,6 +563,7 @@ def restore_from_local_backup(
                 )
                 tranches.append(tranche)
             except Exception:
+                logger.warning("Skipping malformed tranche row %s", _, exc_info=True)
                 continue
         restored_sheets.append("Tranches")
 
@@ -578,6 +585,7 @@ def restore_from_local_backup(
                     )
                 )
             except Exception:
+                logger.warning("Skipping malformed transaction row %s", _, exc_info=True)
                 continue
         restored_sheets.append("Transactions")
 
@@ -607,6 +615,7 @@ def restore_from_local_backup(
                     )
                 )
             except Exception:
+                logger.warning("Skipping malformed fee record row %s", _, exc_info=True)
                 continue
         restored_sheets.append("Fee Records")
 

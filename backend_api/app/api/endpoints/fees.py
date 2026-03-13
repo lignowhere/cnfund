@@ -1,6 +1,6 @@
 import hashlib
 import json
-from datetime import datetime
+from datetime import datetime, timezone
 
 from fastapi import APIRouter, Depends, HTTPException
 
@@ -189,7 +189,7 @@ def preview_fees(payload: FeePreviewRequest, _user=Depends(require_read_access))
             items=previews,
             summary=summary,
             confirm_token=token,
-            generated_at=datetime.utcnow().isoformat(),
+            generated_at=datetime.now(timezone.utc).replace(tzinfo=None).isoformat(),
         )
 
     return ApiResponse(data=runtime.read(_read))

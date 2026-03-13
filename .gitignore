@@ -1,10 +1,10 @@
 # Environment variables
 .env
-.env.local
-.env.production
+.env.*
+!.env.example
 
-# Streamlit secrets
-.streamlit/secrets.toml
+# Streamlit (decommissioned)
+.streamlit/
 
 # Local config
 config_local.py
@@ -22,6 +22,7 @@ logs/
 __pycache__/
 .cache/
 *.pyc
+.pytest_cache/
 
 # IDE
 .vscode/
@@ -41,25 +42,42 @@ Thumbs.db
 # OAuth credentials (NEVER commit these!)
 oauth_credentials.json
 token.pickle
+token.json
 token_encoded.txt
 .drive_folder_cache
+*.key
+*.pem
 
-# Local data (CSV files - use Drive for cloud)
+# Secrets
+secrets/
+
+# Python venv
+.venv/
+venv/
+
+# Local data
 data/
 !backend_api/app/data/
 !backend_api/app/data/locations/
 !backend_api/app/data/locations/*.json
 exports/
 backend_api/exports/
-.streamlit/
 tmp_*.txt
+tmp_*.db
 
-# Strangler migration workspaces
+# Frontend
 frontend_app/node_modules/
 frontend_app/.next/
 frontend_app/out/
-backend_api.db
-backend_api/playwright.db
-backend_api/*.db
+
+# Backend data/test artifacts
 backend_api/data/
-output/playwright/
+output/
+
+# Claude Code agent workspace
+.claude/
+agent/
+plans/
+
+# SEO automation (separate project)
+seo-automation/

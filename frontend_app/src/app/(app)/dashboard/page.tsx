@@ -73,19 +73,19 @@ export default function DashboardPage() {
   const safeToken = token || "";
 
   const dashboardQuery = useQuery({
-    queryKey: queryKeys.dashboard(safeToken),
+    queryKey: queryKeys.dashboard(),
     queryFn: () => apiClient.dashboard(safeToken),
     enabled: !!token,
   });
 
   const navHistoryQuery = useQuery({
-    queryKey: queryKeys.navHistory(safeToken),
+    queryKey: queryKeys.navHistory(),
     queryFn: () => apiClient.navHistory(safeToken),
     enabled: !!token,
   });
 
   const txSummaryQuery = useQuery({
-    queryKey: queryKeys.dashboardTransactionsSummary(safeToken),
+    queryKey: queryKeys.dashboardTransactionsSummary(),
     queryFn: () => apiClient.transactionsReport(safeToken, { page: 1, page_size: 120 }),
     enabled: !!token,
   });

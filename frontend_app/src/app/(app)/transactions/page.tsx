@@ -52,13 +52,13 @@ export default function TransactionsPage() {
   const [undoTarget, setUndoTarget] = useState<number | null>(null);
 
   const flagsQuery = useQuery({
-    queryKey: queryKeys.featureFlags(safeToken),
+    queryKey: queryKeys.featureFlags(),
     queryFn: () => apiClient.featureFlags(safeToken),
     enabled: !!token,
   });
 
   const investorsQuery = useQuery({
-    queryKey: queryKeys.investorOptions(safeToken),
+    queryKey: queryKeys.investorOptions(),
     queryFn: async () => {
       const investors = await apiClient.investorCards(safeToken);
       return investors.map((item) => toInvestorOption(item.display_name, item.id));
@@ -70,7 +70,7 @@ export default function TransactionsPage() {
   const loadMoreEnabled = flagsQuery.data?.transactions_load_more ?? true;
 
   const transactionsQuery = useInfiniteQuery({
-    queryKey: queryKeys.transactionCards(safeToken),
+    queryKey: queryKeys.transactionCards(),
     initialPageParam: 1,
     queryFn: ({ pageParam }) => apiClient.transactionCards(safeToken, pageParam, 20),
     getNextPageParam: (lastPage, pages) => {
@@ -99,14 +99,14 @@ export default function TransactionsPage() {
 
   async function invalidateAfterMutation() {
     await Promise.all([
-      queryClient.invalidateQueries({ queryKey: queryKeys.transactionCards(safeToken), exact: true }),
-      queryClient.invalidateQueries({ queryKey: queryKeys.dashboard(safeToken), exact: true }),
-      queryClient.invalidateQueries({ queryKey: queryKeys.navHistory(safeToken), exact: true }),
+      queryClient.invalidateQueries({ queryKey: queryKeys.transactionCards(), exact: true }),
+      queryClient.invalidateQueries({ queryKey: queryKeys.dashboard(), exact: true }),
+      queryClient.invalidateQueries({ queryKey: queryKeys.navHistory(), exact: true }),
       queryClient.invalidateQueries({
-        queryKey: queryKeys.dashboardTransactionsSummary(safeToken),
+        queryKey: queryKeys.dashboardTransactionsSummary(),
         exact: true,
       }),
-      queryClient.invalidateQueries({ queryKey: queryKeys.investorCards(safeToken), exact: true }),
+      queryClient.invalidateQueries({ queryKey: queryKeys.investorCards(), exact: true }),
       queryClient.invalidateQueries({ queryKey: ["transactions-report", safeToken], exact: false }),
       queryClient.invalidateQueries({ queryKey: ["investor-report", safeToken], exact: false }),
       queryClient.invalidateQueries({ queryKey: ["investor-detail", safeToken], exact: false }),

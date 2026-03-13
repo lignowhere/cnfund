@@ -18,7 +18,7 @@ type DraftCredential = {
   password: string;
 };
 
-const MIN_PASSWORD_LENGTH = 1;
+const MIN_PASSWORD_LENGTH = 8;
 
 export default function AccountsPage() {
   const router = useRouter();
@@ -35,7 +35,7 @@ export default function AccountsPage() {
   const isAdmin = user?.role === "admin";
 
   const accountsQuery = useQuery({
-    queryKey: queryKeys.accountsInvestors(safeToken),
+    queryKey: queryKeys.accountsInvestors(),
     queryFn: () => apiClient.accountsInvestors(safeToken),
     enabled: !!token && isAdmin,
   });
@@ -44,7 +44,7 @@ export default function AccountsPage() {
     mutationFn: (payload: { investor_id: number; username: string; password: string }) =>
       apiClient.createInvestorAccount(safeToken, payload),
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: queryKeys.accountsInvestors(safeToken), exact: true });
+      queryClient.invalidateQueries({ queryKey: queryKeys.accountsInvestors(), exact: true });
       pushToast({ title: "Đã tạo tài khoản nhà đầu tư", variant: "success" });
     },
     onError: (error) => {
@@ -63,7 +63,7 @@ export default function AccountsPage() {
         is_active: payload.is_active,
       }),
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: queryKeys.accountsInvestors(safeToken), exact: true });
+      queryClient.invalidateQueries({ queryKey: queryKeys.accountsInvestors(), exact: true });
       pushToast({ title: "Đã cập nhật tài khoản", variant: "success" });
     },
     onError: (error) => {
@@ -79,7 +79,7 @@ export default function AccountsPage() {
     mutationFn: (payload: { investorId: number; newPassword: string }) =>
       apiClient.resetInvestorAccountPassword(safeToken, payload.investorId, payload.newPassword),
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: queryKeys.accountsInvestors(safeToken), exact: true });
+      queryClient.invalidateQueries({ queryKey: queryKeys.accountsInvestors(), exact: true });
       pushToast({ title: "Đã đặt lại mật khẩu", variant: "success" });
     },
     onError: (error) => {

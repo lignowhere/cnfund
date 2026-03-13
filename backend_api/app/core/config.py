@@ -1,5 +1,12 @@
+import logging
 from functools import lru_cache
+
 from pydantic_settings import BaseSettings, SettingsConfigDict
+
+logger = logging.getLogger(__name__)
+
+_KNOWN_BAD_SECRETS = {"change-this-in-production", "secret", ""}
+_KNOWN_BAD_PASSWORDS = {"1997", "password", "admin", ""}
 
 
 class Settings(BaseSettings):
@@ -8,13 +15,13 @@ class Settings(BaseSettings):
     api_prefix: str = "/api/v1"
 
     database_url: str = ""
-    jwt_secret_key: str = "change-this-in-production"
+    jwt_secret_key: str  # required — no default
     jwt_algorithm: str = "HS256"
     access_token_expire_minutes: int = 30
     refresh_token_expire_days: int = 7
 
-    admin_username: str = "admin"
-    admin_password: str = "1997"
+    admin_username: str  # required — no default
+    admin_password: str  # required — no default
     admin_role: str = "admin"
 
     allowed_origins: str = "http://localhost:3000,http://127.0.0.1:3000"
@@ -35,4 +42,13 @@ class Settings(BaseSettings):
 
 @lru_cache
 def get_settings() -> Settings:
-    return Settings()
+    s = Settings()
+    if s.jwt_secret_key in _KNOWN_BAD_SECRETS:
+        raise RuntimeError(
+            "API_JWT_SECRET_KEY must be set to a strong, unique secret."
+        )
+    if s.admin_password in _KNOWN_BAD_PASSWORDS:
+        logger.warning(
+            "API_ADMIN_PASSWORD is weak. Use a strong password in production."
+        )
+    return s

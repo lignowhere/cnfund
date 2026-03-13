@@ -1,5 +1,6 @@
+import logging
 from contextlib import asynccontextmanager
-from datetime import datetime
+from datetime import datetime, timezone
 
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
@@ -12,6 +13,7 @@ from .core.security import decode_token, get_password_hash
 from .models.auth import AuditLog, User
 
 
+logger = logging.getLogger(__name__)
 settings = get_settings()
 
 
@@ -82,21 +84,24 @@ async def audit_middleware(request: Request, call_next):
         except ValueError:
             username = "invalid_token"
 
-    db = SessionLocal()
     try:
-        db.add(
-            AuditLog(
-                username=username,
-                action=f"{request.method} {request.url.path}",
-                method=request.method,
-                path=request.url.path,
-                status_code=response.status_code,
-                details=f"query={dict(request.query_params)}",
+        db = SessionLocal()
+        try:
+            db.add(
+                AuditLog(
+                    username=username,
+                    action=f"{request.method} {request.url.path}",
+                    method=request.method,
+                    path=request.url.path,
+                    status_code=response.status_code,
+                    details=f"query={dict(request.query_params)}",
+                )
             )
-        )
-        db.commit()
-    finally:
-        db.close()
+            db.commit()
+        finally:
+            db.close()
+    except Exception:
+        logger.exception("Failed to write audit log for %s %s", request.method, request.url.path)
     return response
 
 
@@ -105,8 +110,7 @@ def health():
     return {
         "status": "ok",
         "service": settings.app_name,
-        "time": datetime.utcnow().isoformat(),
-        "env": settings.environment,
+        "time": datetime.now(timezone.utc).isoformat(),
     }
 
 

@@ -19,22 +19,3 @@ INVESTORS_FILE = DATA_DIR / "investors.csv"
 TRANCHES_FILE = DATA_DIR / "tranches.csv"
 TRANSACTIONS_FILE = DATA_DIR / "transactions.csv"
 
-# === LEGACY UI CONFIG (retained for backward compatibility of imported constants) ===
-PAGE_CONFIG = {
-    "page_title": "He thong Quan Ly Quy",
-    "page_icon": "$",
-    "layout": "wide",
-    "initial_sidebar_state": "expanded",
-}
-
-CURRENCY_SYMBOL = " đ"
-
-# === LEGACY SECURITY DEFAULT ===
-# API runtime uses env vars `API_ADMIN_USERNAME` and `API_ADMIN_PASSWORD`.
-ADMIN_PASSWORD = "1997"
-
-# Legacy cache-related constants retained for compatibility.
-CACHE_TTL_NAV = 120
-CACHE_TTL_BALANCE = 60
-CACHE_TTL_FEES = 300
-DEBUG_MODE = False

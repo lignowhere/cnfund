@@ -80,7 +80,7 @@ export default function FeesPage() {
   const totalNav = digitsToNumber(totalNavDigits);
 
   const flagsQuery = useQuery({
-    queryKey: queryKeys.featureFlags(safeToken),
+    queryKey: queryKeys.featureFlags(),
     queryFn: () => apiClient.featureFlags(safeToken),
     enabled: !!token,
   });
@@ -88,19 +88,19 @@ export default function FeesPage() {
   const safetyEnabled = flagsQuery.data?.fee_safety ?? true;
 
   const historyQuery = useQuery({
-    queryKey: queryKeys.feeHistory(safeToken),
+    queryKey: queryKeys.feeHistory(),
     queryFn: () => apiClient.feeHistory(safeToken),
     enabled: !!token,
   });
 
   const feeConfigQuery = useQuery({
-    queryKey: queryKeys.feeConfig(safeToken),
+    queryKey: queryKeys.feeConfig(),
     queryFn: () => apiClient.feeConfig(safeToken),
     enabled: !!token,
   });
 
   const investorsQuery = useQuery({
-    queryKey: queryKeys.investorOptions(safeToken),
+    queryKey: queryKeys.investorOptions(),
     queryFn: () => apiClient.investorCards(safeToken),
     enabled: !!token,
   });
@@ -155,8 +155,8 @@ export default function FeesPage() {
       setConfirmApplyOpen(false);
       pushToast({ title: "Đã áp dụng phí thành công", variant: "success" });
       await Promise.all([
-        queryClient.invalidateQueries({ queryKey: queryKeys.feeHistory(safeToken), exact: true }),
-        queryClient.invalidateQueries({ queryKey: queryKeys.dashboard(safeToken), exact: true }),
+        queryClient.invalidateQueries({ queryKey: queryKeys.feeHistory(), exact: true }),
+        queryClient.invalidateQueries({ queryKey: queryKeys.dashboard(), exact: true }),
       ]);
     },
     onError: (error) =>
@@ -174,7 +174,7 @@ export default function FeesPage() {
       setPreviewSnapshot(null);
       setGlobalDraft({});
       pushToast({ title: "Đã cập nhật cấu hình phí mặc định", variant: "success" });
-      await queryClient.invalidateQueries({ queryKey: queryKeys.feeConfig(safeToken), exact: true });
+      await queryClient.invalidateQueries({ queryKey: queryKeys.feeConfig(), exact: true });
     },
     onError: (error) =>
       pushToast({
@@ -194,7 +194,7 @@ export default function FeesPage() {
       setPreviewSnapshot(null);
       setOverrideDraft({});
       pushToast({ title: "Đã lưu override phí nhà đầu tư", variant: "success" });
-      await queryClient.invalidateQueries({ queryKey: queryKeys.feeConfig(safeToken), exact: true });
+      await queryClient.invalidateQueries({ queryKey: queryKeys.feeConfig(), exact: true });
     },
     onError: (error) =>
       pushToast({
@@ -209,7 +209,7 @@ export default function FeesPage() {
     onSuccess: async () => {
       setPreviewSnapshot(null);
       pushToast({ title: "Đã xóa override phí nhà đầu tư", variant: "success" });
-      await queryClient.invalidateQueries({ queryKey: queryKeys.feeConfig(safeToken), exact: true });
+      await queryClient.invalidateQueries({ queryKey: queryKeys.feeConfig(), exact: true });
     },
     onError: (error) =>
       pushToast({

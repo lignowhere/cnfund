@@ -2,7 +2,7 @@
 import uuid
 from datetime import datetime, date
 from typing import List, Tuple, Optional, Dict, Any
-from config import *
+from config import HURDLE_RATE_ANNUAL, PERFORMANCE_FEE_RATE, DEFAULT_UNIT_PRICE, EPSILON
 from .models import Investor, Tranche, Transaction, FeeRecord
 import logging # Sá»­ dá»¥ng logging chuyÃªn nghiá»‡p hÆ¡n
 

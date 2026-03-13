@@ -25,13 +25,13 @@ export default function BackupPage() {
   const [createSafetyBackup, setCreateSafetyBackup] = useState(true);
 
   const flagsQuery = useQuery({
-    queryKey: queryKeys.featureFlags(safeToken),
+    queryKey: queryKeys.featureFlags(),
     queryFn: () => apiClient.featureFlags(safeToken),
     enabled: !!token,
   });
 
   const backupsQuery = useQuery({
-    queryKey: queryKeys.backups(safeToken),
+    queryKey: queryKeys.backups(),
     queryFn: () => apiClient.backups(safeToken),
     enabled: !!token,
   });
@@ -44,7 +44,7 @@ export default function BackupPage() {
         description: result.backup_id,
         variant: "success",
       });
-      queryClient.invalidateQueries({ queryKey: queryKeys.backups(safeToken), exact: true });
+      queryClient.invalidateQueries({ queryKey: queryKeys.backups(), exact: true });
     },
     onError: (error) =>
       pushToast({
@@ -66,11 +66,11 @@ export default function BackupPage() {
       setRestoreTargetId(null);
       setConfirmRestoreId(null);
       setConfirmPhrase("");
-      queryClient.invalidateQueries({ queryKey: queryKeys.backups(safeToken), exact: true });
-      queryClient.invalidateQueries({ queryKey: queryKeys.dashboard(safeToken), exact: true });
-      queryClient.invalidateQueries({ queryKey: queryKeys.navHistory(safeToken), exact: true });
-      queryClient.invalidateQueries({ queryKey: queryKeys.transactionCards(safeToken), exact: true });
-      queryClient.invalidateQueries({ queryKey: queryKeys.investorCards(safeToken), exact: true });
+      queryClient.invalidateQueries({ queryKey: queryKeys.backups(), exact: true });
+      queryClient.invalidateQueries({ queryKey: queryKeys.dashboard(), exact: true });
+      queryClient.invalidateQueries({ queryKey: queryKeys.navHistory(), exact: true });
+      queryClient.invalidateQueries({ queryKey: queryKeys.transactionCards(), exact: true });
+      queryClient.invalidateQueries({ queryKey: queryKeys.investorCards(), exact: true });
     },
     onError: (error) =>
       {

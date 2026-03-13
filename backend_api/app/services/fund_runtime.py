@@ -18,6 +18,7 @@ class FundRuntime:
         self._settings = get_settings()
         self._bootstrap_sys_path()
         self._manager = self._build_manager()
+        self._dirty = False
 
     def _bootstrap_sys_path(self) -> None:
         # backend_api/app/services -> backend_api/app -> backend_api -> repo root
@@ -49,22 +50,42 @@ class FundRuntime:
         self._manager._ensure_fund_manager_exists()
 
     def read(self, callback: Callable[[object], T]) -> T:
-        self.refresh()
-        return callback(self._manager)
+        with self._lock:
+            if self._dirty:
+                self.refresh()
+                self._dirty = False
+            return callback(self._manager)
 
     def mutate(self, callback: Callable[[object], T]) -> T:
         with self._lock:
             self.refresh()
             result = callback(self._manager)
             self._manager.save_data()
-            self.refresh()
+            self._dirty = True
             return result
 
     @staticmethod
     def as_datetime(tx_date: date | datetime) -> datetime:
         if isinstance(tx_date, datetime):
             return tx_date
-        return datetime.combine(tx_date, datetime.now().time())
+        return datetime.combine(tx_date, datetime.min.time())
 
 
-runtime = FundRuntime()
+_runtime: FundRuntime | None = None
+_runtime_lock = threading.Lock()
+
+
+def get_runtime() -> FundRuntime:
+    global _runtime
+    if _runtime is None:
+        with _runtime_lock:
+            if _runtime is None:
+                _runtime = FundRuntime()
+    return _runtime
+
+
+# Backward-compatible module-level access
+def __getattr__(name: str):
+    if name == "runtime":
+        return get_runtime()
+    raise AttributeError(f"module {__name__!r} has no attribute {name!r}")

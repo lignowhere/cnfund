@@ -101,7 +101,7 @@ export default function InvestorsPage() {
   const [detailNavApplied, setDetailNavApplied] = useState<number | undefined>(undefined);
 
   const flagsQuery = useQuery({
-    queryKey: queryKeys.featureFlags(safeToken),
+    queryKey: queryKeys.featureFlags(),
     queryFn: () => apiClient.featureFlags(safeToken),
     enabled: !!token,
   });
@@ -109,7 +109,7 @@ export default function InvestorsPage() {
   const tableViewEnabled = flagsQuery.data?.table_view ?? true;
 
   const cardsQuery = useInfiniteQuery({
-    queryKey: queryKeys.investorCards(safeToken),
+    queryKey: queryKeys.investorCards(),
     initialPageParam: 1,
     queryFn: ({ pageParam }) => apiClient.investorCardsPaginated(safeToken, pageParam, 20),
     getNextPageParam: (lastPage, pages) => {
@@ -123,13 +123,13 @@ export default function InvestorsPage() {
   });
 
   const investorDetailQuery = useQuery({
-    queryKey: queryKeys.investorDetail(safeToken, selectedInvestor?.id, detailNavApplied),
+    queryKey: queryKeys.investorDetail(selectedInvestor?.id, detailNavApplied),
     queryFn: () => apiClient.investorReport(safeToken, selectedInvestor!.id, detailNavApplied),
     enabled: !!token && !!selectedInvestor,
   });
 
   const provincesQuery = useQuery({
-    queryKey: queryKeys.provinces(safeToken),
+    queryKey: queryKeys.provinces(),
     queryFn: () => apiClient.listProvinces(safeToken),
     enabled: !!token,
     staleTime: 24 * 60 * 60 * 1000,
@@ -137,7 +137,7 @@ export default function InvestorsPage() {
   });
 
   const createWardsQuery = useQuery({
-    queryKey: queryKeys.wards(safeToken, provinceCode),
+    queryKey: queryKeys.wards(provinceCode),
     queryFn: () => apiClient.listWards(safeToken, provinceCode),
     enabled: !!token && !!provinceCode,
     staleTime: 24 * 60 * 60 * 1000,
@@ -145,7 +145,7 @@ export default function InvestorsPage() {
   });
 
   const editWardsQuery = useQuery({
-    queryKey: queryKeys.wards(safeToken, editProvinceCode),
+    queryKey: queryKeys.wards(editProvinceCode),
     queryFn: () => apiClient.listWards(safeToken, editProvinceCode),
     enabled: !!token && !!editingInvestor?.id && !!editProvinceCode,
     staleTime: 24 * 60 * 60 * 1000,
@@ -225,8 +225,8 @@ export default function InvestorsPage() {
       setAddressLine("");
       setIsCreateModalOpen(false);
       pushToast({ title: "Đã tạo nhà đầu tư", variant: "success" });
-      queryClient.invalidateQueries({ queryKey: queryKeys.investorCards(safeToken), exact: true });
-      queryClient.invalidateQueries({ queryKey: queryKeys.dashboard(safeToken), exact: true });
+      queryClient.invalidateQueries({ queryKey: queryKeys.investorCards(), exact: true });
+      queryClient.invalidateQueries({ queryKey: queryKeys.dashboard(), exact: true });
     },
     onError: (error) => {
       pushToast({
@@ -259,8 +259,8 @@ export default function InvestorsPage() {
       const editedId = editingInvestor?.id;
       setEditingInvestor(null);
       pushToast({ title: "Đã cập nhật thông tin nhà đầu tư", variant: "success" });
-      queryClient.invalidateQueries({ queryKey: queryKeys.investorCards(safeToken), exact: true });
-      queryClient.invalidateQueries({ queryKey: queryKeys.dashboard(safeToken), exact: true });
+      queryClient.invalidateQueries({ queryKey: queryKeys.investorCards(), exact: true });
+      queryClient.invalidateQueries({ queryKey: queryKeys.dashboard(), exact: true });
       if (selectedInvestor?.id && editedId && selectedInvestor.id === editedId) {
         setSelectedInvestor((current) =>
           current
@@ -280,7 +280,7 @@ export default function InvestorsPage() {
             : current,
         );
         queryClient.invalidateQueries({
-          queryKey: queryKeys.investorDetail(safeToken, editedId),
+          queryKey: queryKeys.investorDetail(editedId),
           exact: false,
         });
       }

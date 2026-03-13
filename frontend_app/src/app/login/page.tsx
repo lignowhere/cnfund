@@ -21,8 +21,8 @@ export default function LoginPage() {
   const token = useAuthStore((state) => state.accessToken);
   const isHydrated = useAuthStore((state) => state.isHydrated);
 
-  const [username, setUsername] = useState("admin");
-  const [password, setPassword] = useState("1997");
+  const [username, setUsername] = useState("");
+  const [password, setPassword] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
 

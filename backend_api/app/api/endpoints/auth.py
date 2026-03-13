@@ -1,4 +1,9 @@
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
+
+
+def _utcnow() -> datetime:
+    """Naive UTC now — compatible with existing naive-UTC columns."""
+    return datetime.now(timezone.utc).replace(tzinfo=None)
 
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
@@ -39,7 +44,7 @@ def login(payload: LoginRequest, db: Session = Depends(get_db)):
     access_token = create_access_token(subject=user.username, role=user.role)
     refresh_token, jti = create_refresh_token(subject=user.username, role=user.role)
 
-    expires_at = datetime.utcnow() + timedelta(days=settings.refresh_token_expire_days)
+    expires_at = _utcnow() + timedelta(days=settings.refresh_token_expire_days)
     db.add(
         RefreshToken(
             user_id=user.id,
@@ -78,14 +83,14 @@ def refresh(payload: RefreshRequest, db: Session = Depends(get_db)):
         raise HTTPException(status_code=401, detail="Refresh token revoked")
     if token_row.token_hash != hash_token(payload.refresh_token):
         raise HTTPException(status_code=401, detail="Refresh token mismatch")
-    if token_row.expires_at < datetime.utcnow():
+    if token_row.expires_at < _utcnow():
         raise HTTPException(status_code=401, detail="Refresh token expired")
 
     user = db.query(User).filter(User.username == username).first()
     if not user or not user.is_active:
         raise HTTPException(status_code=401, detail="User is unavailable")
 
-    token_row.revoked_at = datetime.utcnow()
+    token_row.revoked_at = _utcnow()
 
     new_access = create_access_token(subject=username, role=role)
     new_refresh, new_jti = create_refresh_token(subject=username, role=role)
@@ -94,7 +99,7 @@ def refresh(payload: RefreshRequest, db: Session = Depends(get_db)):
             user_id=user.id,
             jti=new_jti,
             token_hash=hash_token(new_refresh),
-            expires_at=datetime.utcnow() + timedelta(days=settings.refresh_token_expire_days),
+            expires_at=_utcnow() + timedelta(days=settings.refresh_token_expire_days),
         )
     )
     db.commit()
@@ -118,7 +123,7 @@ def logout(payload: LogoutRequest, db: Session = Depends(get_db)):
     jti = decoded.get("jti")
     token_row = db.query(RefreshToken).filter(RefreshToken.jti == jti).first()
     if token_row and token_row.revoked_at is None:
-        token_row.revoked_at = datetime.utcnow()
+        token_row.revoked_at = _utcnow()
         db.commit()
 
     return ApiResponse(message="Logged out", data={"logged_out": True})
