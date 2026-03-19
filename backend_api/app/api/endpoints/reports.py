@@ -1,6 +1,8 @@
 import unicodedata
 from datetime import date, datetime, timezone
 
+from config import DEFAULT_UNIT_PRICE
+
 from fastapi import APIRouter, Depends, HTTPException, Query, Response
 
 from ...api.deps import InvestorAccessContext, require_investor_access, require_read_access
@@ -354,15 +356,10 @@ def dashboard(nav: float | None = Query(default=None, ge=0), _user=Depends(requi
             )
         top.sort(key=lambda row: row.balance, reverse=True)
 
-        total_original = sum(
-            manager.get_investor_lifetime_performance(inv.id, current_nav)["original_invested"]
-            for inv in regular_investors
-        )
-        total_current = sum(
-            manager.get_investor_lifetime_performance(inv.id, current_nav)["current_value"]
-            for inv in regular_investors
-        )
-        gross_return = ((total_current - total_original) / total_original) if total_original > 0 else 0.0
+        # Fund performance = price-per-unit growth since inception.
+        # This correctly reflects the fund's investment return regardless of
+        # deposits/withdrawals (which don't affect price per unit).
+        gross_return = (current_price / DEFAULT_UNIT_PRICE - 1.0) if current_price > 0 else 0.0
 
         return DashboardResponseDTO(
             kpis=DashboardKPIDTO(
