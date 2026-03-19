@@ -61,7 +61,10 @@ export default function TransactionsPage() {
     queryKey: queryKeys.investorOptions(),
     queryFn: async () => {
       const investors = await apiClient.investorCards(safeToken);
-      return investors.map((item) => toInvestorOption(item.display_name, item.id));
+      return {
+        options: investors.map((item) => toInvestorOption(item.display_name, item.id)),
+        cards: investors,
+      };
     },
     enabled: !!token,
   });
@@ -215,7 +218,7 @@ export default function TransactionsPage() {
         {txType !== "nav_update" ? (
           <div className="space-y-2">
             <InvestorCombobox
-              options={investorsQuery.data ?? []}
+              options={investorsQuery.data?.options ?? []}
               value={selectedInvestor?.id ?? null}
               onChange={setSelectedInvestor}
               placeholder="Tìm theo tên hoặc ID nhà đầu tư"
@@ -228,15 +231,37 @@ export default function TransactionsPage() {
 
         {txType !== "nav_update" ? (
           <div className="space-y-1">
-            <MoneyInput
-              value={amountDigits}
-              onValueChange={(value) => {
-                setAmountDigits(value.rawDigits);
-                setAmountOverflow(value.isOverflow);
-              }}
-              placeholder="50,000,000"
-              aria-invalid={amountInvalid}
-            />
+            <div className="flex gap-2">
+              <div className="flex-1">
+                <MoneyInput
+                  value={amountDigits}
+                  onValueChange={(value) => {
+                    setAmountDigits(value.rawDigits);
+                    setAmountOverflow(value.isOverflow);
+                  }}
+                  placeholder="50,000,000"
+                  aria-invalid={amountInvalid}
+                />
+              </div>
+              {txType === "withdraw" && selectedInvestor ? (
+                <Button
+                  variant="secondary"
+                  className="shrink-0 whitespace-nowrap"
+                  type="button"
+                  onClick={() => {
+                    const card = investorsQuery.data?.cards.find(
+                      (c) => c.id === selectedInvestor.id,
+                    );
+                    if (card && card.current_value > 0) {
+                      setAmountDigits(String(Math.round(card.current_value)));
+                      setAmountOverflow(false);
+                    }
+                  }}
+                >
+                  Rút toàn bộ
+                </Button>
+              ) : null}
+            </div>
             <p className="input-helper">Giá trị sẽ gửi: {amountValue ? formatCurrency(amountValue) : "Chưa có"}</p>
             {amountOverflow ? <p className="inline-error">Số tiền quá lớn (tối đa 15 chữ số).</p> : null}
             {!amountOverflow && amountInvalid ? <p className="inline-error">Số tiền phải lớn hơn 0.</p> : null}
