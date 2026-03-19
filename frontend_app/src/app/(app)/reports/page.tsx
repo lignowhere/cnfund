@@ -236,7 +236,7 @@ export default function ReportsPage() {
 
   const endAUM = useMemo(() => {
     if (investorFilter || isInvestorUser) return null;
-    if (dateRange.endDate && navHistoryQuery.data) {
+    if (dateRange.endDate && Array.isArray(navHistoryQuery.data) && navHistoryQuery.data.length > 0) {
       const sorted = [...navHistoryQuery.data].sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
       const found = sorted.find(p => p.date <= dateRange.endDate);
       if (found) return found.nav;
