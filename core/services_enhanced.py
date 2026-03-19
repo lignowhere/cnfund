@@ -1,12 +1,12 @@
-﻿import copy as cp
+import copy as cp
 import uuid
 from datetime import datetime, date, timezone
 from typing import List, Tuple, Optional, Dict, Any
 from config import HURDLE_RATE_ANNUAL, PERFORMANCE_FEE_RATE, DEFAULT_UNIT_PRICE, EPSILON
 from .models import Investor, Tranche, Transaction, FeeRecord
-import logging # Sá»­ dá»¥ng logging chuyÃªn nghiá»‡p hÆ¡n
+import logging # Sử dụng logging chuyên nghiệp hơn
 
-# Thiáº¿t láº­p logging (cÃ³ thá»ƒ Ä‘áº·t á»Ÿ Ä‘áº§u file)
+# Thiết lập logging (có thể đặt ở đầu file)
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 
 from concurrent.futures import ThreadPoolExecutor
@@ -27,11 +27,11 @@ class EnhancedFundManager:
         
         # Backup handled by APIBackupFlow (integrated via legacy UI)
         if enable_snapshots:
-            print("ðŸš€ Backup system: APIBackupFlow (via backend API)")
+            print("🚀 Backup system: APIBackupFlow (via backend API)")
             # Old backup managers removed - now handled by backend backup service
             self.snapshot_manager = None
         else:
-            print("ðŸš« Backup system disabled (enable_snapshots=False)")
+            print("🚫 Backup system disabled (enable_snapshots=False)")
             self.snapshot_manager = None
 
         # DO NOT set backup_manager attribute - it's now handled by api_backup service
@@ -310,18 +310,18 @@ class EnhancedFundManager:
         self, name: str, phone: str = "", address: str = "", email: str = ""
     ) -> Tuple[bool, str]:
         if not name.strip():
-            return False, "TÃªn khÃ´ng Ä‘Æ°á»£c Ä‘á»ƒ trá»‘ng"
+            return False, "Tên không được để trống"
 
         existing_names = [inv.name.lower().strip() for inv in self.investors]
         if name.lower().strip() in existing_names:
-            return False, f"NhÃ  Ä‘áº§u tÆ° '{name}' Ä‘Ã£ tá»“n táº¡i"
+            return False, f"Nhà đầu tư '{name}' Äã tồn tại"
 
         if phone and not validate_phone(phone):
-            return False, "SÄT khÃ´ng há»£p lá»‡"
+            return False, "SĐT không hợp lệ"
         if email and not validate_email(email):
-            return False, "Email khÃ´ng há»£p lá»‡"
+            return False, "Email không hợp lệ"
 
-        # ID=0 dÃ nh cho Fund Manager
+        # ID=0 dành cho Fund Manager
         existing_ids = [inv.id for inv in self.investors]
         new_id = 1
         while new_id in existing_ids:
@@ -341,7 +341,7 @@ class EnhancedFundManager:
         # Auto-backup after adding investor
         self._auto_backup_if_enabled("ADD_INVESTOR", f"Added investor: {investor.display_name}")
         
-        return True, f"ÄÃ£ thÃªm {investor.display_name}"
+        return True, f"Đã thêm {investor.display_name}"
 
     # ================================
     # Portfolio helpers (per investor)
@@ -356,7 +356,7 @@ class EnhancedFundManager:
         deposits = sum(
             t.amount
             for t in self.transactions
-            if t.investor_id == investor_id and t.type == "Náº¡p" and t.amount > 0
+            if t.investor_id == investor_id and t.type == "Nạp" and t.amount > 0
         )
         if deposits > EPSILON:
             return deposits
@@ -431,7 +431,7 @@ class EnhancedFundManager:
         Get the latest Total NAV from the most recent transaction (any type).
 
         Returns NAV from the most recent transaction by datetime and ID,
-        regardless of transaction type (NAV Update, Náº¡p, RÃºt, etc.).
+        regardless of transaction type (NAV Update, Nạp, Rút, etc.).
         This ensures we always use the most up-to-date NAV value.
         """
         if not self.transactions:
@@ -453,7 +453,7 @@ class EnhancedFundManager:
 
         # Debug: Show which transaction was used for NAV
         tx_date = self._sort_transaction_datetime(latest_transaction)
-        print(f"ðŸ“Š Latest NAV: {latest_transaction.nav:,.0f} from transaction:")
+        print(f"📊 Latest NAV: {latest_transaction.nav:,.0f} from transaction:")
         print(f"   Type: {latest_transaction.type}")
         print(f"   Date: {tx_date}")
         print(f"   ID: {latest_transaction.id}")
@@ -491,7 +491,7 @@ class EnhancedFundManager:
         selected = sorted_transactions[0]
 
         print(
-            f"ðŸŽ¯ get_nav_for_date({target_date}): "
+            f"🎯 get_nav_for_date({target_date}): "
             f"Using transaction ID:{selected.id}, Date:{selected.date}, NAV:{selected.nav}"
         )
         return selected.nav
@@ -525,7 +525,7 @@ class EnhancedFundManager:
         
         # OPTIMIZED: Minimal logging for better performance
         if type == "NAV Update":
-            print(f"ðŸŽ¯ NAV UPDATE: ID={transaction_id}, NAV={nav:,.0f}")
+            print(f"🎯 NAV UPDATE: ID={transaction_id}, NAV={nav:,.0f}")
         
         # Use naive datetime for local operations (Excel compatible)
         normalized_date = date.replace(tzinfo=None) if hasattr(date, 'tzinfo') and date.tzinfo else date
@@ -547,19 +547,19 @@ class EnhancedFundManager:
         self, investor_id: int, amount: float, total_nav_after: float, trans_date: datetime
     ) -> Tuple[bool, str]:
         if amount <= 0:
-            return False, "Sá»‘ tiá»n pháº£i lá»›n hÆ¡n 0"
+            return False, "Số tiền phải lớn hơn 0"
         if total_nav_after < 0:
-            return False, "NAV tá»•ng sau giao dá»‹ch khÃ´ng thá»ƒ Ã¢m"
+            return False, "NAV tổng sau giao dịch không thể âm"
 
-        # NAV trÆ°á»›c náº¡p luÃ´n Ä‘Æ°á»£c suy ra tá»« NAV sau vÃ  sá»‘ tiá»n náº¡p.
+        # NAV trước nạp luôn được suy ra từ NAV sau và số tiền nạp.
         inferred_nav_before = total_nav_after - amount
         if inferred_nav_before < -EPSILON:
-            return False, "NAV trÆ°á»›c giao dá»‹ch suy ra bá»‹ Ã¢m. Vui lÃ²ng kiá»ƒm tra NAV sau giao dá»‹ch."
+            return False, "NAV trước giao dịch suy ra bị âm. Vui lòng kiểm tra NAV sau giao dịch."
 
         old_total_nav = max(0.0, inferred_nav_before)
         price = self.calculate_price_per_unit(old_total_nav) if old_total_nav > EPSILON else DEFAULT_UNIT_PRICE
         if price <= EPSILON:
-            return False, "KhÃ´ng thá»ƒ xÃ¡c Ä‘á»‹nh giÃ¡ Ä‘Æ¡n vá»‹ quá»¹ tá»« NAV hiá»‡n táº¡i."
+            return False, "Không thể xác định giá đơn vị quỹ từ NAV hiện tại."
         units = amount / price
 
         tranche = Tranche(
@@ -571,25 +571,25 @@ class EnhancedFundManager:
             hwm=price,
             original_entry_date=trans_date,
             original_entry_nav=price,
-            original_invested_value=amount,  # set nguá»“n vá»‘n gá»‘c
+            original_invested_value=amount,  # set nguồn vốn gốc
             cumulative_fees_paid=0.0,
         )
-        # cáº­p nháº­t invested_value hiá»‡n táº¡i
+        # cập nhật invested_value hiện tại
         tranche.invested_value = tranche.units * tranche.entry_nav
 
         self.tranches.append(tranche)
-        self._add_transaction(investor_id, trans_date, "Náº¡p", amount, round(total_nav_after, 2), units)
+        self._add_transaction(investor_id, trans_date, "Nạp", amount, round(total_nav_after, 2), units)
         
         # Auto-backup after deposit transaction
         investor = self.get_investor_by_id(investor_id)
         investor_name = investor.display_name if investor else f"ID-{investor_id}"
         self._auto_backup_if_enabled("DEPOSIT", f"Deposit: {format_currency(amount)} by {investor_name}")
         
-        return True, f"ÄÃ£ náº¡p {format_currency(amount)}"
+        return True, f"Đã nạp {format_currency(amount)}"
 
     def _process_unit_reduction_fixed(self, investor_id: int, units_to_remove: float, is_full: bool):
         """
-        Giáº£m units khi rÃºt: full thÃ¬ xÃ³a háº¿t, partial thÃ¬ giáº£m theo tá»· lá»‡, giá»¯ nguyÃªn original_*.
+        Giảm units khi rút: full thì xóa hết, partial thì giảm theo tỷ lệ, giữ nguyên original_*.
         """
         if is_full:
             self.tranches = [t for t in self.tranches if t.investor_id != investor_id]
@@ -605,61 +605,61 @@ class EnhancedFundManager:
             self.tranches = [t for t in self.tranches if t.units >= EPSILON]
         return True
 
-    # +++++ THAY THáº¾ TOÃ€N Bá»˜ HÃ€M process_withdrawal Báº°NG PHIÃŠN Báº¢N HOÃ€N THIá»†N NÃ€Y +++++
+    # +++++ THAY THẾ TOÀN BỘ HÀM process_withdrawal BẰNG PHIÊN BẢN HOÀN THIỆN NÀY +++++
     def process_withdrawal(
         self, investor_id: int, net_amount: float, total_nav_after: float, trans_date: datetime
     ) -> Tuple[bool, str]:
-        """Xá»­ lÃ½ rÃºt tiá»n vá»›i logic rÃµ rÃ ng vÃ  chÃ­nh xÃ¡c cho má»i trÆ°á»ng há»£p."""
+        """Xử lý rút tiền với logic rõ ràng và chính xác cho mọi trường hợp."""
         if net_amount <= 0:
-            return False, "Sá»‘ tiá»n rÃºt pháº£i lá»›n hÆ¡n 0"
+            return False, "Số tiền rút phải lớn hơn 0"
         if total_nav_after < 0:
-            return False, "NAV tá»•ng sau giao dá»‹ch khÃ´ng thá»ƒ Ã¢m"
+            return False, "NAV tổng sau giao dịch không thể âm"
 
-        # 1. Suy ra NAV trÆ°á»›c rÃºt tá»« NAV sau vÃ  sá»‘ tiá»n rÃºt thá»±c nháº­n.
+        # 1. Suy ra NAV trước rút từ NAV sau và số tiền rút thực nhận.
         inferred_nav_before = total_nav_after + net_amount
         if inferred_nav_before <= EPSILON:
-            return False, "NAV trÆ°á»›c giao dá»‹ch khÃ´ng há»£p lá»‡. Vui lÃ²ng kiá»ƒm tra NAV sau giao dá»‹ch."
+            return False, "NAV trước giao dịch không hợp lệ. Vui lòng kiểm tra NAV sau giao dịch."
         old_total_nav = inferred_nav_before
         current_price = self.calculate_price_per_unit(old_total_nav)
         if current_price <= EPSILON:
-            return False, "KhÃ´ng thá»ƒ xÃ¡c Ä‘á»‹nh giÃ¡ Ä‘Æ¡n vá»‹ quá»¹ tá»« NAV trÆ°á»›c giao dá»‹ch."
+            return False, "Không thể xác định giá đơn vị quỹ từ NAV trước giao dịch."
         
         tranches = self.get_investor_tranches(investor_id)
-        if not tranches: return False, "NhÃ  Ä‘áº§u tÆ° khÃ´ng cÃ³ vá»‘n."
+        if not tranches: return False, "Nhà đầu tư không có vốn."
         
         balance = sum(t.units for t in tranches) * current_price
 
-        # 2. TÃ­nh toÃ¡n phÃ­ vÃ  sá»‘ dÆ° thá»±c nháº­n
+        # 2. Tính toán phí và số dư thực nhận
         fee_info = self.calculate_investor_fee(investor_id, trans_date, old_total_nav)
         fee_on_full_balance = fee_info.get("total_fee", 0.0)
         net_balance = balance - fee_on_full_balance
         if net_balance < -EPSILON:
-            return False, "Lá»—i dá»¯ liá»‡u: phÃ­ lá»›n hÆ¡n sá»‘ dÆ° nhÃ  Ä‘áº§u tÆ°."
+            return False, "Lỗi dữ liệu: phí lớn hơn số dư nhà đầu tư."
 
-        # 3. PhÃ¢n loáº¡i yÃªu cáº§u vÃ  Ä‘iá»u chá»‰nh
+        # 3. Phân loại yêu cầu và điều chỉnh
         is_full_withdrawal = False
         if net_amount >= net_balance - EPSILON:
             is_full_withdrawal = True
             performance_fee = fee_on_full_balance
-            net_amount = net_balance # Tá»± Äá»˜NG ÄIá»€U CHá»ˆNH
+            net_amount = net_balance # Tự ĐỘNG ĐIỀU CHỈNH
         else:
             proportion = net_amount / net_balance if net_balance > EPSILON else 1.0
             performance_fee = fee_on_full_balance * proportion
         
         gross_withdrawal = net_amount + performance_fee
         
-        # Kiá»ƒm tra cuá»‘i cÃ¹ng Ä‘á»ƒ Ä‘áº£m báº£o khÃ´ng cÃ³ lá»—i logic nÃ o
+        # Kiểm tra cuối cùng để đảm bảo không có lỗi logic nào
         if gross_withdrawal > balance + EPSILON:
-            error_msg = f"Lá»—i logic: GiÃ¡ trá»‹ rÃºt gá»™p ({format_currency(gross_withdrawal)}) > Sá»‘ dÆ° ({format_currency(balance)})"
+            error_msg = f"Lỗi logic: Giá trị rút gộp ({format_currency(gross_withdrawal)}) > Số dư ({format_currency(balance)})"
             logging.error(error_msg)
             return False, error_msg
 
-        # NAV sau rÃºt pháº£i Ä‘Æ°á»£c tÃ­nh authoritative tá»« backend.
+        # NAV sau rút phải được tính authoritative từ backend.
         authoritative_nav_after = max(0.0, old_total_nav - net_amount)
         if abs(total_nav_after - authoritative_nav_after) > 1.0:
             logging.warning(
-                "NAV sau rÃºt do UI gá»­i (%s) khÃ´ng khá»›p NAV backend tÃ­nh toÃ¡n (%s). "
-                "Sáº½ dÃ¹ng NAV backend.",
+                "NAV sau rút do UI gửi (%s) không khớp NAV backend tính toán (%s). "
+                "Sẽ dùng NAV backend.",
                 total_nav_after,
                 authoritative_nav_after,
             )
@@ -668,11 +668,11 @@ class EnhancedFundManager:
         fee_units = round(performance_fee / current_price, 8) if current_price > 0 else 0.0
         withdrawal_units = round(net_amount / current_price, 8) if current_price > 0 else 0.0
 
-        # 4. Ghi nháº­n giao dá»‹ch
+        # 4. Ghi nhận giao dịch
         units_before = sum(t.units for t in tranches)
         if performance_fee > EPSILON:
             self._add_transaction(
-                investor_id, trans_date, "PhÃ­", -performance_fee, authoritative_nav_after, -fee_units
+                investor_id, trans_date, "Phí", -performance_fee, authoritative_nav_after, -fee_units
             )
             self.fee_records.append(FeeRecord(
                 id=(max((fr.id for fr in self.fee_records), default=0) + 1),
@@ -686,10 +686,10 @@ class EnhancedFundManager:
             )
 
         self._add_transaction(
-            investor_id, trans_date, "RÃºt", -net_amount, authoritative_nav_after, -withdrawal_units
+            investor_id, trans_date, "Rút", -net_amount, authoritative_nav_after, -withdrawal_units
         )
 
-        # 5. Cáº­p nháº­t tranches
+        # 5. Cập nhật tranches
         if is_full_withdrawal:
             self.tranches = [t for t in self.tranches if t.investor_id != investor_id]
             logging.info(f"Investor {investor_id} performed a full withdrawal. All tranches removed.")
@@ -709,17 +709,17 @@ class EnhancedFundManager:
         withdrawal_type = "FULL_WITHDRAWAL" if is_full_withdrawal else "PARTIAL_WITHDRAWAL"
         self._auto_backup_if_enabled(withdrawal_type, f"Withdrawal: {format_currency(net_amount)} by {investor_name}")
         
-        return True, f"NhÃ  Ä‘áº§u tÆ° nháº­n {format_currency(net_amount)} (Gá»™p {format_currency(gross_withdrawal)}, PhÃ­ {format_currency(performance_fee)})"
+        return True, f"Nhà đầu tư nhận {format_currency(net_amount)} (Gộp {format_currency(gross_withdrawal)}, Phí {format_currency(performance_fee)})"
 
 
     def process_nav_update(self, total_nav: float, trans_date: datetime) -> Tuple[bool, str]:
         """
         OPTIMIZED NAV Update - Ultra fast processing
-        Chá»‰ cáº­p nháº­t NAV, KHÃ”NG tá»± Ä‘á»™ng cáº­p nháº­t HWM.
+        Chỉ cập nhật NAV, KHÔNG tự động cập nhật HWM.
         """
         # Fast input validation
         if total_nav < 0:
-            return False, "NAV tá»•ng khÃ´ng thá»ƒ Ã¢m"
+            return False, "NAV tổng không thể âm"
 
         # Use naive datetime for local operations (Excel compatible)
         normalized_date = trans_date.replace(tzinfo=None) if hasattr(trans_date, 'tzinfo') and trans_date.tzinfo else trans_date
@@ -737,14 +737,14 @@ class EnhancedFundManager:
         # ULTRA FAST: Skip backup for immediate response
         # Auto-backup will be handled by background process
         
-        return True, f"ÄÃ£ cáº­p nháº­t NAV: {format_currency(total_nav)}"
+        return True, f"Đã cập nhật NAV: {format_currency(total_nav)}"
 
     # def crystallize_hwm(self, current_price: float):
     #     """
-    #     Chá»‘t High Water Mark cho táº¥t cáº£ cÃ¡c tranche táº¡i má»™t má»©c giÃ¡ nháº¥t Ä‘á»‹nh.
-    #     HÃ m nÃ y nÃªn Ä‘Æ°á»£c gá»i SAU KHI phÃ­ Ä‘Ã£ Ä‘Æ°á»£c tÃ­nh vÃ  Ã¡p dá»¥ng.
+    #     Chốt High Water Mark cho tất cả các tranche tại một mức giá nhất định.
+    #     Hàm này nên được gọi SAU KHI phí Äã được tính và áp dụng.
     #     """
-    #     print(f"ðŸ’Ž Crystallizing HWM at price: {current_price:,.2f}")
+    #     print(f"💎 Crystallizing HWM at price: {current_price:,.2f}")
     #     for tranche in self.tranches:
     #         if current_price > tranche.hwm:
     #             tranche.hwm = current_price
@@ -778,7 +778,7 @@ class EnhancedFundManager:
             if tranche.units < EPSILON:
                 continue
             
-            # Sá»­a Ä‘á»•i: Truyá»n ending_date vÃ o hÃ m tÃ­nh toÃ¡n
+            # Sửa đổi: Truyền ending_date vào hàm tính toán
             tranche_excess_profit = tranche.calculate_excess_profit(
                 current_price,
                 ending_date,
@@ -892,8 +892,8 @@ class EnhancedFundManager:
         self, fee_units: float, current_price: float, fee_date: datetime, total_nav: float, fee_amount: float
     ):
         """
-        Táº¡o tranche + transaction 'PhÃ­ Nháº­n' cho Fund Manager.
-        NOTE: KhÃ´ng táº¡o FeeRecord cho Fund Manager á»Ÿ Ä‘Ã¢y â€” caller (apply fee / withdrawal) sáº½ táº¡o FeeRecord cho payer investor.
+        Tạo tranche + transaction 'Phí Nhận' cho Fund Manager.
+        NOTE: Không tạo FeeRecord cho Fund Manager ở Äây — caller (apply fee / withdrawal) sẽ tạo FeeRecord cho payer investor.
         """
         try:
             fund_manager = self.get_fund_manager()
@@ -918,7 +918,7 @@ class EnhancedFundManager:
 
             # Transaction: Fund Manager receives fee (positive amount)
             self._add_transaction(
-                fund_manager.id, fee_date, "PhÃ­ Nháº­n", fee_amount, total_nav, fee_units
+                fund_manager.id, fee_date, "Phí Nhận", fee_amount, total_nav, fee_units
             )
 
             print(f"Transferred {fee_units:.6f} units ({fee_amount:,.0f} VND) to Fund Manager")
@@ -931,7 +931,7 @@ class EnhancedFundManager:
 
     def apply_year_end_fees_enhanced(self, fee_date: datetime, total_nav: float) -> Dict[str, Any]:
         """
-        TÃ­nh & Ã¡p phÃ­ cuá»‘i nÄƒm, chuyá»ƒn units phÃ­ sang Fund Manager.
+        Tính & áp phí cuối năm, chuyển units phí sang Fund Manager.
         """
         try:
             results = {
@@ -944,11 +944,11 @@ class EnhancedFundManager:
             }
 
             regular_investors = self.get_regular_investors()
-            if not regular_investors: return results # Tráº£ vá» success=True náº¿u khÃ´ng cÃ³ NÄT
+            if not regular_investors: return results # Trả về success=True nếu không có NĐT
 
             fund_manager = self.get_fund_manager()
             if not fund_manager:
-                results["errors"].append("KhÃ´ng tÃ¬m tháº¥y Fund Manager")
+                results["errors"].append("Không tìm thấy Fund Manager")
                 results["success"] = False
                 return results
 
@@ -956,14 +956,14 @@ class EnhancedFundManager:
 
             for investor in regular_investors:
                 try:
-                    # TÃ­nh toÃ¡n chi tiáº¿t phÃ­ Má»˜T Láº¦N
+                    # Tính toán chi tiết phí MỘT LẦN
                     fee_calculation = self.calculate_investor_fee(investor.id, fee_date, total_nav)
                     
                     if fee_calculation["total_fee"] > 1:
-                        # ThÃªm giÃ¡ vÃ o dictionary Ä‘á»ƒ truyá»n Ä‘i
+                        # Thêm giá vào dictionary để truyền đi
                         fee_calculation["current_price"] = current_price
                         
-                        # Gá»i vá»›i crystallize=True
+                        # Gọi với crystallize=True
                         fee_applied = self._apply_fee_to_investor_tranches(
                             investor.id, fee_calculation, fee_date, crystallize=True
                         )
@@ -972,7 +972,7 @@ class EnhancedFundManager:
                             units_removed = round(fee_calculation["total_fee"] / current_price, 8)
 
                             self._add_transaction(
-                                investor.id, fee_date, "PhÃ­",
+                                investor.id, fee_date, "Phí",
                                 -fee_calculation["total_fee"], total_nav, -units_removed,
                             )
                             self._transfer_fee_to_fund_manager(
@@ -993,7 +993,7 @@ class EnhancedFundManager:
                             )
                             self.fee_records.append(fee_record)
 
-                            # Cáº­p nháº­t káº¿t quáº£
+                            # Cập nhật kết quả
                             results["total_fees"] += fee_calculation["total_fee"]
                             results["investors_processed"] += 1
                             results["fund_manager_units_received"] += units_removed
@@ -1003,9 +1003,9 @@ class EnhancedFundManager:
                                 "excess_profit": fee_calculation["excess_profit"],
                             })
                         else:
-                            results["errors"].append(f"KhÃ´ng thá»ƒ Ã¡p dá»¥ng phÃ­ cho nhÃ  Ä‘áº§u tÆ° {investor.name}")
+                            results["errors"].append(f"Không thể áp dụng phí cho nhà đầu tư {investor.name}")
                 except Exception as e:
-                    err = f"Lá»—i xá»­ lÃ½ nhÃ  Ä‘áº§u tÆ° {investor.name}: {str(e)}"
+                    err = f"Lỗi xử lý nhà đầu tư {investor.name}: {str(e)}"
                     results["errors"].append(err)
                     results["success"] = False
 
@@ -1038,9 +1038,9 @@ class EnhancedFundManager:
         """
         investor_transactions = [t for t in self.transactions if t.investor_id == investor_id]
 
-        cash_in = sum(t.amount for t in investor_transactions if t.type == "Náº¡p" and t.amount > 0)
-        cash_out = sum(-t.amount for t in investor_transactions if t.type in ["RÃºt", "Fund Manager Withdrawal"] and t.amount < 0)
-        fees_paid = sum(-t.amount for t in investor_transactions if t.type == "PhÃ­" and t.amount < 0)
+        cash_in = sum(t.amount for t in investor_transactions if t.type == "Nạp" and t.amount > 0)
+        cash_out = sum(-t.amount for t in investor_transactions if t.type in ["Rút", "Fund Manager Withdrawal"] and t.amount < 0)
+        fees_paid = sum(-t.amount for t in investor_transactions if t.type == "Phí" and t.amount < 0)
 
         current_units = self.get_investor_units(investor_id)
         current_price = self.calculate_price_per_unit(current_nav)
@@ -1129,45 +1129,45 @@ class EnhancedFundManager:
         try:
             transaction = next((t for t in self.transactions if t.id == transaction_id), None)
             if not transaction:
-                print(f"âŒ Transaction {transaction_id} not found")
+                print(f"❌ Transaction {transaction_id} not found")
                 return False
 
             # Allow undo for more recent transactions (increased from 5 to 10)
             recent_transactions = sorted(self.transactions, key=lambda x: x.date, reverse=True)[:10]
             if transaction not in recent_transactions:
-                print(f"âŒ Transaction {transaction_id} is too old to undo (only last 10 allowed)")
+                print(f"❌ Transaction {transaction_id} is too old to undo (only last 10 allowed)")
                 return False
 
-            print(f"ðŸ”„ Attempting to undo {transaction.type} transaction {transaction_id}")
+            print(f"🔄 Attempting to undo {transaction.type} transaction {transaction_id}")
             
             success = False
-            if transaction.type == "Náº¡p":
+            if transaction.type == "Nạp":
                 success = self._undo_deposit_enhanced(transaction)
-            elif transaction.type == "RÃºt":
+            elif transaction.type == "Rút":
                 success = self._undo_withdrawal_enhanced(transaction)
             elif transaction.type == "NAV Update":
                 success = self._undo_nav_update_enhanced(transaction)
-            elif transaction.type in ["PhÃ­", "Fund Manager Withdrawal"]:
+            elif transaction.type in ["Phí", "Fund Manager Withdrawal"]:
                 success = self._simple_transaction_removal_enhanced(transaction)
             else:
-                print(f"âŒ Unknown transaction type: {transaction.type}")
+                print(f"❌ Unknown transaction type: {transaction.type}")
                 return False
             
             if success:
-                print(f"âœ… Successfully undone transaction {transaction_id}")
+                print(f"✅ Successfully undone transaction {transaction_id}")
                 # Auto-backup after successful undo
                 self._auto_backup_if_enabled("UNDO_TRANSACTION", f"Undone transaction {transaction_id} ({transaction.type})")
                 return True
             else:
-                print(f"âŒ Failed to undo transaction {transaction_id}")
+                print(f"❌ Failed to undo transaction {transaction_id}")
                 # Restore snapshot if undo failed (backup_manager removed)
-                # print(f"ðŸ”„ Restoring snapshot {snapshot_id}")
+                # print(f"🔄 Restoring snapshot {snapshot_id}")
                 return False
 
         except Exception as e:
-            print(f"âŒ Error in undo_last_transaction: {str(e)}")
+            print(f"❌ Error in undo_last_transaction: {str(e)}")
             # Restore snapshot on exception (backup_manager removed)
-            # print(f"ðŸ”„ Restoring snapshot {snapshot_id} due to error")
+            # print(f"🔄 Restoring snapshot {snapshot_id} due to error")
             return False
 
     def _undo_deposit_enhanced(self, original_transaction) -> bool:
@@ -1179,7 +1179,7 @@ class EnhancedFundManager:
             amount = original_transaction.amount
             deposit_date = original_transaction.date
 
-            print(f"  ðŸ” Looking for tranche created on {deposit_date} with amount {amount:,}")
+            print(f"  🔍 Looking for tranche created on {deposit_date} with amount {amount:,}")
 
             # More flexible time window for matching (6 hours instead of 1)
             matching_tranches = [
@@ -1189,56 +1189,56 @@ class EnhancedFundManager:
             ]
             
             if not matching_tranches:
-                print(f"  âŒ No matching tranches found for investor {investor_id}")
+                print(f"  ❌ No matching tranches found for investor {investor_id}")
                 return False
 
             tranche_to_remove = max(matching_tranches, key=lambda x: x.entry_date)
             expected_amount = tranche_to_remove.units * tranche_to_remove.entry_nav
             
-            print(f"  ðŸ“Š Tranche to remove: {tranche_to_remove.tranche_id}")
-            print(f"  ðŸ“Š Expected amount: {expected_amount:,}, Transaction amount: {amount:,}")
+            print(f"  📊 Tranche to remove: {tranche_to_remove.tranche_id}")
+            print(f"  📊 Expected amount: {expected_amount:,}, Transaction amount: {amount:,}")
 
             # More lenient amount checking (allow 1% difference)
             if abs(expected_amount - amount) > max(1, amount * 0.01):
-                print(f"  âŒ Amount mismatch too large")
+                print(f"  ❌ Amount mismatch too large")
                 return False
 
             # Validate investor still has other tranches or will have 0 units
             remaining_units = self.get_investor_units(investor_id) - tranche_to_remove.units
-            print(f"  ðŸ“Š Investor units after removal: {remaining_units:.6f}")
+            print(f"  📊 Investor units after removal: {remaining_units:.6f}")
 
             self.tranches.remove(tranche_to_remove)
             self.transactions.remove(original_transaction)
             
-            print(f"  âœ… Removed tranche {tranche_to_remove.tranche_id}")
+            print(f"  ✅ Removed tranche {tranche_to_remove.tranche_id}")
             return True
 
         except Exception as e:
-            print(f"  âŒ Error in _undo_deposit_enhanced: {str(e)}")
+            print(f"  ❌ Error in _undo_deposit_enhanced: {str(e)}")
             import traceback
             traceback.print_exc()
             return False
 
     def _undo_withdrawal(self, original_transaction) -> bool:
         """
-        NÃ‚NG Cáº¤P: HoÃ n tÃ¡c má»™t giao dá»‹ch rÃºt tiá»n.
-        Thao tÃ¡c nÃ y phá»©c táº¡p vÃ  chá»‰ nÃªn dÃ¹ng cho cÃ¡c giao dá»‹ch gáº§n Ä‘Ã¢y.
-        NÃ³ sáº½ khÃ´i phá»¥c tráº¡ng thÃ¡i báº±ng cÃ¡ch tÃ­nh toÃ¡n ngÆ°á»£c vÃ  thao tÃ¡c trÃªn bá»™ nhá»›.
+        NÂNG CẤP: Hoàn tác một giao dịch rút tiền.
+        Thao tác này phức tạp và chỉ nên dùng cho các giao dịch gần Äây.
+        Nó sẽ khôi phục trạng thái bằng cách tính toán ngược và thao tác trên bộ nhớ.
         """
         try:
             investor_id = original_transaction.investor_id
             trans_date = original_transaction.date
 
-            # 1. TÃ¬m táº¥t cáº£ cÃ¡c báº£n ghi liÃªn quan trong bá»™ nhá»›
+            # 1. Tìm tất cả các bản ghi liên quan trong bộ nhớ
             fee_txn = next((
                 t for t in self.transactions 
-                if t.investor_id == investor_id and t.type == "PhÃ­" and 
+                if t.investor_id == investor_id and t.type == "Phí" and 
                 abs(safe_total_seconds_between(t.date, trans_date)) < 1
             ), None)
             
             fm_fee_txns = [
                 t for t in self.transactions 
-                if t.type == "PhÃ­ Nháº­n" and abs(safe_total_seconds_between(t.date, trans_date)) < 1
+                if t.type == "Phí Nhận" and abs(safe_total_seconds_between(t.date, trans_date)) < 1
             ]
 
             fee_record_to_undo = next((
@@ -1251,29 +1251,29 @@ class EnhancedFundManager:
                 print(f"ERROR: Cannot undo withdrawal {original_transaction.id}. Corresponding FeeRecord not found.")
                 return False
 
-            # 2. HoÃ n tÃ¡c cÃ¡c thay Ä‘á»•i trÃªn tranche cá»§a nhÃ  Ä‘áº§u tÆ°
-            # Láº¥y láº¡i cÃ¡c giÃ¡ trá»‹ tá»« FeeRecord
+            # 2. Hoàn tác các thay đổi trên tranche của nhà đầu tư
+            # Lấy lại các giá trị từ FeeRecord
             units_before_fee = fee_record_to_undo.units_before if fee_record_to_undo else self.get_investor_units(investor_id) + abs(original_transaction.units_change)
             
-            # XÃ³a cÃ¡c tranche Ä‘Ã£ bá»‹ reset (do _apply_fee_to_investor_tranches)
-            # vÃ  khÃ´i phá»¥c láº¡i tráº¡ng thÃ¡i cÅ© hÆ¡n. Logic nÃ y ráº¥t phá»©c táº¡p.
-            # Má»™t cÃ¡ch tiáº¿p cáº­n Ä‘Æ¡n giáº£n vÃ  an toÃ n hÆ¡n lÃ  khÃ´ng cho phÃ©p undo withdrawal.
-            # Tuy nhiÃªn, náº¿u váº«n muá»‘n thá»±c hiá»‡n, chÃºng ta cáº§n má»™t cÆ¡ cháº¿ snapshot.
-            # VÃ¬ hiá»‡n táº¡i khÃ´ng cÃ³, chÃºng ta sáº½ thÃ´ng bÃ¡o giá»›i háº¡n nÃ y.
+            # Xóa các tranche Äã bị reset (do _apply_fee_to_investor_tranches)
+            # và khôi phục lại trạng thái cũ hơn. Logic này rất phức tạp.
+            # Một cách tiếp cận đơn giản và an toàn hơn là không cho phép undo withdrawal.
+            # Tuy nhiên, nếu vẫn muốn thực hiện, chúng ta cần một cơ chế snapshot.
+            # Vì hiện tại không có, chúng ta sẽ thông báo giới hạn này.
             print("WARNING: 'Undo Withdrawal' is a complex operation and may not perfectly restore state without a snapshot system.")
             print("This feature should be used with caution only for immediate corrections.")
             
-            # VÃ¬ sá»± phá»©c táº¡p vÃ  rá»§i ro, chÃºng ta sáº½ ngÄƒn cháº·n undo withdrawal phá»©c táº¡p
-            # vÃ  chá»‰ cho phÃ©p undo cÃ¡c giao dá»‹ch Ä‘Æ¡n giáº£n
+            # Vì sự phức tạp và rủi ro, chúng ta sẽ ngăn chặn undo withdrawal phức tạp
+            # và chỉ cho phép undo các giao dịch đơn giản
             if fee_txn or fm_fee_txns:
-                print("âŒ HoÃ n tÃ¡c giao dá»‹ch rÃºt tiá»n cÃ³ tÃ­nh phÃ­ chÆ°a Ä‘Æ°á»£c há»— trá»£ vÃ¬ Ä‘á»™ phá»©c táº¡p cao. Vui lÃ²ng xÃ³a vÃ  táº¡o láº¡i giao dá»‹ch.")
+                print("❌ Hoàn tác giao dịch rút tiền có tính phí chưa được hỗ trợ vì độ phức tạp cao. Vui lòng xóa và tạo lại giao dịch.")
                 return False
 
-            # Náº¿u lÃ  má»™t láº§n rÃºt tiá»n Ä‘Æ¡n giáº£n khÃ´ng cÃ³ phÃ­
+            # Nếu là một lần rút tiền đơn giản không có phí
             units_to_restore = abs(original_transaction.units_change)
             tranches = self.get_investor_tranches(investor_id)
             if not tranches:
-                # Náº¿u nhÃ  Ä‘áº§u tÆ° Ä‘Ã£ rÃºt háº¿t, táº¡o láº¡i 1 tranche
+                # Nếu nhà đầu tư Äã rút hết, tạo lại 1 tranche
                 price = original_transaction.nav / (sum(t.units for t in self.tranches) + units_to_restore)
                 tranche = Tranche(
                     investor_id=investor_id,
@@ -1284,14 +1284,14 @@ class EnhancedFundManager:
                 )
                 self.tranches.append(tranche)
             else:
-                # PhÃ¢n bá»• láº¡i units
+                # Phân bổ lại units
                 total_existing_units = self.get_investor_units(investor_id)
                 for tranche in tranches:
                     proportion = tranche.units / total_existing_units if total_existing_units > 0 else 1.0/len(tranches)
                     tranche.units += units_to_restore * proportion
                     tranche.invested_value += (units_to_restore * proportion) * tranche.entry_nav
 
-            # XÃ³a transaction rÃºt tiá»n
+            # Xóa transaction rút tiền
             self.transactions.remove(original_transaction)
             
             return True
@@ -1326,18 +1326,18 @@ class EnhancedFundManager:
             investor_id = original_transaction.investor_id
             trans_date = original_transaction.date
             
-            print(f"  ðŸ” Analyzing withdrawal transaction for investor {investor_id}")
+            print(f"  🔍 Analyzing withdrawal transaction for investor {investor_id}")
 
             # Find related transactions within larger time window (1 hour)
             fee_txn = next((
                 t for t in self.transactions 
-                if t.investor_id == investor_id and t.type == "PhÃ­" and 
+                if t.investor_id == investor_id and t.type == "Phí" and 
                 abs(safe_total_seconds_between(t.date, trans_date)) < 3600
             ), None)
             
             fm_fee_txns = [
                 t for t in self.transactions 
-                if t.type == "PhÃ­ Nháº­n" and abs(safe_total_seconds_between(t.date, trans_date)) < 3600
+                if t.type == "Phí Nhận" and abs(safe_total_seconds_between(t.date, trans_date)) < 3600
             ]
 
             fee_record_to_undo = next((
@@ -1348,9 +1348,9 @@ class EnhancedFundManager:
 
             # Check if this is a complex withdrawal with fees
             if fee_txn or fm_fee_txns or fee_record_to_undo:
-                print("  âš ï¸  Complex withdrawal with fees detected")
+                print("  ⚠️  Complex withdrawal with fees detected")
                 if self.snapshot_manager:
-                    print("  âœ… Using snapshot system to handle complex withdrawal undo")
+                    print("  ✅ Using snapshot system to handle complex withdrawal undo")
                     # For complex withdrawals, we rely on snapshot restore
                     # Just remove the main withdrawal transaction and let snapshot handle the rest
                     try:
@@ -1361,28 +1361,28 @@ class EnhancedFundManager:
                             self.transactions.remove(fm_fee_txn)
                         if fee_record_to_undo:
                             self.fee_records.remove(fee_record_to_undo)
-                        print("  âœ… Removed complex withdrawal transactions and fee records")
-                        print("  ðŸ’¡ Note: Snapshot system will restore full state if any issues occur")
+                        print("  ✅ Removed complex withdrawal transactions and fee records")
+                        print("  💡 Note: Snapshot system will restore full state if any issues occur")
                         return True
                     except Exception as e:
-                        print(f"  âŒ Error removing complex withdrawal components: {e}")
+                        print(f"  ❌ Error removing complex withdrawal components: {e}")
                         return False
                 else:
-                    print("  â„¹ï¸  Snapshot khÃ´ng kháº£ dá»¥ng, chuyá»ƒn sang luá»“ng hoÃ n tÃ¡c atomic.")
+                    print("  ℹ️  Snapshot không khả dụng, chuyển sang luồng hoàn tác atomic.")
                     return self._delete_withdrawal_transaction(original_transaction)
 
             # Simple withdrawal without fees - safe to undo
-            print(f"  âœ… Simple withdrawal detected, safe to undo")
+            print(f"  ✅ Simple withdrawal detected, safe to undo")
             
             units_to_restore = abs(original_transaction.units_change)
             tranches = self.get_investor_tranches(investor_id)
             
-            print(f"  ðŸ“Š Units to restore: {units_to_restore:.6f}")
-            print(f"  ðŸ“Š Current tranches: {len(tranches)}")
+            print(f"  📊 Units to restore: {units_to_restore:.6f}")
+            print(f"  📊 Current tranches: {len(tranches)}")
             
             if not tranches:
                 # Investor has no tranches - create new one
-                print(f"  ðŸ”„ Creating new tranche for units restoration")
+                print(f"  🔄 Creating new tranche for units restoration")
                 price = abs(original_transaction.amount / original_transaction.units_change)
                 
                 import uuid
@@ -1400,10 +1400,10 @@ class EnhancedFundManager:
                     cumulative_fees_paid=0.0
                 )
                 self.tranches.append(tranche)
-                print(f"  âœ… Created tranche {tranche.tranche_id}")
+                print(f"  ✅ Created tranche {tranche.tranche_id}")
             else:
                 # Restore units proportionally to existing tranches
-                print(f"  ðŸ”„ Restoring units proportionally to existing tranches")
+                print(f"  🔄 Restoring units proportionally to existing tranches")
                 total_existing_units = self.get_investor_units(investor_id)
                 
                 for tranche in tranches:
@@ -1414,16 +1414,16 @@ class EnhancedFundManager:
                     tranche.units += units_to_add
                     tranche.invested_value += value_to_add
                     
-                    print(f"    ðŸ”„ Tranche {tranche.tranche_id}: +{units_to_add:.6f} units")
+                    print(f"    🔄 Tranche {tranche.tranche_id}: +{units_to_add:.6f} units")
 
             # Remove the withdrawal transaction
             self.transactions.remove(original_transaction)
-            print(f"  âœ… Removed withdrawal transaction {original_transaction.id}")
+            print(f"  ✅ Removed withdrawal transaction {original_transaction.id}")
             
             return True
 
         except Exception as e:
-            print(f"  âŒ Error in _undo_withdrawal_enhanced: {str(e)}")
+            print(f"  ❌ Error in _undo_withdrawal_enhanced: {str(e)}")
             import traceback
             traceback.print_exc()
             return False
@@ -1433,12 +1433,12 @@ class EnhancedFundManager:
         ENHANCED: Undo NAV update with validation
         """
         try:
-            print(f"  ðŸ”„ Removing NAV Update transaction {original_transaction.id}")
+            print(f"  🔄 Removing NAV Update transaction {original_transaction.id}")
             self.transactions.remove(original_transaction)
-            print(f"  âœ… NAV Update removed successfully")
+            print(f"  ✅ NAV Update removed successfully")
             return True
         except Exception as e:
-            print(f"  âŒ Error in _undo_nav_update_enhanced: {str(e)}")
+            print(f"  ❌ Error in _undo_nav_update_enhanced: {str(e)}")
             return False
     
     def _simple_transaction_removal_enhanced(self, transaction) -> bool:
@@ -1446,10 +1446,10 @@ class EnhancedFundManager:
         ENHANCED: Remove simple transactions with validation
         """
         try:
-            print(f"  ðŸ”„ Removing {transaction.type} transaction {transaction.id}")
+            print(f"  🔄 Removing {transaction.type} transaction {transaction.id}")
             
             # Additional validation for fee transactions
-            if transaction.type == "PhÃ­":
+            if transaction.type == "Phí":
                 # Check if there are related fee records
                 related_fee_records = [
                     fr for fr in self.fee_records
@@ -1457,17 +1457,17 @@ class EnhancedFundManager:
                         abs((fr.calculation_date - transaction.date).total_seconds()) < 3600)
                 ]
                 if related_fee_records:
-                    print(f"  âš ï¸  Found {len(related_fee_records)} related fee records")
+                    print(f"  ⚠️  Found {len(related_fee_records)} related fee records")
                     # Remove related fee records as well
                     for fee_record in related_fee_records:
                         self.fee_records.remove(fee_record)
-                        print(f"    ðŸ—‘ï¸  Removed fee record {fee_record.id}")
+                        print(f"    🗑️  Removed fee record {fee_record.id}")
             
             self.transactions.remove(transaction)
-            print(f"  âœ… Transaction removed successfully")
+            print(f"  ✅ Transaction removed successfully")
             return True
         except Exception as e:
-            print(f"  âŒ Error in _simple_transaction_removal_enhanced: {str(e)}")
+            print(f"  ❌ Error in _simple_transaction_removal_enhanced: {str(e)}")
             return False
 
     # ================================
@@ -1486,7 +1486,7 @@ class EnhancedFundManager:
         }
         
         try:
-            print("ðŸ” Starting data integrity validation...")
+            print("🔍 Starting data integrity validation...")
             
             # 1. Validate Investors
             investor_issues = self._validate_investors()
@@ -1538,11 +1538,11 @@ class EnhancedFundManager:
             total_warnings = len(validation_results['warnings'])
             
             if validation_results['is_valid']:
-                print(f"âœ… Data integrity validation PASSED")
+                print(f"✅ Data integrity validation PASSED")
             else:
-                print(f"âŒ Data integrity validation FAILED")
+                print(f"❌ Data integrity validation FAILED")
             
-            print(f"ðŸ“Š Found {total_errors} errors, {total_warnings} warnings")
+            print(f"📊 Found {total_errors} errors, {total_warnings} warnings")
             
             validation_results['summary']['total_errors'] = total_errors
             validation_results['summary']['total_warnings'] = total_warnings
@@ -1551,8 +1551,8 @@ class EnhancedFundManager:
             
         except Exception as e:
             validation_results['is_valid'] = False
-            validation_results['errors'].append(f"Quy trÃ¬nh kiá»ƒm tra dá»¯ liá»‡u tháº¥t báº¡i: {str(e)}")
-            print(f"âŒ Data validation error: {str(e)}")
+            validation_results['errors'].append(f"Quy trình kiểm tra dữ liệu thất bại: {str(e)}")
+            print(f"❌ Data validation error: {str(e)}")
             return validation_results
     
     def _validate_investors(self) -> Dict[str, Any]:
@@ -1565,7 +1565,7 @@ class EnhancedFundManager:
         for investor in self.investors:
             # Check for duplicate IDs
             if investor.id in investor_ids:
-                issues['errors'].append(f"TrÃ¹ng ID nhÃ  Ä‘áº§u tÆ°: {investor.id}")
+                issues['errors'].append(f"Trùng ID nhà đầu tư: {investor.id}")
             investor_ids.add(investor.id)
             
             # Check for fund managers
@@ -1574,16 +1574,16 @@ class EnhancedFundManager:
             
             # Basic data validation
             if not investor.name or not investor.name.strip():
-                issues['errors'].append(f"NhÃ  Ä‘áº§u tÆ° {investor.id} cÃ³ tÃªn trá»‘ng")
+                issues['errors'].append(f"Nhà đầu tư {investor.id} có tên trống")
             
             if investor.id < 0 or (investor.id == 0 and not investor.is_fund_manager):
-                issues['errors'].append(f"ID nhÃ  Ä‘áº§u tÆ° khÃ´ng há»£p lá»‡: {investor.id}")
+                issues['errors'].append(f"ID nhà đầu tư không hợp lệ: {investor.id}")
         
         # Check fund manager count
         if len(fund_managers) == 0:
-            issues['warnings'].append("KhÃ´ng tÃ¬m tháº¥y Fund Manager")
+            issues['warnings'].append("Không tìm thấy Fund Manager")
         elif len(fund_managers) > 1:
-            issues['warnings'].append(f"TÃ¬m tháº¥y nhiá»u Fund Manager: {fund_managers}")
+            issues['warnings'].append(f"Tìm thấy nhiều Fund Manager: {fund_managers}")
         
         return issues
     
@@ -1596,7 +1596,7 @@ class EnhancedFundManager:
         for tranche in self.tranches:
             # Check for duplicate tranche IDs
             if tranche.tranche_id in tranche_ids:
-                issues['errors'].append(f"TrÃ¹ng ID tranche: {tranche.tranche_id}")
+                issues['errors'].append(f"Trùng ID tranche: {tranche.tranche_id}")
             tranche_ids.add(tranche.tranche_id)
             
             # Validate using model validation
@@ -1609,15 +1609,15 @@ class EnhancedFundManager:
             # Check if investor exists
             investor_exists = any(inv.id == tranche.investor_id for inv in self.investors)
             if not investor_exists:
-                issues['errors'].append(f"Tranche {tranche.tranche_id} tham chiáº¿u nhÃ  Ä‘áº§u tÆ° khÃ´ng tá»“n táº¡i: {tranche.investor_id}")
+                issues['errors'].append(f"Tranche {tranche.tranche_id} tham chiếu nhà đầu tư không tồn tại: {tranche.investor_id}")
             
             # Check for negative units
             if tranche.units < 0:
-                issues['errors'].append(f"Tranche {tranche.tranche_id} cÃ³ Ä‘Æ¡n vá»‹ quá»¹ Ã¢m: {tranche.units}")
+                issues['errors'].append(f"Tranche {tranche.tranche_id} có đơn vị quỹ âm: {tranche.units}")
             
             # Check for zero units (warning)
             if abs(tranche.units) < 0.000001:
-                issues['warnings'].append(f"Tranche {tranche.tranche_id} cÃ³ Ä‘Æ¡n vá»‹ quá»¹ gáº§n báº±ng 0: {tranche.units}")
+                issues['warnings'].append(f"Tranche {tranche.tranche_id} có đơn vị quỹ gần bằng 0: {tranche.units}")
         
         return issues
     
@@ -1630,7 +1630,7 @@ class EnhancedFundManager:
         for transaction in self.transactions:
             # Check for duplicate transaction IDs
             if transaction.id in transaction_ids:
-                issues['errors'].append(f"TrÃ¹ng ID giao dá»‹ch: {transaction.id}")
+                issues['errors'].append(f"Trùng ID giao dịch: {transaction.id}")
             transaction_ids.add(transaction.id)
             
             # Validate using model validation
@@ -1638,12 +1638,12 @@ class EnhancedFundManager:
             is_valid, errors = validate_transaction(transaction)
             if not is_valid:
                 for error in errors:
-                    issues['errors'].append(f"Giao dá»‹ch {transaction.id}: {error}")
+                    issues['errors'].append(f"Giao dịch {transaction.id}: {error}")
             
             # Check if investor exists
             investor_exists = any(inv.id == transaction.investor_id for inv in self.investors)
             if not investor_exists:
-                issues['errors'].append(f"Giao dá»‹ch {transaction.id} tham chiáº¿u nhÃ  Ä‘áº§u tÆ° khÃ´ng tá»“n táº¡i: {transaction.investor_id}")
+                issues['errors'].append(f"Giao dịch {transaction.id} tham chiếu nhà đầu tư không tồn tại: {transaction.investor_id}")
         
         return issues
     
@@ -1656,7 +1656,7 @@ class EnhancedFundManager:
         for fee_record in self.fee_records:
             # Check for duplicate fee record IDs
             if fee_record.id in fee_record_ids:
-                issues['errors'].append(f"TrÃ¹ng ID báº£n ghi phÃ­: {fee_record.id}")
+                issues['errors'].append(f"Trùng ID bản ghi phí: {fee_record.id}")
             fee_record_ids.add(fee_record.id)
             
             # Validate using model validation
@@ -1664,12 +1664,12 @@ class EnhancedFundManager:
             is_valid, errors = validate_fee_record(fee_record)
             if not is_valid:
                 for error in errors:
-                    issues['errors'].append(f"Báº£n ghi phÃ­ {fee_record.id}: {error}")
+                    issues['errors'].append(f"Bản ghi phí {fee_record.id}: {error}")
             
             # Check if investor exists
             investor_exists = any(inv.id == fee_record.investor_id for inv in self.investors)
             if not investor_exists:
-                issues['errors'].append(f"Báº£n ghi phÃ­ {fee_record.id} tham chiáº¿u nhÃ  Ä‘áº§u tÆ° khÃ´ng tá»“n táº¡i: {fee_record.investor_id}")
+                issues['errors'].append(f"Bản ghi phí {fee_record.id} tham chiếu nhà đầu tư không tồn tại: {fee_record.investor_id}")
         
         return issues
     
@@ -1683,21 +1683,21 @@ class EnhancedFundManager:
             investor_transactions = [t for t in self.transactions if t.investor_id == investor.id]
             
             # Check if investor has transactions but no tranches
-            deposit_txns = [t for t in investor_transactions if t.type == "Náº¡p"]
+            deposit_txns = [t for t in investor_transactions if t.type == "Nạp"]
             if deposit_txns and not investor_tranches:
-                issues['warnings'].append(f"NhÃ  Ä‘áº§u tÆ° {investor.id} cÃ³ giao dá»‹ch náº¡p nhÆ°ng khÃ´ng cÃ³ tranche")
+                issues['warnings'].append(f"Nhà đầu tư {investor.id} có giao dịch nạp nhưng không có tranche")
             
             # Check if investor has tranches but no deposit transactions  
             if investor_tranches and not deposit_txns:
-                issues['warnings'].append(f"NhÃ  Ä‘áº§u tÆ° {investor.id} cÃ³ tranche nhÆ°ng khÃ´ng cÃ³ giao dá»‹ch náº¡p")
+                issues['warnings'].append(f"Nhà đầu tư {investor.id} có tranche nhưng không có giao dịch nạp")
         
         # Check total units consistency
         try:
             total_units = sum(t.units for t in self.tranches)
             if total_units <= 0:
-                issues['warnings'].append(f"Tá»•ng Ä‘Æ¡n vá»‹ quá»¹ hiá»‡n lÃ  {total_units}")
+                issues['warnings'].append(f"Tổng đơn vị quỹ hiện là {total_units}")
         except Exception as e:
-            issues['errors'].append(f"Lá»—i tÃ­nh tá»•ng Ä‘Æ¡n vá»‹ quá»¹: {str(e)}")
+            issues['errors'].append(f"Lỗi tính tổng đơn vị quỹ: {str(e)}")
         
         return issues
 
@@ -1706,18 +1706,18 @@ class EnhancedFundManager:
     # ================================
     def create_manual_backup(self, backup_type: str = "MANUAL") -> str:
         """
-        Táº¡o manual backup
+        Tạo manual backup
         Note: backup_manager removed - backups handled by api_backup service
         """
-        print("â„¹ï¸ Viá»‡c táº¡o sao lÆ°u thá»§ cÃ´ng hiá»‡n do dá»‹ch vá»¥ api_backup xá»­ lÃ½")
+        print("ℹ️ Việc tạo sao lưu thủ công hiện do dịch vụ api_backup xử lý")
         return None
     
     def restore_from_backup(self, backup_id: str = None, backup_date: str = None) -> bool:
         """
-        Restore tá»« backup
+        Restore từ backup
         Note: backup_manager removed - backups handled by api_backup service
         """
-        print("â„¹ï¸ Viá»‡c khÃ´i phá»¥c sao lÆ°u hiá»‡n do dá»‹ch vá»¥ api_backup xá»­ lÃ½")
+        print("ℹ️ Việc khôi phục sao lưu hiện do dịch vụ api_backup xử lý")
         return False
     
     def get_backup_status(self) -> Dict[str, Any]:
@@ -1725,7 +1725,7 @@ class EnhancedFundManager:
         Get backup system status
         Note: backup_manager removed - backups handled by api_backup service
         """
-        return {'enabled': True, 'message': 'Sao lÆ°u Ä‘Æ°á»£c xá»­ lÃ½ bá»Ÿi dá»‹ch vá»¥ api_backup'}
+        return {'enabled': True, 'message': 'Sao lưu được xử lý bởi dịch vụ api_backup'}
     
     def list_available_backups(self, days: int = 30) -> List[Dict[str, Any]]:
         """
@@ -1736,7 +1736,7 @@ class EnhancedFundManager:
     
     def trigger_auto_backup_if_needed(self) -> bool:
         """
-        Trigger auto backup náº¿u cáº§n (called from main application)
+        Trigger auto backup nếu cần (called from main application)
         Note: backup_manager removed - backups handled by api_backup service
         """
         return True  # Auto backup service runs independently
@@ -1759,16 +1759,16 @@ class EnhancedFundManager:
 
             recent_transactions = sorted(self.transactions, key=lambda x: (x.date, x.id), reverse=True)[:10]
             if transaction_to_delete not in recent_transactions:
-                print(f"Giao dá»‹ch {transaction_id} Ä‘Ã£ quÃ¡ cÅ© Ä‘á»ƒ xÃ³a an toÃ n")
+                print(f"Giao dịch {transaction_id} Äã quá cũ để xóa an toàn")
                 return False
 
-            if transaction_to_delete.type == "Náº¡p":
+            if transaction_to_delete.type == "Nạp":
                 return self._delete_deposit_transaction(transaction_to_delete)
-            elif transaction_to_delete.type == "RÃºt":
+            elif transaction_to_delete.type == "Rút":
                 return self._delete_withdrawal_transaction(transaction_to_delete)
             elif transaction_to_delete.type == "NAV Update":
                 return self._delete_nav_update_transaction(transaction_to_delete)
-            elif transaction_to_delete.type in ["PhÃ­", "Fund Manager Withdrawal", "PhÃ­ Nháº­n"]:
+            elif transaction_to_delete.type in ["Phí", "Fund Manager Withdrawal", "Phí Nhận"]:
                 return self._delete_complex_transaction(transaction_to_delete)
             else:
                 self.transactions.remove(transaction_to_delete)
@@ -1800,7 +1800,7 @@ class EnhancedFundManager:
             if best_match:
                 if getattr(best_match, "cumulative_fees_paid", 0) > 0:
                     print(
-                        f"KhÃ´ng thá»ƒ xÃ³a giao dá»‹ch náº¡p {transaction.id}: tranche Ä‘Ã£ bá»‹ áº£nh hÆ°á»Ÿng bá»Ÿi phÃ­"
+                        f"Không thể xóa giao dịch nạp {transaction.id}: tranche Äã bị ảnh hưởng bởi phí"
                     )
                     return False
                 self.tranches.remove(best_match)
@@ -1901,7 +1901,7 @@ class EnhancedFundManager:
             investor_transactions.sort(key=lambda x: (x.date, x.id), reverse=True)
             if investor_transactions[0].id != transaction.id:
                 print(
-                    f"KhÃ´ng thá»ƒ xÃ³a giao dá»‹ch rÃºt {transaction.id}: Ä‘Ã¢y khÃ´ng pháº£i giao dá»‹ch má»›i nháº¥t cá»§a nhÃ  Ä‘áº§u tÆ°"
+                    f"Không thể xóa giao dịch rút {transaction.id}: Äây không phải giao dịch mới nhất của nhà đầu tư"
                 )
                 return False
 
@@ -1910,7 +1910,7 @@ class EnhancedFundManager:
                     t
                     for t in self.transactions
                     if t.investor_id == investor_id
-                    and t.type == "PhÃ­"
+                    and t.type == "Phí"
                     and abs(safe_total_seconds_between(t.date, transaction.date)) < 3600
                 ),
                 None,
@@ -1918,7 +1918,7 @@ class EnhancedFundManager:
             related_fm_fee_txns = [
                 t
                 for t in self.transactions
-                if t.type == "PhÃ­ Nháº­n"
+                if t.type == "Phí Nhận"
                 and abs(safe_total_seconds_between(t.date, transaction.date)) < 3600
             ]
             related_fee_records = [
@@ -1964,11 +1964,11 @@ class EnhancedFundManager:
             if related_fee_txn:
                 fee_amount_to_rollback = abs(related_fee_txn.amount)
                 if not self._rollback_cumulative_fee_on_tranches(investor_id, fee_amount_to_rollback):
-                    raise ValueError("KhÃ´ng thá»ƒ hoÃ n nguyÃªn cumulative_fees_paid trÃªn tranche nhÃ  Ä‘áº§u tÆ°")
+                    raise ValueError("Không thể hoàn nguyên cumulative_fees_paid trên tranche nhà đầu tư")
 
             fm_units_to_remove = sum(abs(t.units_change) for t in related_fm_fee_txns)
             if not self._remove_units_from_fund_manager(fm_units_to_remove, transaction.date):
-                raise ValueError("KhÃ´ng thá»ƒ hoÃ n nguyÃªn Ä‘Æ¡n vá»‹ quá»¹ cá»§a Fund Manager")
+                raise ValueError("Không thể hoàn nguyên đơn vị quỹ của Fund Manager")
 
             tx_ids_to_remove = {transaction.id}
             if related_fee_txn:
@@ -1990,7 +1990,7 @@ class EnhancedFundManager:
         try:
             latest_nav = self.get_latest_total_nav()
             if latest_nav == transaction.nav:
-                print(f"Cáº£nh bÃ¡o: XÃ³a giao dá»‹ch cáº­p nháº­t NAV {transaction.id} sáº½ lÃ m thay Ä‘á»•i NAV má»›i nháº¥t")
+                print(f"Cảnh báo: Xóa giao dịch cập nhật NAV {transaction.id} sẽ làm thay đổi NAV mới nhất")
             self.transactions.remove(transaction)
             return True
         except Exception as e:
@@ -1999,7 +1999,7 @@ class EnhancedFundManager:
 
     def _delete_complex_transaction(self, transaction) -> bool:
         try:
-            if transaction.type in ["PhÃ­", "PhÃ­ Nháº­n"]:
+            if transaction.type in ["Phí", "Phí Nhận"]:
                 # mapping theo calculation_date trong FeeRecord
                 fee_records_to_check = [
                     f
@@ -2008,8 +2008,8 @@ class EnhancedFundManager:
                 ]
                 if fee_records_to_check:
                     print(
-                        f"KhÃ´ng thá»ƒ xÃ³a giao dá»‹ch phÃ­ {transaction.id}: cÃ²n báº£n ghi phÃ­ liÃªn quan. "
-                        f"Vui lÃ²ng xÃ³a báº£n ghi phÃ­ trÆ°á»›c."
+                        f"Không thể xóa giao dịch phí {transaction.id}: còn bản ghi phí liên quan. "
+                        f"Vui lòng xóa bản ghi phí trước."
                     )
                     return False
 
@@ -2031,34 +2031,34 @@ class EnhancedFundManager:
             for tranche in self.tranches:
                 if tranche.investor_id not in investor_ids:
                     results["errors"].append(
-                        f"Tranche tham chiáº¿u tá»›i ID nhÃ  Ä‘áº§u tÆ° khÃ´ng tá»“n táº¡i: {tranche.investor_id}"
+                        f"Tranche tham chiếu tới ID nhà đầu tư không tồn tại: {tranche.investor_id}"
                     )
                     results["valid"] = False
                 if tranche.units <= 0:
-                    results["errors"].append(f"Tranche cÃ³ Ä‘Æ¡n vá»‹ quá»¹ khÃ´ng dÆ°Æ¡ng: {tranche.tranche_id}")
+                    results["errors"].append(f"Tranche có đơn vị quỹ không dương: {tranche.tranche_id}")
                     results["valid"] = False
                 if tranche.hwm < tranche.entry_nav:
-                    results["warnings"].append(f"Tranche {tranche.tranche_id} cÃ³ HWM < entry NAV")
+                    results["warnings"].append(f"Tranche {tranche.tranche_id} có HWM < entry NAV")
 
             for trans in self.transactions:
                 if trans.investor_id not in investor_ids:
                     results["errors"].append(
-                        f"Giao dá»‹ch {trans.id} tham chiáº¿u tá»›i ID nhÃ  Ä‘áº§u tÆ° khÃ´ng tá»“n táº¡i: {trans.investor_id}"
+                        f"Giao dịch {trans.id} tham chiếu tới ID nhà đầu tư không tồn tại: {trans.investor_id}"
                     )
                     results["valid"] = False
                 if trans.nav < 0:
-                    results["warnings"].append(f"Giao dá»‹ch {trans.id} cÃ³ NAV Ã¢m: {trans.nav}")
+                    results["warnings"].append(f"Giao dịch {trans.id} có NAV âm: {trans.nav}")
                 if trans.date > datetime.now():
-                    results["warnings"].append(f"Giao dá»‹ch {trans.id} cÃ³ ngÃ y trong tÆ°Æ¡ng lai: {trans.date}")
+                    results["warnings"].append(f"Giao dịch {trans.id} có ngày trong tương lai: {trans.date}")
 
             for fee_record in self.fee_records:
                 if fee_record.investor_id not in investor_ids:
                     results["errors"].append(
-                        f"Báº£n ghi phÃ­ {fee_record.id} tham chiáº¿u tá»›i nhÃ  Ä‘áº§u tÆ° khÃ´ng tá»“n táº¡i"
+                        f"Bản ghi phí {fee_record.id} tham chiếu tới nhà đầu tư không tồn tại"
                     )
                     results["valid"] = False
                 if fee_record.units_after > fee_record.units_before:
-                    results["errors"].append(f"Báº£n ghi phÃ­ {fee_record.id} cÃ³ sá»‘ Ä‘Æ¡n vá»‹ quá»¹ sau phÃ­ lá»›n hÆ¡n trÆ°á»›c phÃ­")
+                    results["errors"].append(f"Bản ghi phí {fee_record.id} có số đơn vị quỹ sau phí lớn hơn trước phí")
                     results["valid"] = False
 
             latest_nav = self.get_latest_total_nav()
@@ -2071,7 +2071,7 @@ class EnhancedFundManager:
                     results["stats"]["price_per_unit"] = calculated_price
                     if calculated_price < 1000 or calculated_price > 10_000_000:
                         results["warnings"].append(
-                            f"GiÃ¡ má»—i unit cÃ³ váº» báº¥t thÆ°á»ng: {calculated_price:,.0f} VND"
+                            f"Giá mỗi unit có vẻ bất thường: {calculated_price:,.0f} VND"
                         )
 
             results["stats"]["total_investors"] = len(self.investors)
@@ -2085,7 +2085,7 @@ class EnhancedFundManager:
 
         except Exception as e:
             results["valid"] = False
-            results["errors"].append(f"Lá»—i kiá»ƒm tra dá»¯ liá»‡u: {str(e)}")
+            results["errors"].append(f"Lỗi kiểm tra dữ liệu: {str(e)}")
             return results
 
     def backup_before_operation(self, operation_name: str) -> bool:
